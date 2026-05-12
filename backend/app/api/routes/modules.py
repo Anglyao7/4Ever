@@ -32,6 +32,12 @@ MODULES = [
         category="integration",
     ),
     PlatformModule(
+        id="notes",
+        name="笔记",
+        description="Markdown 写作、笔记暂存和实时渲染。",
+        category="productivity",
+    ),
+    PlatformModule(
         id="workflow",
         name="秩序",
         description="自动化流程、任务节点和触发器。",

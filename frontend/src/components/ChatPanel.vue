@@ -1,11 +1,11 @@
 <template>
-  <section class="chat-panel" aria-label="Chat 交耳">
+  <section class="chat-panel" :aria-label="copy.panelAria">
     <div class="chat-heading">
       <div>
         <p class="eyebrow">Chat</p>
-        <h2>交耳</h2>
+        <h2>{{ copy.title }}</h2>
       </div>
-      <button class="icon-button ghost" type="button" title="清空对话" @click="$emit('clear')">
+      <button class="icon-button ghost" type="button" :title="copy.clear" @click="$emit('clear')">
         <Trash2 :size="18" />
       </button>
     </div>
@@ -13,7 +13,7 @@
     <div ref="messageListRef" class="message-list">
       <div v-if="messages.length === 0" class="empty-state">
         <Bot :size="32" />
-        <p>今天想聊什么？</p>
+        <p>{{ copy.empty }}</p>
       </div>
 
       <article
@@ -33,7 +33,7 @@
         <div class="avatar">
           <LoaderCircle :size="16" class="spin" />
         </div>
-        <p>正在响应</p>
+        <p>{{ copy.responding }}</p>
       </article>
     </div>
 
@@ -47,22 +47,22 @@
           ref="composerInputRef"
           v-model="draft"
           rows="1"
-          placeholder="输入消息"
+          :placeholder="copy.placeholder"
           :disabled="loading"
           @input="resizeComposer"
           @keydown.enter.exact="submitFromKeyboard"
         />
       </div>
-      <button class="send-button" type="submit" title="发送" :disabled="loading || !draft.trim()">
+      <button class="send-button" type="submit" :title="copy.send" :disabled="loading || !draft.trim()">
         <SendHorizontal :size="18" />
-        <span>发送</span>
+        <span>{{ copy.send }}</span>
       </button>
     </form>
   </section>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { Bot, LoaderCircle, SendHorizontal, Trash2, UserRound } from "lucide-vue-next";
 
 import type { ChatMessage } from "../types/chat";
@@ -71,6 +71,7 @@ const props = defineProps<{
   messages: ChatMessage[];
   loading: boolean;
   error: string;
+  language: "zh-CN" | "en-US";
 }>();
 
 const emit = defineEmits<{
@@ -81,6 +82,27 @@ const emit = defineEmits<{
 const draft = ref("");
 const messageListRef = ref<HTMLElement | null>(null);
 const composerInputRef = ref<HTMLTextAreaElement | null>(null);
+const copy = computed(() =>
+  props.language === "en-US"
+    ? {
+        panelAria: "Chat",
+        title: "Chat",
+        clear: "Clear chat",
+        empty: "What would you like to talk about today?",
+        responding: "Responding",
+        placeholder: "Type a message",
+        send: "Send",
+      }
+    : {
+        panelAria: "Chat 交耳",
+        title: "交耳",
+        clear: "清空对话",
+        empty: "今天想聊什么？",
+        responding: "正在响应",
+        placeholder: "输入消息",
+        send: "发送",
+      },
+);
 
 onMounted(() => {
   resizeComposer();
