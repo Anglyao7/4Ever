@@ -73,6 +73,179 @@ button:disabled {
   animation: contentReveal 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+:root[data-color-mode="dark"] .workflow-sidebar,
+:root[data-color-mode="dark"] .workflow-hero-card,
+:root[data-color-mode="dark"] .workflow-input-card,
+:root[data-color-mode="dark"] .workflow-step-card,
+:root[data-color-mode="dark"] .workflow-history-card,
+:root[data-color-mode="dark"] .self-card,
+:root[data-color-mode="dark"] .telegram-shell {
+  background: var(--panel-bg);
+  border-color: var(--line);
+  box-shadow: 0 12px 32px var(--shadow-soft);
+}
+
+:root[data-color-mode="dark"] .workflow-template-card,
+:root[data-color-mode="dark"] .workflow-step,
+:root[data-color-mode="dark"] .workflow-run-card,
+
+:root[data-color-mode="dark"] .module-counts span,
+:root[data-color-mode="dark"] .workflow-template-main small,
+:root[data-color-mode="dark"] .workflow-template-card em,
+:root[data-color-mode="dark"] .workflow-hero-card p,
+:root[data-color-mode="dark"] .workflow-step p,
+:root[data-color-mode="dark"] .workflow-run-card small,
+:root[data-color-mode="dark"] .workflow-run-card time,
+:root[data-color-mode="dark"] .workflow-empty {
+  color: var(--muted);
+}
+
+:root[data-color-mode="dark"] .workflow-template-card:hover,
+:root[data-color-mode="dark"] .workflow-template-card.active {
+  border-color: rgba(213, 139, 114, 0.48);
+  background:
+    linear-gradient(145deg, rgba(213, 139, 114, 0.09), transparent 46%),
+    rgba(255, 255, 255, 0.13);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-color-mode="dark"] .workflow-template-icon,
+:root[data-color-mode="dark"] .workflow-step-index {
+  color: #f7fbf7;
+  background: #70483e;
+  border: 1px solid rgba(213, 139, 114, 0.32);
+}
+
+:root[data-color-mode="dark"] .workflow-config-note,
+:root[data-color-mode="dark"] .workflow-stats span,
+:root[data-color-mode="dark"] .workflow-run-status {
+  color: #9ee4d3;
+  background: rgba(113, 184, 166, 0.12);
+  border-color: rgba(143, 213, 196, 0.24);
+}
+
+:root[data-color-mode="dark"] .workflow-step.finished,
+:root[data-color-mode="dark"] .workflow-run-card.success {
+  border-color: rgba(143, 213, 196, 0.34);
+  background: rgba(113, 184, 166, 0.1);
+}
+
+:root[data-color-mode="dark"] .workflow-step.running {
+  border-color: rgba(213, 139, 114, 0.42);
+  background: rgba(213, 139, 114, 0.12);
+}
+
+:root[data-color-mode="dark"] .workflow-run-card.failed {
+  border-color: rgba(255, 151, 151, 0.3);
+  background: rgba(131, 24, 24, 0.18);
+}
+
+:root[data-color-mode="dark"] .workflow-run-card.failed .workflow-run-status {
+  color: #ffb8b8;
+  background: rgba(131, 24, 24, 0.26);
+  border-color: rgba(255, 151, 151, 0.28);
+}
+
+:root[data-color-mode="dark"] .workflow-step-icon {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(202, 211, 204, 0.2);
+}
+
+:root[data-color-mode="dark"] .workflow-step pre {
+  color: #f7fbf7;
+  background: #111713;
+  border: 1px solid rgba(202, 211, 204, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-color-mode="system"] .workflow-sidebar,
+  :root[data-color-mode="system"] .workflow-hero-card,
+  :root[data-color-mode="system"] .workflow-input-card,
+  :root[data-color-mode="system"] .workflow-step-card,
+  :root[data-color-mode="system"] .workflow-history-card,
+  :root[data-color-mode="system"] .self-card,
+  :root[data-color-mode="system"] .telegram-shell {
+    background: var(--panel-bg);
+    border-color: var(--line);
+    box-shadow: 0 12px 32px var(--shadow-soft);
+  }
+
+  :root[data-color-mode="system"] .workflow-template-card,
+  :root[data-color-mode="system"] .workflow-step,
+  :root[data-color-mode="system"] .workflow-run-card,
+
+  :root[data-color-mode="system"] .module-counts span,
+  :root[data-color-mode="system"] .workflow-template-main small,
+  :root[data-color-mode="system"] .workflow-template-card em,
+  :root[data-color-mode="system"] .workflow-hero-card p,
+  :root[data-color-mode="system"] .workflow-step p,
+  :root[data-color-mode="system"] .workflow-run-card small,
+  :root[data-color-mode="system"] .workflow-run-card time,
+  :root[data-color-mode="system"] .workflow-empty {
+    color: var(--muted);
+  }
+
+  :root[data-color-mode="system"] .workflow-template-card:hover,
+  :root[data-color-mode="system"] .workflow-template-card.active {
+    border-color: rgba(213, 139, 114, 0.48);
+    background:
+      linear-gradient(145deg, rgba(213, 139, 114, 0.09), transparent 46%),
+      rgba(255, 255, 255, 0.13);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  }
+
+  :root[data-color-mode="system"] .workflow-template-icon,
+  :root[data-color-mode="system"] .workflow-step-index {
+    color: #f7fbf7;
+    background: #70483e;
+    border: 1px solid rgba(213, 139, 114, 0.32);
+  }
+
+  :root[data-color-mode="system"] .workflow-config-note,
+  :root[data-color-mode="system"] .workflow-stats span,
+  :root[data-color-mode="system"] .workflow-run-status {
+    color: #9ee4d3;
+    background: rgba(113, 184, 166, 0.12);
+    border-color: rgba(143, 213, 196, 0.24);
+  }
+
+  :root[data-color-mode="system"] .workflow-step.finished,
+  :root[data-color-mode="system"] .workflow-run-card.success {
+    border-color: rgba(143, 213, 196, 0.34);
+    background: rgba(113, 184, 166, 0.1);
+  }
+
+  :root[data-color-mode="system"] .workflow-step.running {
+    border-color: rgba(213, 139, 114, 0.42);
+    background: rgba(213, 139, 114, 0.12);
+  }
+
+  :root[data-color-mode="system"] .workflow-run-card.failed {
+    border-color: rgba(255, 151, 151, 0.3);
+    background: rgba(131, 24, 24, 0.18);
+  }
+
+  :root[data-color-mode="system"] .workflow-run-card.failed .workflow-run-status {
+    color: #ffb8b8;
+    background: rgba(131, 24, 24, 0.26);
+    border-color: rgba(255, 151, 151, 0.28);
+  }
+
+  :root[data-color-mode="system"] .workflow-step-icon {
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(202, 211, 204, 0.2);
+  }
+
+  :root[data-color-mode="system"] .workflow-step pre {
+    color: #f7fbf7;
+    background: #111713;
+    border: 1px solid rgba(202, 211, 204, 0.16);
+  }
+}
+
+
 .intro-stage {
   position: fixed;
   inset: 0;
@@ -2247,11 +2420,21 @@ h1 {
   padding: 16px;
 }
 
+.workflow-header-actions,
 .workflow-template-list,
 .workflow-step-list,
 .workflow-run-list,
 .workflow-main {
   display: grid;
+  gap: 10px;
+}
+
+.workflow-header-actions {
+  display: flex;
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: end;
   gap: 10px;
 }
 
@@ -2277,6 +2460,7 @@ h1 {
 
 .workflow-template-icon,
 .workflow-step-index,
+.workflow-step-icon,
 .workflow-run-status {
   display: grid;
   place-items: center;
@@ -2368,6 +2552,37 @@ h1 {
   padding: 16px;
 }
 
+.workflow-config-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  color: var(--accent-strong);
+  background: rgba(47, 111, 103, 0.08);
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.workflow-disabled-reason {
+  margin-bottom: 12px;
+}
+
+.workflow-field span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.workflow-field em {
+  color: var(--clay);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .workflow-field textarea {
   min-height: 118px;
   resize: vertical;
@@ -2401,13 +2616,20 @@ h1 {
   background: rgba(180, 91, 66, 0.08);
 }
 
-.workflow-step-index {
+.workflow-step-index,
+.workflow-step-icon {
   width: 34px;
   height: 34px;
   color: #fffdf8;
   background: var(--ink);
   font-size: 13px;
   font-weight: 900;
+}
+
+.workflow-step-icon {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(222, 215, 203, 0.78);
 }
 
 .workflow-step strong,
@@ -2455,6 +2677,7 @@ h1 {
 }
 
 .workflow-run-card:hover,
+.workflow-run-card.active,
 .workflow-run-card.success {
   border-color: rgba(47, 111, 103, 0.28);
 }

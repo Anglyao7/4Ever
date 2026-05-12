@@ -325,7 +325,6 @@
         <WorkflowPanel
           v-else-if="activeModuleId === 'workflow'"
           :backend-online="backendOnline"
-          :profiles="modelProfiles"
           :current-config="config"
           :language="uiLanguage"
         />

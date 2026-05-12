@@ -2,21 +2,28 @@
   <section class="workflow-panel" :aria-label="copy.title">
     <div class="module-view-header">
       <div>
-        <p class="eyebrow">Automation</p>
+        <p class="eyebrow">{{ copy.eyebrow }}</p>
         <h1>{{ copy.title }}</h1>
       </div>
-      <button class="primary-action compact" type="button" :disabled="running || !canRun" @click="runWorkflow">
+      <div class="workflow-header-actions">
+        <span class="status-pill" :class="{ online: backendOnline }">
+          <CheckCircle2 v-if="backendOnline" :size="16" />
+          <XCircle v-else :size="16" />
+          {{ backendOnline ? copy.apiReady : copy.apiOffline }}
+        </span>
+        <button class="primary-action compact workflow-header-run" type="button" :disabled="running || !canRun" @click="runWorkflow">
         <LoaderCircle v-if="running" :size="17" class="spin" />
         <Play v-else :size="17" />
-        <span>{{ running ? copy.running : copy.run }}</span>
-      </button>
+          <span>{{ running ? copy.running : copy.run }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="workflow-workspace">
       <aside class="workflow-sidebar" :aria-label="copy.templates">
         <div class="panel-heading compact">
           <div>
-            <p class="eyebrow">Templates</p>
+            <p class="eyebrow">{{ copy.templatesEyebrow }}</p>
             <h2>{{ copy.templates }}</h2>
           </div>
           <span class="status-pill online">{{ templates.length }}</span>
@@ -53,11 +60,11 @@
           <div class="workflow-stats">
             <span>
               <Route :size="16" />
-              {{ activeTemplate.nodes.length }} {{ copy.steps }}
+              {{ formatStepCount(activeTemplate.nodes.length) }}
             </span>
             <span>
               <History :size="16" />
-              {{ runs.length }} {{ copy.runs }}
+              {{ formatRunCount(runs.length) }}
             </span>
           </div>
         </div>
@@ -66,13 +73,20 @@
           <form class="workflow-input-card" @submit.prevent="runWorkflow">
             <div class="panel-heading compact">
               <div>
-                <p class="eyebrow">Input</p>
+                <p class="eyebrow">{{ copy.inputEyebrow }}</p>
                 <h2>{{ copy.input }}</h2>
               </div>
             </div>
 
+            <div class="workflow-config-note">
+              <Bot :size="15" />
+              <span>{{ activeModelLabel }}</span>
+            </div>
+
+            <p v-if="disabledReason" class="notice-line workflow-disabled-reason">{{ disabledReason }}</p>
+
             <label v-for="field in activeTemplate.inputs" :key="field.key" class="workflow-field">
-              <span>{{ fieldLabel(field) }}</span>
+              <span>{{ fieldLabel(field) }}<em v-if="field.required">{{ copy.required }}</em></span>
               <textarea
                 v-if="field.multiline"
                 v-model="inputValues[field.key]"
@@ -94,7 +108,7 @@
           <div class="workflow-step-card" :aria-label="copy.stepsLabel">
             <div class="panel-heading compact">
               <div>
-                <p class="eyebrow">Flow</p>
+                <p class="eyebrow">{{ copy.flowEyebrow }}</p>
                 <h2>{{ copy.stepsLabel }}</h2>
               </div>
             </div>
@@ -112,7 +126,9 @@
                   <p>{{ nodeDescription(node) }}</p>
                   <pre v-if="nodeOutputPreview(node.id)">{{ nodeOutputPreview(node.id) }}</pre>
                 </div>
-                <component :is="nodeIcon(node.type)" :size="17" />
+                <span class="workflow-step-icon">
+                  <component :is="nodeIcon(node.type)" :size="17" />
+                </span>
               </article>
             </div>
           </div>
@@ -121,7 +137,7 @@
         <section class="workflow-history-card" :aria-label="copy.history">
           <div class="panel-heading compact">
             <div>
-              <p class="eyebrow">Runs</p>
+              <p class="eyebrow">{{ copy.runsEyebrow }}</p>
               <h2>{{ copy.history }}</h2>
             </div>
             <button class="secondary-button" type="button" :disabled="runs.length === 0" @click="clearRuns">
@@ -135,7 +151,7 @@
               v-for="run in runs"
               :key="run.id"
               class="workflow-run-card"
-              :class="run.status"
+              :class="[run.status, { active: run.id === selectedRunId }]"
               type="button"
               @click="selectRun(run.id)"
             >
@@ -167,7 +183,6 @@ import { computed, reactive, ref, watch } from "vue";
 import {
   Bot,
   CheckCircle2,
-  FileText,
   GitBranch,
   History,
   ImagePlus,
@@ -183,13 +198,12 @@ import {
 } from "lucide-vue-next";
 
 import { generateImage, sendChat } from "../services/api";
-import type { ChatConfig, ChatMessage, ModelProfile } from "../types/chat";
+import type { ChatConfig, ChatMessage } from "../types/chat";
 import type { ImageGenerationConfig } from "../types/images";
 import type { WorkflowInputField, WorkflowNode, WorkflowNodeType, WorkflowRun, WorkflowTemplate } from "../types/workflow";
 
 const props = defineProps<{
   backendOnline: boolean;
-  profiles: ModelProfile[];
   currentConfig: ChatConfig;
   language: "zh-CN" | "en-US";
 }>();
@@ -204,7 +218,13 @@ type LocalNoteDraft = {
 const workflowStorageKey = "4ever.workflow.activeTemplate";
 const workflowRunsStorageKey = "4ever.workflow.runs";
 const notesStorageKey = "4ever.notes.drafts";
+const activeNoteStorageKey = "4ever.notes.activeDraft";
 const imageConfigStorageKey = "4ever.image.config";
+const maxStoredRuns = 20;
+const maxStoredNotes = 50;
+const maxContextChars = 12_000;
+const maxNodeOutputChars = 6_000;
+const maxNoteContentChars = 40_000;
 const defaultImageConfig: ImageGenerationConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
@@ -215,7 +235,7 @@ const defaultImageConfig: ImageGenerationConfig = {
 };
 
 const templates = workflowTemplates();
-const activeTemplateId = ref(localStorage.getItem(workflowStorageKey) ?? templates[0].id);
+const activeTemplateId = ref(normalizeTemplateId(localStorage.getItem(workflowStorageKey)));
 const inputValues = reactive<Record<string, string>>({});
 const runs = ref<WorkflowRun[]>(loadRuns());
 const selectedRunId = ref(runs.value[0]?.id ?? "");
@@ -226,11 +246,17 @@ const copy = computed(() =>
   props.language === "en-US"
     ? {
         title: "Automation",
+        eyebrow: "Automation",
+        templatesEyebrow: "Templates",
+        inputEyebrow: "Input",
+        flowEyebrow: "Flow",
+        runsEyebrow: "Runs",
         templates: "Workflow templates",
         detail: "Workflow detail",
         input: "Run input",
-        steps: "steps",
-        runs: "runs",
+        apiReady: "API ready",
+        apiOffline: "API offline",
+        required: "Required",
         run: "Run workflow",
         running: "Running",
         runCurrent: "Run current workflow",
@@ -246,14 +272,23 @@ const copy = computed(() =>
         conditionPassed: "Condition passed.",
         transformDone: "Structured context prepared.",
         failed: "Workflow failed",
+        storageFailed: "The workflow finished, but local storage is full or unavailable.",
+        imageConfigMissing: "Configure image generation before running this workflow.",
+        activeModel: "Model",
       }
     : {
         title: "秩序",
+        eyebrow: "秩序",
+        templatesEyebrow: "模板",
+        inputEyebrow: "输入",
+        flowEyebrow: "流程",
+        runsEyebrow: "记录",
         templates: "工作流模板",
         detail: "工作流详情",
         input: "运行输入",
-        steps: "步",
-        runs: "次运行",
+        apiReady: "API 就绪",
+        apiOffline: "API 离线",
+        required: "必填",
         run: "运行工作流",
         running: "运行中",
         runCurrent: "运行当前工作流",
@@ -269,6 +304,9 @@ const copy = computed(() =>
         conditionPassed: "条件检查通过。",
         transformDone: "已整理结构化上下文。",
         failed: "工作流运行失败",
+        storageFailed: "工作流已完成，但本地存储空间不足或不可用。",
+        imageConfigMissing: "请先配置图片生成模块，再运行这个工作流。",
+        activeModel: "模型",
       },
 );
 
@@ -276,6 +314,21 @@ const activeTemplate = computed(() => templates.find((template) => template.id =
 const selectedRun = computed(() => runs.value.find((run) => run.id === selectedRunId.value));
 const selectedNodeOutputs = computed(() => new Map(selectedRun.value?.nodeResults.map((result) => [result.nodeId, result.output]) ?? []));
 const nextPendingNodeId = computed(() => activeTemplate.value.nodes.find((node) => !selectedNodeOutputs.value.has(node.id))?.id ?? "");
+const requiresBackend = computed(() => activeTemplate.value.nodes.some((node) => node.type === "ai" || node.type === "image"));
+const requiresImage = computed(() => activeTemplate.value.nodes.some((node) => node.type === "image"));
+const activeModelLabel = computed(() => `${copy.value.activeModel}: ${props.currentConfig.provider} / ${props.currentConfig.model}`);
+const disabledReason = computed(() => {
+  if (!canRun.value) {
+    return copy.value.missingInput;
+  }
+  if (!props.backendOnline && requiresBackend.value) {
+    return copy.value.backendOffline;
+  }
+  if (requiresImage.value && !isImageConfigReady(loadImageConfig())) {
+    return copy.value.imageConfigMissing;
+  }
+  return "";
+});
 const timeFormatter = computed(() => new Intl.DateTimeFormat(props.language === "en-US" ? "en-US" : "zh-CN", {
   month: "2-digit",
   day: "2-digit",
@@ -285,7 +338,7 @@ const timeFormatter = computed(() => new Intl.DateTimeFormat(props.language === 
 const canRun = computed(() => activeTemplate.value.inputs.every((field) => !field.required || inputValues[field.key]?.trim()));
 
 watch(activeTemplateId, (value) => {
-  localStorage.setItem(workflowStorageKey, value);
+  writeStorage(workflowStorageKey, value);
   resetInputs();
 });
 
@@ -305,8 +358,8 @@ async function runWorkflow() {
     error.value = copy.value.missingInput;
     return;
   }
-  if (!props.backendOnline && activeTemplate.value.nodes.some((node) => node.type === "ai" || node.type === "image")) {
-    error.value = copy.value.backendOffline;
+  if (disabledReason.value) {
+    error.value = disabledReason.value;
     return;
   }
 
@@ -329,8 +382,8 @@ async function runWorkflow() {
   try {
     for (const node of activeTemplate.value.nodes) {
       const startedAt = new Date().toISOString();
-      const output = await executeNode(node, context, run.input);
-      context = `${context}\n\n[${nodeTitle(node)}]\n${output}`;
+      const output = truncateText(await executeNode(node, context, run.input), maxNodeOutputChars);
+      context = truncateText(`${context}\n\n[${nodeTitle(node)}]\n${output}`, maxContextChars);
       run.nodeResults.push({
         nodeId: node.id,
         type: node.type,
@@ -381,7 +434,7 @@ async function runAiNode(node: WorkflowNode, context: string) {
       content: `${localizedPrompt}\n\n${context}`,
     },
   ];
-  const response = await sendChat(resolveChatConfig(), messages);
+  const response = await sendChat(props.currentConfig, messages);
   return response.content;
 }
 
@@ -395,26 +448,28 @@ function saveNote(node: WorkflowNode, context: string, input: Record<string, str
   const notes = loadNotes();
   const now = new Date().toISOString();
   const titleSource = input.topic || input.title || input.question || templateName(activeTemplate.value);
+  const separator = props.language === "en-US" ? ": " : "：";
   const note: LocalNoteDraft = {
     id: crypto.randomUUID(),
-    title: `${templateName(activeTemplate.value)}：${titleSource.slice(0, 28)}`,
-    content: `# ${titleSource}\n\n${context}`,
+    title: `${templateName(activeTemplate.value)}${separator}${titleSource.slice(0, 28)}`,
+    content: truncateText(`# ${titleSource}\n\n${context}`, maxNoteContentChars),
     updatedAt: now,
   };
-  localStorage.setItem(notesStorageKey, JSON.stringify([note, ...notes].slice(0, 50)));
-  return `${copy.value.savedNote}\n${nodeTitle(node)}：${note.title}`;
-}
-
-function resolveChatConfig() {
-  return props.currentConfig;
+  writeStorage(notesStorageKey, JSON.stringify([note, ...notes].slice(0, maxStoredNotes)));
+  writeStorage(activeNoteStorageKey, note.id);
+  return `${copy.value.savedNote}\n${nodeTitle(node)}${separator}${note.title}`;
 }
 
 function resetInputs() {
+  restoreInputs({});
+}
+
+function restoreInputs(values: Record<string, string>) {
   for (const key of Object.keys(inputValues)) {
     delete inputValues[key];
   }
   for (const field of activeTemplate.value.inputs) {
-    inputValues[field.key] = "";
+    inputValues[field.key] = values[field.key] ?? "";
   }
 }
 
@@ -423,8 +478,9 @@ function selectRun(runId: string) {
   if (!run) {
     return;
   }
-  activeTemplateId.value = run.workflowId;
+  activeTemplateId.value = normalizeTemplateId(run.workflowId);
   selectedRunId.value = runId;
+  restoreInputs(run.input);
 }
 
 function clearRuns() {
@@ -441,7 +497,7 @@ function syncRun(run: WorkflowRun, persist: boolean) {
 }
 
 function persistRuns() {
-  localStorage.setItem(workflowRunsStorageKey, JSON.stringify(runs.value.slice(0, 20)));
+  writeStorage(workflowRunsStorageKey, JSON.stringify(runs.value.slice(0, maxStoredRuns)));
 }
 
 function nodeOutput(nodeId: string) {
@@ -472,7 +528,7 @@ function buildInputContext(input: Record<string, string>) {
 function loadRuns(): WorkflowRun[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(workflowRunsStorageKey) ?? "[]");
-    return Array.isArray(parsed) ? parsed.slice(0, 20) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, maxStoredRuns) : [];
   } catch {
     return [];
   }
@@ -494,6 +550,28 @@ function loadImageConfig(): ImageGenerationConfig {
   } catch {
     return defaultImageConfig;
   }
+}
+
+function isImageConfigReady(config: ImageGenerationConfig) {
+  return Boolean(config.provider.trim() && config.baseUrl.trim() && config.model.trim() && config.apiKey.trim());
+}
+
+function normalizeTemplateId(value: string | null) {
+  return value && templates.some((template) => template.id === value) ? value : templates[0].id;
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    error.value = copy.value.storageFailed;
+    return false;
+  }
+}
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}\n...` : value;
 }
 
 function templateName(template: WorkflowTemplate) {
@@ -538,6 +616,14 @@ function formatTime(value: string) {
   return timeFormatter.value.format(new Date(value));
 }
 
+function formatStepCount(value: number) {
+  return props.language === "en-US" ? `${value} ${value === 1 ? "step" : "steps"}` : `${value} 步`;
+}
+
+function formatRunCount(value: number) {
+  return props.language === "en-US" ? `${value} ${value === 1 ? "run" : "runs"}` : `${value} 次运行`;
+}
+
 function templateIcon(templateId: string) {
   const icons = {
     research: GitBranch,
@@ -551,14 +637,10 @@ function templateIcon(templateId: string) {
 
 function nodeIcon(type: WorkflowNodeType) {
   const icons = {
-    input: FileText,
     ai: Bot,
-    transform: Sparkles,
-    condition: GitBranch,
     notes: NotebookPen,
     image: ImagePlus,
     chat: MessageSquareText,
-    output: CheckCircle2,
   };
   return icons[type];
 }
