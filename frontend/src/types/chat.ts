@@ -1,9 +1,30 @@
 export type ProviderFormat = "openai" | "anthropic" | "gemini";
 export type ChatRole = "system" | "user" | "assistant";
+export type ChatPersonaId = "assistant" | "mentor" | "architect" | "critic";
+export type ChatMode = "direct" | "roundtable";
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  kind: "image" | "file";
+  dataUrl?: string;
+}
 
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  authorName?: string;
+  authorTone?: string;
+  attachments?: ChatAttachment[];
+}
+
+export interface ChatSendPayload {
+  content: string;
+  attachments: ChatAttachment[];
+  personaId: ChatPersonaId;
+  mode: ChatMode;
 }
 
 export interface ChatConfig {

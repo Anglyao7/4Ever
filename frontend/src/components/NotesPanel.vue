@@ -8,16 +8,21 @@
       <span class="status-pill online">{{ copy.savedState }}</span>
     </div>
 
-    <div class="notes-workspace">
+    <div class="notes-workspace" @click="closeNoteMenu">
       <aside class="notes-sidebar" :aria-label="copy.draftList">
         <div class="panel-heading compact">
           <div>
-            <p class="eyebrow">Drafts</p>
+            <p class="eyebrow">Library</p>
             <h2>{{ copy.draftList }}</h2>
           </div>
-          <button class="icon-button ghost" type="button" :title="copy.newNote" @click="createNote">
-            <Plus :size="17" />
-          </button>
+          <div class="notes-sidebar-actions">
+            <button class="icon-button ghost" type="button" :title="copy.newGroup" @click.stop="startCreatingGroup">
+              <FolderPlus :size="17" />
+            </button>
+            <button class="icon-button ghost" type="button" :title="copy.newNote" @click.stop="createNote()">
+              <Plus :size="17" />
+            </button>
+          </div>
         </div>
 
         <label class="notes-search">
@@ -25,26 +30,135 @@
           <input v-model.trim="searchQuery" type="search" :placeholder="copy.search" autocomplete="off" />
         </label>
 
-        <div class="note-draft-list">
-          <button
-            v-for="note in filteredNotes"
-            :key="note.id"
-            class="note-draft-card"
-            :class="{ active: note.id === activeNoteId }"
-            type="button"
-            @click="selectNote(note.id)"
-          >
-            <span class="note-draft-icon">
-              <FileText :size="17" />
-            </span>
-            <span class="note-draft-main">
-              <strong>{{ noteTitle(note) }}</strong>
-              <small>{{ notePreview(note) }}</small>
-            </span>
-            <time>{{ formatUpdatedAt(note.updatedAt) }}</time>
+        <form v-if="creatingGroup" class="note-group-form" @submit.prevent.stop="commitNewGroup">
+          <input
+            v-model.trim="groupNameDraft"
+            type="text"
+            :placeholder="copy.groupNamePlaceholder"
+            autocomplete="off"
+          />
+          <button class="icon-button ghost" type="submit" :title="copy.save">
+            <Check :size="16" />
           </button>
+          <button class="icon-button ghost" type="button" :title="copy.cancel" @click.stop="cancelCreatingGroup">
+            <X :size="16" />
+          </button>
+        </form>
 
-          <div v-if="filteredNotes.length === 0" class="notes-empty">
+        <div class="note-group-list">
+          <section v-for="group in visibleGroups" :key="group.id" class="note-group-section">
+            <form
+              v-if="editingGroupId === group.id"
+              class="note-group-header editable"
+              @submit.prevent.stop="commitGroupRename(group.id)"
+            >
+              <Folder :size="16" />
+              <input v-model.trim="groupNameDraft" type="text" :aria-label="copy.renameGroup" autocomplete="off" />
+              <button class="icon-button ghost" type="submit" :title="copy.save">
+                <Check :size="15" />
+              </button>
+              <button class="icon-button ghost" type="button" :title="copy.cancel" @click.stop="cancelGroupRename">
+                <X :size="15" />
+              </button>
+            </form>
+
+            <div v-else class="note-group-header" :class="{ active: activeGroupId === group.id }">
+              <button class="note-group-toggle" type="button" @click.stop="toggleGroupCollapse(group.id)">
+                <ChevronRight v-if="group.collapsed" :size="15" />
+                <ChevronDown v-else :size="15" />
+                <Folder :size="16" />
+                <span>{{ group.name }}</span>
+                <em>{{ groupNoteCount(group.id) }}</em>
+              </button>
+              <div class="note-group-actions">
+                <button class="icon-button ghost" type="button" :title="copy.newNoteInGroup" @click.stop="createNote(group.id)">
+                  <Plus :size="14" />
+                </button>
+                <button class="icon-button ghost" type="button" :title="copy.renameGroup" @click.stop="startEditingGroup(group)">
+                  <Pencil :size="14" />
+                </button>
+              </div>
+            </div>
+
+            <div v-if="!group.collapsed" class="note-group-notes">
+              <article
+                v-for="note in groupedNotes[group.id] ?? []"
+                :key="note.id"
+                class="note-draft-card"
+                :class="{ active: note.id === activeNoteId, pinned: note.pinned }"
+              >
+                <button class="note-draft-pick" type="button" @click.stop="selectNote(note.id)">
+                  <span class="note-draft-icon">
+                    <FileText :size="17" />
+                  </span>
+                  <span class="note-draft-main">
+                    <span class="note-draft-title-line">
+                      <strong>{{ noteTitle(note) }}</strong>
+                      <Pin v-if="note.pinned" :size="13" />
+                    </span>
+                    <small>{{ notePreview(note) }}</small>
+                    <span v-if="noteTags(note).length" class="note-tag-list">
+                      <em v-for="tag in noteTags(note)" :key="tag">#{{ tag }}</em>
+                    </span>
+                  </span>
+                  <time>{{ formatUpdatedAt(note.updatedAt) }}</time>
+                </button>
+
+                <button
+                  class="note-card-menu-trigger"
+                  type="button"
+                  :aria-label="copy.moreOptions"
+                  :title="copy.moreOptions"
+                  @click.stop="toggleNoteMenu(note.id)"
+                >
+                  <MoreHorizontal :size="17" />
+                </button>
+
+                <div v-if="openNoteMenuId === note.id" class="note-more-menu" @click.stop>
+                  <button type="button" @click="startRenamingNote(note)">
+                    <Pencil :size="15" />
+                    <span>{{ copy.rename }}</span>
+                  </button>
+                  <button type="button" @click="toggleNotePin(note.id)">
+                    <Pin :size="15" />
+                    <span>{{ note.pinned ? copy.unpinNote : copy.pinNote }}</span>
+                  </button>
+                  <label class="note-move-select">
+                    <span>{{ copy.moveToGroup }}</span>
+                    <select :value="note.groupId ?? defaultGroupId" @change="handleMoveNoteGroup(note.id, $event)">
+                      <option v-for="targetGroup in noteGroups" :key="targetGroup.id" :value="targetGroup.id">
+                        {{ targetGroup.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <button class="danger" type="button" :disabled="notes.length <= 1" @click="deleteNote(note.id)">
+                    <Trash2 :size="15" />
+                    <span>{{ copy.delete }}</span>
+                  </button>
+                </div>
+
+                <form
+                  v-if="renamingNoteId === note.id"
+                  class="note-rename-form"
+                  @submit.prevent.stop="commitNoteRename(note.id)"
+                >
+                  <input v-model.trim="renameNoteDraft" type="text" :aria-label="copy.rename" autocomplete="off" />
+                  <button class="icon-button ghost" type="submit" :title="copy.save">
+                    <Check :size="15" />
+                  </button>
+                  <button class="icon-button ghost" type="button" :title="copy.cancel" @click.stop="cancelNoteRename">
+                    <X :size="15" />
+                  </button>
+                </form>
+              </article>
+
+              <div v-if="(groupedNotes[group.id] ?? []).length === 0" class="note-group-empty">
+                {{ searchQuery ? copy.empty : copy.emptyGroup }}
+              </div>
+            </div>
+          </section>
+
+          <div v-if="visibleGroups.length === 0" class="notes-empty">
             <StickyNote :size="28" />
             <span>{{ copy.empty }}</span>
           </div>
@@ -53,25 +167,37 @@
 
       <section class="notes-editor-card" :aria-label="copy.editor">
         <div class="notes-editor-toolbar">
-          <label class="note-title-field">
-            <span>{{ copy.titleLabel }}</span>
-            <input
-              v-model="activeNote.title"
-              :placeholder="copy.titlePlaceholder"
-              autocomplete="off"
-              @input="markDraftTouched"
-            />
-          </label>
-
-          <div class="notes-toolbar-actions">
-            <span class="notes-save-meta">
-              <Clock3 :size="15" />
-              {{ lastSavedLabel }}
-            </span>
-            <button class="secondary-button" type="button" :disabled="notes.length <= 1" @click="deleteActiveNote">
-              <Trash2 :size="16" />
-              <span>{{ copy.delete }}</span>
+          <div class="markdown-format-panel" role="toolbar" :aria-label="copy.syntaxTools">
+            <button
+              v-for="action in markdownActions"
+              :key="action.kind"
+              class="markdown-format-button"
+              type="button"
+              :title="action.label"
+              :aria-label="action.label"
+              @pointerdown.prevent.stop
+              @mousedown.prevent.stop
+              @click.prevent.stop="applyMarkdownFormat(action.kind)"
+            >
+              <component :is="action.icon" :size="16" />
             </button>
+          </div>
+
+          <div class="notes-editor-utility">
+            <div class="notes-document-stats" :aria-label="copy.documentStats">
+              <small>{{ readingTimeLabel }}</small>
+              <small v-if="taskSummary.total">{{ taskSummary.completed }}/{{ taskSummary.total }} {{ copy.tasks }}</small>
+              <small>{{ wordCount }} {{ copy.words }}</small>
+            </div>
+            <label class="outline-select-field" :class="{ disabled: !noteOutline.length }">
+              <ListTree :size="15" />
+              <select v-model="selectedOutlineId" :disabled="!noteOutline.length" @change="handleOutlineSelect">
+                <option value="">{{ noteOutline.length ? copy.outlinePlaceholder : copy.noOutline }}</option>
+                <option v-for="item in noteOutline" :key="item.id" :value="item.id">
+                  {{ outlineOptionLabel(item) }}
+                </option>
+              </select>
+            </label>
           </div>
         </div>
 
@@ -79,21 +205,6 @@
           <section class="markdown-editor" :aria-label="copy.markdown">
             <div class="markdown-editor-head">
               <span>{{ copy.markdown }}</span>
-              <div class="markdown-format-panel" role="toolbar" :aria-label="copy.syntaxTools">
-                <button
-                  v-for="action in markdownActions"
-                  :key="action.kind"
-                  class="markdown-format-button"
-                  type="button"
-                  :title="action.label"
-                  :aria-label="action.label"
-                  @pointerdown.prevent.stop
-                  @mousedown.prevent.stop
-                  @click.prevent.stop="applyMarkdownFormat(action.kind)"
-                >
-                  <component :is="action.icon" :size="16" />
-                </button>
-              </div>
             </div>
             <div class="markdown-editor-body">
               <textarea
@@ -117,7 +228,7 @@
                 <PanelRightOpen :size="16" />
                 {{ copy.preview }}
               </span>
-              <small>{{ wordCount }} {{ copy.words }}</small>
+              <span class="markdown-preview-context">{{ activeGroupName }}</span>
             </div>
             <div v-if="activeNote.content.trim()" class="markdown-body" v-html="renderedMarkdown" />
             <div v-else class="markdown-empty">
@@ -139,10 +250,14 @@ import { marked } from "marked";
 import {
   BookOpenText,
   Bold,
-  Clock3,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Code,
   CodeXml,
   FileText,
+  Folder,
+  FolderPlus,
   Heading1,
   Heading2,
   Heading3,
@@ -152,7 +267,11 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  ListTree,
+  MoreHorizontal,
   PanelRightOpen,
+  Pencil,
+  Pin,
   Plus,
   Quote,
   Search,
@@ -161,9 +280,10 @@ import {
   Strikethrough,
   Table,
   Trash2,
+  X,
 } from "lucide-vue-next";
 
-import type { NoteDraft } from "../types/notes";
+import type { NoteDraft, NoteGroup } from "../types/notes";
 
 const props = defineProps<{
   language: "zh-CN" | "en-US";
@@ -171,13 +291,22 @@ const props = defineProps<{
 
 const notesStorageKey = "4ever.notes.drafts";
 const activeNoteStorageKey = "4ever.notes.activeDraft";
+const groupsStorageKey = "4ever.notes.groups";
+const defaultGroupId = "default";
 
-const notes = ref<NoteDraft[]>(loadNotes());
+const noteGroups = ref<NoteGroup[]>(loadNoteGroups());
+const notes = ref<NoteDraft[]>(normalizeNotes(loadNotes(), noteGroups.value));
 const activeNoteId = ref(loadActiveNoteId(notes.value));
 const searchQuery = ref("");
-const draftTouchedAt = ref("");
 const markdownInputRef = ref<HTMLTextAreaElement | null>(null);
 const markdownSelection = ref({ start: 0, end: 0 });
+const selectedOutlineId = ref("");
+const openNoteMenuId = ref<string | null>(null);
+const renamingNoteId = ref<string | null>(null);
+const renameNoteDraft = ref("");
+const creatingGroup = ref(false);
+const editingGroupId = ref<string | null>(null);
+const groupNameDraft = ref("");
 
 type MarkdownFormatKind =
   | "heading-1"
@@ -203,25 +332,31 @@ type MarkdownFormatAction = {
   label: string;
 };
 
+type NoteOutlineItem = {
+  id: string;
+  title: string;
+  level: number;
+  offset: number;
+};
+
 const copy = computed(() =>
   props.language === "en-US"
     ? {
         title: "Notes",
-        draftList: "Drafts",
+        draftList: "Library",
         newNote: "New note",
+        newNoteInGroup: "New note in this group",
+        newGroup: "New group",
         search: "Search notes",
         empty: "No matching drafts",
+        emptyGroup: "No notes in this group",
         editor: "Markdown editor",
-        titleLabel: "Title",
-        titlePlaceholder: "Untitled note",
         markdown: "Markdown",
         contentPlaceholder: "Write Markdown here...",
         preview: "Live preview",
         previewEmpty: "The rendered note appears here as you type.",
         savedState: "Auto-saved locally",
         delete: "Delete",
-        justNow: "Saved just now",
-        savedAt: "Saved",
         words: "words",
         untitled: "Untitled note",
         emptyPreview: "No content yet",
@@ -250,24 +385,39 @@ const copy = computed(() =>
         tableHeaderTwo: "Value",
         tableCellOne: "Item",
         tableCellTwo: "Description",
+        pinNote: "Pin note",
+        unpinNote: "Unpin note",
+        moreOptions: "More options",
+        rename: "Rename",
+        renameGroup: "Rename group",
+        moveToGroup: "Move to group",
+        groupNamePlaceholder: "Group name",
+        defaultGroup: "Inbox",
+        save: "Save",
+        cancel: "Cancel",
+        documentStats: "Document stats",
+        readingTime: "min read",
+        tasks: "tasks",
+        outline: "Outline",
+        outlinePlaceholder: "Jump to heading",
+        noOutline: "No headings",
       }
     : {
         title: "笔记",
-        draftList: "暂存笔记",
+        draftList: "笔记库",
         newNote: "新建笔记",
+        newNoteInGroup: "在此分组新建笔记",
+        newGroup: "新建分组",
         search: "搜索笔记",
         empty: "没有匹配的暂存笔记",
+        emptyGroup: "这个分组还没有笔记",
         editor: "Markdown 编辑器",
-        titleLabel: "标题",
-        titlePlaceholder: "未命名笔记",
         markdown: "Markdown",
         contentPlaceholder: "在这里写 Markdown...",
         preview: "实时渲染",
         previewEmpty: "输入内容后会在这里实时渲染。",
         savedState: "已本地暂存",
         delete: "删除",
-        justNow: "刚刚已暂存",
-        savedAt: "暂存于",
         words: "字",
         untitled: "未命名笔记",
         emptyPreview: "还没有内容",
@@ -296,6 +446,22 @@ const copy = computed(() =>
         tableHeaderTwo: "内容",
         tableCellOne: "项目",
         tableCellTwo: "说明",
+        pinNote: "置顶笔记",
+        unpinNote: "取消置顶",
+        moreOptions: "更多选项",
+        rename: "修改名字",
+        renameGroup: "修改分组名",
+        moveToGroup: "移动分组",
+        groupNamePlaceholder: "分组名称",
+        defaultGroup: "收件箱",
+        save: "保存",
+        cancel: "取消",
+        documentStats: "文档状态",
+        readingTime: "分钟阅读",
+        tasks: "任务",
+        outline: "大纲",
+        outlinePlaceholder: "跳转到标题",
+        noOutline: "暂无标题",
       },
 );
 
@@ -310,12 +476,38 @@ const activeNote = computed<NoteDraft>({
 
 const filteredNotes = computed(() => {
   const query = searchQuery.value.toLowerCase();
-  if (!query) {
-    return notes.value;
+  const matches = query
+    ? notes.value.filter((note) => `${note.title}\n${note.content}`.toLowerCase().includes(query))
+    : notes.value;
+  return [...matches].sort((first, second) => {
+    if (Boolean(first.pinned) !== Boolean(second.pinned)) {
+      return first.pinned ? -1 : 1;
+    }
+    return new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime();
+  });
+});
+
+const groupedNotes = computed<Record<string, NoteDraft[]>>(() => {
+  const groups = Object.fromEntries(noteGroups.value.map((group) => [group.id, [] as NoteDraft[]]));
+  for (const note of filteredNotes.value) {
+    const groupId = resolveGroupId(note.groupId);
+    groups[groupId] = groups[groupId] ?? [];
+    groups[groupId].push(note);
   }
-  return notes.value.filter((note) =>
-    `${note.title}\n${note.content}`.toLowerCase().includes(query),
-  );
+  return groups;
+});
+
+const visibleGroups = computed(() => {
+  if (!searchQuery.value) {
+    return noteGroups.value;
+  }
+  return noteGroups.value.filter((group) => (groupedNotes.value[group.id] ?? []).length > 0);
+});
+
+const activeGroupId = computed(() => resolveGroupId(activeNote.value?.groupId));
+
+const activeGroupName = computed(() => {
+  return noteGroups.value.find((group) => group.id === activeGroupId.value)?.name ?? copy.value.defaultGroup;
 });
 
 const renderedMarkdown = computed(() => {
@@ -325,13 +517,6 @@ const renderedMarkdown = computed(() => {
     gfm: true,
   });
   return DOMPurify.sanitize(parsed);
-});
-
-const lastSavedLabel = computed(() => {
-  if (draftTouchedAt.value) {
-    return copy.value.justNow;
-  }
-  return `${copy.value.savedAt} ${formatUpdatedAt(activeNote.value.updatedAt)}`;
 });
 
 const wordCount = computed(() => {
@@ -344,6 +529,19 @@ const wordCount = computed(() => {
   }
   return content.split(/\s+/).filter(Boolean).length;
 });
+
+const readingTimeLabel = computed(() => {
+  const minutes = Math.max(1, Math.ceil(wordCount.value / (props.language === "zh-CN" ? 420 : 220)));
+  return `${minutes} ${copy.value.readingTime}`;
+});
+
+const taskSummary = computed(() => {
+  const matches = activeNote.value.content.match(/^\s*[-+*]\s+\[[ xX]\]\s+/gm) ?? [];
+  const completed = matches.filter((item) => /\[[xX]\]/.test(item)).length;
+  return { completed, total: matches.length };
+});
+
+const noteOutline = computed<NoteOutlineItem[]>(() => extractOutline(activeNote.value.content));
 
 const markdownActions = computed<MarkdownFormatAction[]>(() => [
   { kind: "heading-1", icon: Heading1, label: copy.value.heading1 },
@@ -372,38 +570,191 @@ watch(
   { deep: true },
 );
 
+watch(
+  noteGroups,
+  (value) => {
+    localStorage.setItem(groupsStorageKey, JSON.stringify(value));
+  },
+  { deep: true },
+);
+
 watch(activeNoteId, (value) => {
   localStorage.setItem(activeNoteStorageKey, value);
   resetMarkdownSelection();
+  selectedOutlineId.value = "";
+  closeNoteMenu();
 });
 
-function createNote() {
+watch(noteOutline, (items) => {
+  if (!items.some((item) => item.id === selectedOutlineId.value)) {
+    selectedOutlineId.value = "";
+  }
+});
+
+function createNote(groupId = activeGroupId.value) {
   const now = new Date().toISOString();
   const note: NoteDraft = {
     id: crypto.randomUUID(),
     title: "",
     content: sampleContent(),
     updatedAt: now,
+    groupId: resolveGroupId(groupId),
   };
+  expandGroup(note.groupId ?? defaultGroupId);
   notes.value = [note, ...notes.value];
   activeNoteId.value = note.id;
   searchQuery.value = "";
-  draftTouchedAt.value = now;
+  openNoteMenuId.value = null;
 }
 
 function selectNote(noteId: string) {
   activeNoteId.value = noteId;
-  draftTouchedAt.value = "";
 }
 
-function deleteActiveNote() {
+function deleteNote(noteId: string) {
   if (notes.value.length <= 1) {
     return;
   }
-  const index = notes.value.findIndex((note) => note.id === activeNoteId.value);
-  notes.value = notes.value.filter((note) => note.id !== activeNoteId.value);
-  activeNoteId.value = notes.value[Math.max(0, index - 1)]?.id ?? notes.value[0].id;
-  draftTouchedAt.value = "";
+  const index = notes.value.findIndex((note) => note.id === noteId);
+  notes.value = notes.value.filter((note) => note.id !== noteId);
+  if (activeNoteId.value === noteId) {
+    activeNoteId.value = notes.value[Math.max(0, index - 1)]?.id ?? notes.value[0].id;
+  }
+  openNoteMenuId.value = null;
+  renamingNoteId.value = null;
+}
+
+function toggleNotePin(noteId: string) {
+  const note = notes.value.find((item) => item.id === noteId);
+  if (!note) {
+    return;
+  }
+  note.pinned = !note.pinned;
+  note.updatedAt = new Date().toISOString();
+  openNoteMenuId.value = null;
+}
+
+function startRenamingNote(note: NoteDraft) {
+  renamingNoteId.value = note.id;
+  renameNoteDraft.value = noteTitle(note);
+  openNoteMenuId.value = null;
+}
+
+function commitNoteRename(noteId: string) {
+  const note = notes.value.find((item) => item.id === noteId);
+  if (!note) {
+    return;
+  }
+  note.title = renameNoteDraft.value.trim();
+  note.updatedAt = new Date().toISOString();
+  renamingNoteId.value = null;
+  renameNoteDraft.value = "";
+}
+
+function cancelNoteRename() {
+  renamingNoteId.value = null;
+  renameNoteDraft.value = "";
+}
+
+function handleMoveNoteGroup(noteId: string, event: Event) {
+  const select = event.target;
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  moveNoteToGroup(noteId, select.value);
+}
+
+function moveNoteToGroup(noteId: string, groupId: string) {
+  const note = notes.value.find((item) => item.id === noteId);
+  if (!note) {
+    return;
+  }
+  note.groupId = resolveGroupId(groupId);
+  note.updatedAt = new Date().toISOString();
+  expandGroup(note.groupId);
+  openNoteMenuId.value = null;
+}
+
+function startCreatingGroup() {
+  creatingGroup.value = true;
+  editingGroupId.value = null;
+  groupNameDraft.value = "";
+  openNoteMenuId.value = null;
+}
+
+function commitNewGroup() {
+  const name = groupNameDraft.value.trim();
+  if (!name) {
+    return;
+  }
+  const now = new Date().toISOString();
+  noteGroups.value = [
+    ...noteGroups.value,
+    {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: now,
+      collapsed: false,
+    },
+  ];
+  creatingGroup.value = false;
+  groupNameDraft.value = "";
+}
+
+function cancelCreatingGroup() {
+  creatingGroup.value = false;
+  groupNameDraft.value = "";
+}
+
+function startEditingGroup(group: NoteGroup) {
+  editingGroupId.value = group.id;
+  creatingGroup.value = false;
+  groupNameDraft.value = group.name;
+  openNoteMenuId.value = null;
+}
+
+function commitGroupRename(groupId: string) {
+  const name = groupNameDraft.value.trim();
+  if (!name) {
+    return;
+  }
+  const group = noteGroups.value.find((item) => item.id === groupId);
+  if (group) {
+    group.name = name;
+  }
+  cancelGroupRename();
+}
+
+function cancelGroupRename() {
+  editingGroupId.value = null;
+  groupNameDraft.value = "";
+}
+
+function toggleGroupCollapse(groupId: string) {
+  const group = noteGroups.value.find((item) => item.id === groupId);
+  if (group) {
+    group.collapsed = !group.collapsed;
+  }
+}
+
+function expandGroup(groupId: string) {
+  const group = noteGroups.value.find((item) => item.id === groupId);
+  if (group) {
+    group.collapsed = false;
+  }
+}
+
+function groupNoteCount(groupId: string) {
+  return notes.value.filter((note) => resolveGroupId(note.groupId) === groupId).length;
+}
+
+function toggleNoteMenu(noteId: string) {
+  openNoteMenuId.value = openNoteMenuId.value === noteId ? null : noteId;
+  renamingNoteId.value = null;
+}
+
+function closeNoteMenu() {
+  openNoteMenuId.value = null;
 }
 
 function markDraftTouched() {
@@ -413,7 +764,6 @@ function markDraftTouched() {
   }
   const updatedAt = new Date().toISOString();
   current.updatedAt = updatedAt;
-  draftTouchedAt.value = updatedAt;
 }
 
 function rememberMarkdownSelection(event?: Event) {
@@ -802,6 +1152,58 @@ function replaceMarkdownContent(
   });
 }
 
+function jumpToOutlineItem(item: NoteOutlineItem) {
+  const textarea = markdownInputRef.value;
+  if (!textarea) {
+    return;
+  }
+  const lineEnd = activeNote.value.content.indexOf("\n", item.offset);
+  const selectionEnd = lineEnd === -1 ? activeNote.value.content.length : lineEnd;
+  nextTick(() => {
+    textarea.focus();
+    textarea.setSelectionRange(item.offset, selectionEnd);
+    textarea.scrollTop = Math.max(0, item.offset * 0.28);
+    rememberMarkdownSelection();
+  });
+}
+
+function handleOutlineSelect() {
+  const item = noteOutline.value.find((outlineItem) => outlineItem.id === selectedOutlineId.value);
+  if (item) {
+    jumpToOutlineItem(item);
+  }
+}
+
+function outlineOptionLabel(item: NoteOutlineItem) {
+  return `${" ".repeat((item.level - 1) * 2)}${item.title}`;
+}
+
+function extractOutline(content: string): NoteOutlineItem[] {
+  const outline: NoteOutlineItem[] = [];
+  const headingPattern = /^(#{1,3})\s+(.+)$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = headingPattern.exec(content)) !== null) {
+    const [, marker, title] = match;
+    outline.push({
+      id: `${match.index}-${title}`,
+      title: title.replace(/[*_`~[\]()]/g, "").trim(),
+      level: marker.length,
+      offset: match.index,
+    });
+  }
+  return outline;
+}
+
+function noteTags(note: NoteDraft) {
+  const tags = new Set<string>();
+  const tagPattern = /(^|\s)#([\p{L}\p{N}_-]{2,24})/gu;
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(`${note.title}\n${note.content}`)) !== null && tags.size < 4) {
+    tags.add(match[2]);
+  }
+  return [...tags];
+}
+
 function noteTitle(note: NoteDraft) {
   return note.title.trim() || copy.value.untitled;
 }
@@ -827,6 +1229,19 @@ function formatUpdatedAt(value: string) {
   }).format(date);
 }
 
+function resolveGroupId(groupId?: string) {
+  return noteGroups.value.some((group) => group.id === groupId) ? groupId ?? defaultGroupId : defaultGroupId;
+}
+
+function normalizeNotes(drafts: NoteDraft[], groups: NoteGroup[]) {
+  const groupIds = new Set(groups.map((group) => group.id));
+  const fallbackGroupId = groupIds.has(defaultGroupId) ? defaultGroupId : groups[0]?.id ?? defaultGroupId;
+  return drafts.map((note) => ({
+    ...note,
+    groupId: note.groupId && groupIds.has(note.groupId) ? note.groupId : fallbackGroupId,
+  }));
+}
+
 function loadNotes(): NoteDraft[] {
   const raw = localStorage.getItem(notesStorageKey);
   if (!raw) {
@@ -840,9 +1255,49 @@ function loadNotes(): NoteDraft[] {
   }
 }
 
+function loadNoteGroups(): NoteGroup[] {
+  const raw = localStorage.getItem(groupsStorageKey);
+  if (!raw) {
+    return [defaultNoteGroup()];
+  }
+  try {
+    const parsed = JSON.parse(raw) as NoteGroup[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [defaultNoteGroup()];
+    }
+    const groups = parsed
+      .filter((group) => group && typeof group.id === "string" && typeof group.name === "string")
+      .map((group) => ({
+        id: group.id,
+        name: group.name.trim() || defaultNoteGroup().name,
+        createdAt: group.createdAt || new Date().toISOString(),
+        collapsed: Boolean(group.collapsed),
+      }));
+    return ensureDefaultGroup(groups);
+  } catch {
+    return [defaultNoteGroup()];
+  }
+}
+
+function ensureDefaultGroup(groups: NoteGroup[]) {
+  if (groups.some((group) => group.id === defaultGroupId)) {
+    return groups;
+  }
+  return [defaultNoteGroup(), ...groups];
+}
+
 function loadActiveNoteId(drafts: NoteDraft[]) {
   const stored = localStorage.getItem(activeNoteStorageKey);
   return drafts.some((note) => note.id === stored) ? stored ?? drafts[0].id : drafts[0].id;
+}
+
+function defaultNoteGroup(): NoteGroup {
+  return {
+    id: defaultGroupId,
+    name: props.language === "en-US" ? "Inbox" : "收件箱",
+    createdAt: new Date().toISOString(),
+    collapsed: false,
+  };
 }
 
 function defaultNote(): NoteDraft {
@@ -851,6 +1306,7 @@ function defaultNote(): NoteDraft {
     title: "Markdown Notes",
     content: sampleContent(),
     updatedAt: new Date().toISOString(),
+    groupId: defaultGroupId,
   };
 }
 

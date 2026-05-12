@@ -367,8 +367,12 @@
                 :loading="loading"
                 :error="error"
                 :language="uiLanguage"
+                :persona-id="chatPersonaId"
+                :mode="chatMode"
                 @send="handleThreadSend"
                 @clear="clearActiveThreadMessages"
+                @persona-change="chatPersonaId = $event"
+                @mode-change="chatMode = $event"
               />
             </section>
           </div>
@@ -465,11 +469,14 @@ import NotesPanel from "../components/NotesPanel.vue";
 import SelfPanel from "../components/SelfPanel.vue";
 import { fetchCurrentUser, fetchHealth, fetchModules, fetchProviders, sendChat, signIn, signUp } from "../services/api";
 import type { AuthUser, SignInPayload, SignUpPayload } from "../types/auth";
-import type { ChatConfig, ChatMessage, ModelProfile, ProviderInfo } from "../types/chat";
+import type { ChatConfig, ChatMessage, ChatMode, ChatPersonaId, ChatSendPayload, ModelProfile, ProviderInfo } from "../types/chat";
 import type { PlatformModule } from "../types/platform";
 
 const storageKey = "4ever.chat.config";
 const messagesKey = "4ever.chat.messages";
+const threadMessagesKey = "4ever.chat.threadMessages";
+const chatPersonaKey = "4ever.chat.persona";
+const chatModeKey = "4ever.chat.mode";
 const modelProfilesKey = "4ever.model.profiles";
 const activeModelProfileKey = "4ever.model.activeProfile";
 const authTokenKey = "4ever.auth.token";
@@ -688,8 +695,10 @@ let errorTimer: number | undefined;
 let statusExpiryTimer: number | undefined;
 const currentTime = ref(Date.now());
 const activeChatThreadId = ref("assistant");
+const chatPersonaId = ref<ChatPersonaId>(loadPreference<ChatPersonaId>(chatPersonaKey, "assistant"));
+const chatMode = ref<ChatMode>(loadPreference<ChatMode>(chatModeKey, "direct"));
 const mobileChatView = ref<"list" | "conversation">("list");
-const threadMessages = ref<Record<string, ChatMessage[]>>(createThreadMessageSamples());
+const threadMessages = ref<Record<string, ChatMessage[]>>(loadThreadMessages());
 
 const activeModuleId = computed(() => (routeId.value === "home" ? "dashboard" : routeId.value));
 const activeModule = computed(() => modules.value.find((module) => module.id === activeModuleId.value));
@@ -743,6 +752,15 @@ const chatThreads = computed<ChatThread[]>(() => [
     detail: uiLanguage.value === "en-US" ? "Contact" : "联系人",
     time: "11:28",
     tone: "green",
+  },
+  {
+    id: "roundtable",
+    type: "group",
+    name: uiLanguage.value === "en-US" ? "AI Roundtable" : "角色议事厅",
+    subtitle: threadPreview("roundtable", uiLanguage.value === "en-US" ? "Four voices, one problem" : "多角色一起拆一个问题"),
+    detail: uiLanguage.value === "en-US" ? "4 AI roles" : "4 个 AI 角色",
+    time: uiLanguage.value === "en-US" ? "Live" : "实时",
+    tone: "blue",
   },
   {
     id: "ideas",
@@ -817,6 +835,14 @@ watch(
 );
 
 watch(
+  threadMessages,
+  (value) => {
+    localStorage.setItem(threadMessagesKey, JSON.stringify(value));
+  },
+  { deep: true },
+);
+
+watch(
   modelProfiles,
   (value) => {
     localStorage.setItem(modelProfilesKey, JSON.stringify(value));
@@ -826,6 +852,14 @@ watch(
 
 watch(uiLanguage, (value) => {
   localStorage.setItem(uiLanguageKey, value);
+});
+
+watch(chatPersonaId, (value) => {
+  localStorage.setItem(chatPersonaKey, value);
+});
+
+watch(chatMode, (value) => {
+  localStorage.setItem(chatModeKey, value);
 });
 
 watch(
@@ -1083,18 +1117,31 @@ function signOut() {
   localStorage.removeItem(authUserKey);
 }
 
-async function handleSend(content: string) {
+async function handleSend(payload: ChatSendPayload) {
   clearError();
-  const nextMessages = [...messages.value, { role: "user", content } satisfies ChatMessage];
+  const userMessage: ChatMessage = {
+    role: "user",
+    content: payload.content,
+    attachments: payload.attachments,
+  };
+  const nextMessages = [...messages.value, userMessage];
   messages.value = nextMessages;
+
+  if (payload.mode === "roundtable") {
+    messages.value = [...nextMessages, ...createRoundtableReplies(payload)];
+    return;
+  }
+
   loading.value = true;
 
   try {
-    const response = await sendChat(config.value, nextMessages);
+    const response = await sendChat(personaChatConfig(payload.personaId), nextMessages);
     messages.value = [
       ...nextMessages,
       {
         role: "assistant",
+        authorName: personaName(payload.personaId),
+        authorTone: payload.personaId,
         content: response.content,
       },
     ];
@@ -1105,22 +1152,26 @@ async function handleSend(content: string) {
   }
 }
 
-async function handleThreadSend(content: string) {
+async function handleThreadSend(payload: ChatSendPayload) {
   clearError();
   if (activeChatThreadId.value === "assistant") {
-    await handleSend(content);
+    await handleSend(payload);
     return;
   }
 
   const threadId = activeChatThreadId.value;
   const existing = threadMessages.value[threadId] ?? [];
+  const userMessage: ChatMessage = {
+    role: "user",
+    content: payload.content,
+    attachments: payload.attachments,
+  };
+  const replies = activeChatThread.value.type === "group" || payload.mode === "roundtable"
+    ? createRoundtableReplies(payload)
+    : [createContactReply(payload)];
   threadMessages.value = {
     ...threadMessages.value,
-    [threadId]: [
-      ...existing,
-      { role: "user", content },
-      { role: "assistant", content: "这条会话会在联系人能力接入后同步真实消息。" },
-    ],
+    [threadId]: [...existing, userMessage, ...replies],
   };
 }
 
@@ -1145,6 +1196,71 @@ function selectChatThread(threadId: string) {
   clearError();
   activeChatThreadId.value = threadId;
   mobileChatView.value = "conversation";
+}
+
+function personaChatConfig(personaId: ChatPersonaId): ChatConfig {
+  return {
+    ...config.value,
+    systemPrompt: `${config.value.systemPrompt}\n\n${personaPrompt(personaId)}`,
+  };
+}
+
+function personaPrompt(personaId: ChatPersonaId) {
+  const prompts: Record<ChatPersonaId, string> = {
+    assistant: "保持简洁、可靠、直接，优先给出可执行答案。",
+    mentor: "用陪伴者口吻回应，先承接情绪，再帮助用户把混乱的想法整理成下一步。",
+    architect: "用系统架构师口吻回应，拆成目标、约束、模块、风险和下一步。",
+    critic: "用严格审稿人口吻回应，指出薄弱假设、潜在失败点和需要验证的证据。",
+  };
+  return prompts[personaId];
+}
+
+function personaName(personaId: ChatPersonaId) {
+  const names: Record<ChatPersonaId, string> = {
+    assistant: uiLanguage.value === "en-US" ? "Assistant" : "助手",
+    mentor: uiLanguage.value === "en-US" ? "Mentor" : "陪伴者",
+    architect: uiLanguage.value === "en-US" ? "Architect" : "架构师",
+    critic: uiLanguage.value === "en-US" ? "Reviewer" : "审稿人",
+  };
+  return names[personaId];
+}
+
+function createRoundtableReplies(payload: ChatSendPayload): ChatMessage[] {
+  const topic = truncatePreview(payload.content);
+  const attachmentLine = payload.attachments.length
+    ? `\n${uiLanguage.value === "en-US" ? "Attachments noted" : "已记录附件"}：${payload.attachments.map((item) => item.name).join("、")}`
+    : "";
+  const replies = uiLanguage.value === "en-US"
+    ? [
+        ["Mentor", "mentor", `I would first separate emotion from decision. For "${topic}", name what matters to you, then choose the smallest next move.${attachmentLine}`],
+        ["Architect", "architect", `I see this as a system: input, constraints, workflow, and feedback. Start by writing the acceptance criteria before expanding scope.${attachmentLine}`],
+        ["Reviewer", "critic", `Weak point: the current goal may be too broad. Define what would count as failure, then test that risk directly.${attachmentLine}`],
+      ]
+    : [
+        ["陪伴者", "mentor", `我会先把情绪和决策分开看。「${topic}」这件事里，先写下你真正介意的点，再决定最小下一步。${attachmentLine}`],
+        ["架构师", "architect", `我会把它拆成输入、约束、流程和反馈。先定验收标准，再扩功能，否则容易越做越散。${attachmentLine}`],
+        ["审稿人", "critic", `薄弱点在于目标可能还太大。先定义什么算失败，再专门验证这个风险。${attachmentLine}`],
+      ];
+  return replies.map(([authorName, authorTone, content]) => ({
+    role: "assistant",
+    authorName,
+    authorTone,
+    content,
+  }));
+}
+
+function createContactReply(payload: ChatSendPayload): ChatMessage {
+  const attachmentLine = payload.attachments.length
+    ? `\n${uiLanguage.value === "en-US" ? "I also saw" : "我也看到了"}：${payload.attachments.map((item) => item.name).join("、")}`
+    : "";
+  return {
+    role: "assistant",
+    authorName: activeChatThread.value.name,
+    authorTone: activeChatThread.value.tone,
+    content: uiLanguage.value === "en-US"
+      ? `Got it. I will keep this thread as a lightweight workspace until real contacts are connected.${attachmentLine}`
+      : `收到。真实联系人接入前，这里先作为轻量会话工作区保留上下文。${attachmentLine}`,
+  };
 }
 
 function showTransientError(message: string) {
@@ -1203,7 +1319,24 @@ function createThreadMessageSamples(): Record<string, ChatMessage[]> {
       { role: "assistant", content: "交耳、虚实、聚合已经可以形成一条使用路径。" },
       { role: "user", content: "下一步再接管理员端。" },
     ],
+    roundtable: [
+      { role: "assistant", authorName: "架构师", authorTone: "architect", content: "把问题丢进来，我会先拆结构。" },
+      { role: "assistant", authorName: "审稿人", authorTone: "critic", content: "我负责找风险和反例。" },
+      { role: "assistant", authorName: "陪伴者", authorTone: "mentor", content: "我负责把人的感受和节奏放回决策里。" },
+    ],
   };
+}
+
+function loadThreadMessages(): Record<string, ChatMessage[]> {
+  const raw = localStorage.getItem(threadMessagesKey);
+  if (!raw) {
+    return createThreadMessageSamples();
+  }
+  try {
+    return { ...createThreadMessageSamples(), ...JSON.parse(raw) };
+  } catch {
+    return createThreadMessageSamples();
+  }
 }
 
 function saveModelProfile(profile: ModelProfile) {

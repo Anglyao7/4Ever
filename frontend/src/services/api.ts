@@ -152,6 +152,13 @@ export async function fetchProviderModels(config: ChatConfig): Promise<ProviderM
 }
 
 export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Promise<ChatResponse> {
+  const outboundMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.attachments?.length
+      ? `${message.content}\n\n${attachmentSummary(message)}`
+      : message.content,
+  }));
+
   const response = await fetch(apiUrl("/api/chat"), {
     method: "POST",
     headers: {
@@ -165,7 +172,7 @@ export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Pro
       system_prompt: config.systemPrompt,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
-      messages,
+      messages: outboundMessages,
     }),
   });
 
@@ -175,6 +182,17 @@ export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Pro
   }
 
   return response.json();
+}
+
+function attachmentSummary(message: ChatMessage) {
+  const attachments = message.attachments ?? [];
+  if (!attachments.length) {
+    return "";
+  }
+  return [
+    "Attached files:",
+    ...attachments.map((attachment) => `- ${attachment.name} (${attachment.type || "file"}, ${attachment.size} bytes)`),
+  ].join("\n");
 }
 
 export async function generateImage(config: ImageGenerationConfig): Promise<ImageGenerationResponse> {
