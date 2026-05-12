@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.env
+*.log
+*.db
+*.sqlite
+*.sqlite3
+.agent-home/
+.learnings/
+frontend-home.png
