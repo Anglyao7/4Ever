@@ -1,13 +1,13 @@
 <template>
-  <section class="self-panel" aria-label="自我">
+  <section class="self-panel" :aria-label="copy.title">
     <div class="module-view-header">
       <div>
         <p class="eyebrow">Self</p>
-        <h1>自我</h1>
+        <h1>{{ copy.title }}</h1>
       </div>
       <span class="status-pill" :class="{ online: user }">
         <UserRound :size="16" />
-        {{ user ? user.display_name : "未登录" }}
+        {{ user ? user.display_name : copy.notSignedIn }}
       </span>
     </div>
 
@@ -16,8 +16,8 @@
         <span class="self-avatar">
           <UserRound :size="28" />
         </span>
-        <h2>建立你的身份</h2>
-        <p>个人简介、日记和账户安全都会从这里开始沉淀。</p>
+        <h2>{{ copy.emptyTitle }}</h2>
+        <p>{{ copy.emptyBody }}</p>
         <div class="self-action-row">
           <button class="secondary-button" type="button" @click="$emit('open-auth', 'sign-in')">Sign in</button>
           <button class="primary-action" type="button" @click="$emit('open-auth', 'sign-up')">Sign up</button>
@@ -27,15 +27,15 @@
       <section class="self-card self-preview-card">
         <div class="self-feature-row">
           <UserRound :size="19" />
-          <span>个人简介</span>
+          <span>{{ copy.profile }}</span>
         </div>
         <div class="self-feature-row">
           <BookOpenText :size="19" />
-          <span>私人日记</span>
+          <span>{{ copy.diary }}</span>
         </div>
         <div class="self-feature-row">
           <KeyRound :size="19" />
-          <span>账户与密码</span>
+          <span>{{ copy.accountPassword }}</span>
         </div>
       </section>
     </div>
@@ -60,7 +60,7 @@
             <UserRound :size="20" />
             <div>
               <p class="eyebrow">Profile</p>
-              <h2>个人简介</h2>
+              <h2>{{ copy.profile }}</h2>
             </div>
           </div>
 
@@ -78,7 +78,7 @@
               <textarea
                 v-model="profileDraft.bio"
                 rows="5"
-                placeholder="写下你想长期保留的自我介绍。"
+                :placeholder="copy.bioPlaceholder"
               />
             </label>
             <p v-if="profileMessage" class="self-message" :class="{ error: profileError }">{{ profileMessage }}</p>
@@ -94,18 +94,18 @@
             <BookOpenText :size="20" />
             <div>
               <p class="eyebrow">Diary</p>
-              <h2>私人日记</h2>
+              <h2>{{ copy.diary }}</h2>
             </div>
           </div>
 
           <form class="self-form-grid" @submit.prevent="addDiaryEntry">
             <label>
               <span>Title</span>
-              <input v-model="diaryDraft.title" placeholder="今天的主题" />
+              <input v-model="diaryDraft.title" :placeholder="copy.diaryTitlePlaceholder" />
             </label>
             <label class="full-field">
               <span>Content</span>
-              <textarea v-model="diaryDraft.content" rows="4" placeholder="写一点只有自己看的内容。" />
+              <textarea v-model="diaryDraft.content" rows="4" :placeholder="copy.diaryContentPlaceholder" />
             </label>
             <button class="primary-action" type="submit">
               <Plus :size="17" />
@@ -113,18 +113,18 @@
             </button>
           </form>
 
-          <div class="diary-list" aria-label="日记列表">
+          <div class="diary-list" :aria-label="copy.diaryList">
             <article v-for="entry in diaryEntries" :key="entry.id" class="diary-entry">
               <div>
                 <time>{{ entry.date }}</time>
                 <h3>{{ entry.title }}</h3>
                 <p>{{ entry.content }}</p>
               </div>
-              <button class="icon-button ghost" type="button" title="删除日记" @click="deleteDiaryEntry(entry.id)">
+              <button class="icon-button ghost" type="button" :title="copy.deleteDiary" @click="deleteDiaryEntry(entry.id)">
                 <Trash2 :size="17" />
               </button>
             </article>
-            <p v-if="!diaryEntries.length" class="self-muted">还没有日记。</p>
+            <p v-if="!diaryEntries.length" class="self-muted">{{ copy.noDiary }}</p>
           </div>
         </section>
 
@@ -133,7 +133,7 @@
             <ShieldCheck :size="20" />
             <div>
               <p class="eyebrow">Security</p>
-              <h2>账户与密码</h2>
+              <h2>{{ copy.accountPassword }}</h2>
             </div>
           </div>
 
@@ -186,6 +186,7 @@ type DiaryEntry = {
 const props = defineProps<{
   user: AuthUser | null;
   authToken: string;
+  language: "zh-CN" | "en-US";
 }>();
 
 const emit = defineEmits<{
@@ -216,10 +217,57 @@ const profileMessage = ref("");
 const passwordMessage = ref("");
 const profileError = ref(false);
 const passwordError = ref(false);
+const copy = computed(() =>
+  props.language === "en-US"
+    ? {
+        title: "Self",
+        notSignedIn: "Not signed in",
+        emptyTitle: "Build your identity",
+        emptyBody: "Your profile, diary, and account security start here.",
+        profile: "Profile",
+        diary: "Private diary",
+        accountPassword: "Account & password",
+        bioPlaceholder: "Write a long-lived introduction for yourself.",
+        diaryTitlePlaceholder: "Today's theme",
+        diaryContentPlaceholder: "Write something only for yourself.",
+        diaryList: "Diary list",
+        deleteDiary: "Delete diary",
+        noDiary: "No diary entries yet.",
+        signInFirst: "Please sign in first.",
+        profileSaved: "Profile saved.",
+        saveFailed: "Save failed.",
+        untitled: "Untitled",
+        passwordMismatch: "The two new passwords do not match.",
+        passwordUpdated: "Password updated.",
+        passwordFailed: "Failed to update password.",
+      }
+    : {
+        title: "自我",
+        notSignedIn: "未登录",
+        emptyTitle: "建立你的身份",
+        emptyBody: "个人简介、日记和账户安全都会从这里开始沉淀。",
+        profile: "个人简介",
+        diary: "私人日记",
+        accountPassword: "账户与密码",
+        bioPlaceholder: "写下你想长期保留的自我介绍。",
+        diaryTitlePlaceholder: "今天的主题",
+        diaryContentPlaceholder: "写一点只有自己看的内容。",
+        diaryList: "日记列表",
+        deleteDiary: "删除日记",
+        noDiary: "还没有日记。",
+        signInFirst: "请先登录。",
+        profileSaved: "个人资料已保存。",
+        saveFailed: "保存失败。",
+        untitled: "无题",
+        passwordMismatch: "两次输入的新密码不一致。",
+        passwordUpdated: "密码已更新。",
+        passwordFailed: "密码更新失败。",
+      },
+);
 
 const initials = computed(() => {
   const name = props.user?.display_name || props.user?.username || "U";
-  return name.slice(0, 2).toUpperCase();
+  return (Array.from(name.trim())[0] ?? "U").toUpperCase();
 });
 
 watch(
@@ -238,7 +286,7 @@ watch(
 
 async function saveProfile() {
   if (!props.user || !props.authToken) {
-    setProfileMessage("请先登录。", true);
+    setProfileMessage(copy.value.signInFirst, true);
     return;
   }
   profileSaving.value = true;
@@ -250,9 +298,9 @@ async function saveProfile() {
     });
     localStorage.setItem(bioKey(updated.id), profileDraft.bio.trim());
     emit("user-updated", updated);
-    setProfileMessage("个人资料已保存。", false);
+    setProfileMessage(copy.value.profileSaved, false);
   } catch (cause) {
-    setProfileMessage(cause instanceof Error ? cause.message : "保存失败。", true);
+    setProfileMessage(cause instanceof Error ? cause.message : copy.value.saveFailed, true);
   } finally {
     profileSaving.value = false;
   }
@@ -262,7 +310,7 @@ function addDiaryEntry() {
   if (!props.user) {
     return;
   }
-  const title = diaryDraft.title.trim() || "无题";
+  const title = diaryDraft.title.trim() || copy.value.untitled;
   const content = diaryDraft.content.trim();
   if (!content) {
     return;
@@ -288,11 +336,11 @@ function deleteDiaryEntry(entryId: string) {
 
 async function savePassword() {
   if (!props.authToken) {
-    setPasswordMessage("请先登录。", true);
+    setPasswordMessage(copy.value.signInFirst, true);
     return;
   }
   if (passwordDraft.new_password !== passwordDraft.confirm_password) {
-    setPasswordMessage("两次输入的新密码不一致。", true);
+    setPasswordMessage(copy.value.passwordMismatch, true);
     return;
   }
   passwordSaving.value = true;
@@ -305,9 +353,9 @@ async function savePassword() {
     passwordDraft.current_password = "";
     passwordDraft.new_password = "";
     passwordDraft.confirm_password = "";
-    setPasswordMessage("密码已更新。", false);
+    setPasswordMessage(copy.value.passwordUpdated, false);
   } catch (cause) {
-    setPasswordMessage(cause instanceof Error ? cause.message : "密码更新失败。", true);
+    setPasswordMessage(cause instanceof Error ? cause.message : copy.value.passwordFailed, true);
   } finally {
     passwordSaving.value = false;
   }

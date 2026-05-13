@@ -1,11 +1,11 @@
 <template>
-  <section class="model-hub-panel" aria-label="聚合">
+  <section class="model-hub-panel" :aria-label="copy.title">
     <div class="module-view-header">
       <div>
         <p class="eyebrow">Aggregation</p>
-        <h1>聚合</h1>
+        <h1>{{ copy.title }}</h1>
       </div>
-      <span class="status-pill online">{{ activeProfile ? `当前：${activeProfile.name}` : "未选择模型" }}</span>
+      <span class="status-pill online">{{ activeProfile ? `${copy.current}: ${activeProfile.name}` : copy.noModel }}</span>
     </div>
 
     <div class="model-hub-grid">
@@ -13,9 +13,9 @@
         <div class="panel-heading compact">
           <div>
             <p class="eyebrow">Profiles</p>
-            <h2>模型配置</h2>
+            <h2>{{ copy.profilesTitle }}</h2>
           </div>
-          <button class="icon-button ghost" type="button" title="新建配置" @click="newDraft">
+          <button class="icon-button ghost" type="button" :title="copy.newConfig" @click="newDraft">
             <Plus :size="17" />
           </button>
         </div>
@@ -32,12 +32,12 @@
             <strong>{{ profile.name }}</strong>
             <span>{{ providerName(profile.provider) }} / {{ profile.model }}</span>
           </div>
-          <small>{{ profile.id === activeProfileId ? "使用中" : "点击切换" }}</small>
+          <small>{{ profile.id === activeProfileId ? copy.inUse : copy.clickSwitch }}</small>
         </button>
 
         <div v-if="profiles.length === 0" class="profile-empty">
           <PlugZap :size="28" />
-          <span>还没有模型配置</span>
+          <span>{{ copy.emptyProfiles }}</span>
         </div>
       </div>
 
@@ -45,18 +45,18 @@
         <div class="panel-heading compact">
           <div>
             <p class="eyebrow">Config</p>
-            <h2>{{ draft.id ? "编辑配置" : "新增配置" }}</h2>
+            <h2>{{ draft.id ? copy.editConfig : copy.addConfig }}</h2>
           </div>
         </div>
 
         <div class="form-grid">
           <label>
-            <span>配置名称</span>
-            <input v-model="draft.name" placeholder="例如：OpenAI 生产环境" autocomplete="off" />
+            <span>{{ copy.configName }}</span>
+            <input v-model="draft.name" :placeholder="copy.configNamePlaceholder" autocomplete="off" />
           </label>
 
           <label>
-            <span>模型格式</span>
+            <span>{{ copy.providerFormat }}</span>
             <select v-model="draft.provider" @change="applyProviderDefaults">
               <option v-for="provider in providers" :key="provider.id" :value="provider.id">
                 {{ providerName(provider.id) }}
@@ -77,7 +77,7 @@
             <button
               class="visibility-toggle"
               type="button"
-              :title="showApiKey ? '隐藏 Key' : '显示 Key'"
+              :title="showApiKey ? copy.hideKey : copy.showKey"
               @click="showApiKey = !showApiKey"
             >
               <EyeOff v-if="showApiKey" :size="16" />
@@ -88,7 +88,7 @@
 
           <label>
             <span>Model</span>
-            <input v-model="draft.model" placeholder="模型名称" autocomplete="off" />
+            <input v-model="draft.model" :placeholder="copy.modelPlaceholder" autocomplete="off" />
           </label>
 
           <label>
@@ -113,25 +113,25 @@
         <div class="form-actions">
           <button class="primary-action" type="button" :disabled="!canSave" @click="saveDraft">
             <Save :size="18" />
-            <span>保存配置</span>
+            <span>{{ copy.saveConfig }}</span>
           </button>
           <button class="secondary-button" type="button" :disabled="testing" @click="testConnection">
             <PlugZap :size="17" />
-            <span>{{ testing ? "测试中" : "测试连接" }}</span>
+            <span>{{ testing ? copy.testing : copy.testConnection }}</span>
           </button>
           <button class="secondary-button" type="button" :disabled="loadingModels" @click="loadModels">
             <ListRestart :size="17" />
-            <span>{{ loadingModels ? "获取中" : "获取模型" }}</span>
+            <span>{{ loadingModels ? copy.loadingModels : copy.fetchModels }}</span>
           </button>
           <button v-if="draft.id" class="secondary-button danger" type="button" @click="deleteDraft">
             <Trash2 :size="17" />
-            <span>删除</span>
+            <span>{{ copy.delete }}</span>
           </button>
         </div>
 
         <p v-if="connectionError" class="error-line inline">{{ connectionError }}</p>
 
-        <div v-if="modelOptions.length" class="model-options" aria-label="模型列表">
+        <div v-if="modelOptions.length" class="model-options" :aria-label="copy.modelList">
           <button
             v-for="model in modelOptions"
             :key="model.id"
@@ -160,6 +160,7 @@ const props = defineProps<{
   activeProfileId: string;
   providers: ProviderInfo[];
   currentConfig: Omit<ModelProfile, "id" | "name">;
+  language: "zh-CN" | "en-US";
 }>();
 
 const emit = defineEmits<{
@@ -180,6 +181,75 @@ const modelOptions = ref<ProviderModel[]>([]);
 
 const activeProfile = computed(() => props.profiles.find((profile) => profile.id === props.activeProfileId));
 const canSave = computed(() => Boolean(draft.name.trim() && draft.model.trim()));
+const copy = computed(() =>
+  props.language === "en-US"
+    ? {
+        title: "Aggregation",
+        current: "Current",
+        noModel: "No model selected",
+        profilesTitle: "Model profiles",
+        newConfig: "New config",
+        inUse: "In use",
+        clickSwitch: "Click to switch",
+        emptyProfiles: "No model profiles yet",
+        editConfig: "Edit config",
+        addConfig: "Add config",
+        configName: "Config name",
+        configNamePlaceholder: "Example: OpenAI production",
+        providerFormat: "Provider format",
+        hideKey: "Hide key",
+        showKey: "Show key",
+        modelPlaceholder: "Model name",
+        saveConfig: "Save config",
+        testing: "Testing",
+        testConnection: "Test connection",
+        loadingModels: "Fetching",
+        fetchModels: "Fetch models",
+        delete: "Delete",
+        modelList: "Model list",
+        switched: "Switched to",
+        saved: "Saved and switched to",
+        deleted: "Config deleted",
+        testFailed: "Connection test failed",
+        fetched: "Fetched",
+        models: "models",
+        noModels: "Connection is healthy, but no models were returned",
+        fetchFailed: "Failed to fetch models",
+      }
+    : {
+        title: "聚合",
+        current: "当前",
+        noModel: "未选择模型",
+        profilesTitle: "模型配置",
+        newConfig: "新建配置",
+        inUse: "使用中",
+        clickSwitch: "点击切换",
+        emptyProfiles: "还没有模型配置",
+        editConfig: "编辑配置",
+        addConfig: "新增配置",
+        configName: "配置名称",
+        configNamePlaceholder: "例如：OpenAI 生产环境",
+        providerFormat: "模型格式",
+        hideKey: "隐藏 Key",
+        showKey: "显示 Key",
+        modelPlaceholder: "模型名称",
+        saveConfig: "保存配置",
+        testing: "测试中",
+        testConnection: "测试连接",
+        loadingModels: "获取中",
+        fetchModels: "获取模型",
+        delete: "删除",
+        modelList: "模型列表",
+        switched: "已切换到",
+        saved: "已保存并切换到",
+        deleted: "已删除配置",
+        testFailed: "连接测试失败",
+        fetched: "已获取",
+        models: "个模型",
+        noModels: "连接正常，但没有返回模型",
+        fetchFailed: "获取模型失败",
+      },
+);
 
 watch(
   () => props.profiles,
@@ -194,7 +264,7 @@ watch(
 function selectProfile(profile: ModelProfile) {
   Object.assign(draft, { ...profile });
   emit("select", profile);
-  notice.value = `已切换到 ${profile.name}`;
+  notice.value = `${copy.value.switched} ${profile.name}`;
 }
 
 function saveDraft() {
@@ -214,7 +284,7 @@ function saveDraft() {
   Object.assign(draft, { ...profile });
   emit("save", profile);
   emit("select", profile);
-  notice.value = `已保存并切换到 ${profile.name}`;
+  notice.value = `${copy.value.saved} ${profile.name}`;
 }
 
 function deleteDraft() {
@@ -224,7 +294,7 @@ function deleteDraft() {
   }
   emit("delete", deletedId);
   Object.assign(draft, emptyDraft());
-  notice.value = "已删除配置";
+  notice.value = copy.value.deleted;
 }
 
 function newDraft() {
@@ -250,7 +320,7 @@ async function testConnection() {
     const response = await testProviderConnection(draftToChatConfig());
     notice.value = `${response.message} 共 ${response.model_count} 个模型。`;
   } catch (cause) {
-    connectionError.value = cause instanceof Error ? cause.message : "连接测试失败";
+    connectionError.value = cause instanceof Error ? cause.message : copy.value.testFailed;
   } finally {
     testing.value = false;
   }
@@ -264,9 +334,11 @@ async function loadModels() {
   try {
     const response = await fetchProviderModels(draftToChatConfig());
     modelOptions.value = response.models;
-    notice.value = response.models.length ? `已获取 ${response.models.length} 个模型` : "连接正常，但没有返回模型";
+    notice.value = response.models.length
+      ? `${copy.value.fetched} ${response.models.length} ${copy.value.models}`
+      : copy.value.noModels;
   } catch (cause) {
-    connectionError.value = cause instanceof Error ? cause.message : "获取模型失败";
+    connectionError.value = cause instanceof Error ? cause.message : copy.value.fetchFailed;
   } finally {
     loadingModels.value = false;
   }

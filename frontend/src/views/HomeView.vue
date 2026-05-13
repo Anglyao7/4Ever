@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell" :class="{ 'intro-finished': introFinished }">
+  <div class="app-shell" :class="{ 'intro-finished': introFinished }" :style="temperatureStyle">
     <Transition name="intro-fade">
       <section v-if="showIntro" class="intro-stage" aria-label="启动动画">
         <div class="intro-noise" aria-hidden="true" />
@@ -24,7 +24,7 @@
           <div class="intro-chips" aria-hidden="true">
             <span>Chat</span>
             <span>Image</span>
-            <span>Models</span>
+            <span>Notes</span>
           </div>
           <div class="intro-meter" aria-hidden="true"><i /></div>
           <div class="intro-lines" aria-hidden="true">
@@ -45,12 +45,12 @@
           </button>
           <button class="secondary-button danger" type="button" @click="signOut">
             <LogOut :size="16" />
-            <span>Sign out</span>
+            <span>{{ uiText.signOut }}</span>
           </button>
         </template>
         <template v-else>
-          <button class="secondary-button" type="button" @click="openAuth('sign-in')">Sign in</button>
-          <button class="primary-action compact" type="button" @click="openAuth('sign-up')">Sign up</button>
+          <button class="secondary-button" type="button" @click="openAuth('sign-in')">{{ uiText.signIn }}</button>
+          <button class="primary-action compact" type="button" @click="openAuth('sign-up')">{{ uiText.signUp }}</button>
         </template>
       </div>
       <main class="landing-hero">
@@ -93,9 +93,9 @@
               <i>.</i>
             </span>
           </h1>
-          <p>你眼中的别人，才是真实的你。</p>
+          <p>{{ uiText.landingQuote }}</p>
           <button class="landing-cta" type="button" @click="enterWorkspace">
-            <span>进入</span>
+            <span>{{ uiText.enter }}</span>
             <ArrowRight :size="19" />
           </button>
         </div>
@@ -115,21 +115,21 @@
 
     <template v-if="introFinished && routeId !== 'home' && !isAuthRoute">
       <header class="topbar module-topbar">
-        <button class="topbar-brand" type="button" title="返回主页" @click="activeModuleId === 'dashboard' ? goHome() : openModule('dashboard')">
+        <button class="topbar-brand" type="button" :title="uiText.backHome" @click="activeModuleId === 'dashboard' ? goHome() : openModule('dashboard')">
           <strong>ForEver</strong>
-          <span>{{ activeModule?.name ?? "Module" }}</span>
+          <span>{{ displayModuleName(activeModuleId) }}</span>
         </button>
 
-        <nav class="topbar-actions" aria-label="页面导航">
+        <nav class="topbar-actions" :aria-label="uiText.pageNav">
           <button
             v-if="activeModuleId !== 'dashboard'"
             class="secondary-button module-return-button"
             type="button"
-            title="返回见微知著"
+            :title="uiText.backInsight"
             @click="openModule('dashboard')"
           >
             <ArrowLeft :size="17" />
-            <span>见微知著</span>
+            <span>{{ displayModuleName('dashboard') }}</span>
           </button>
 
           <div class="user-menu" @click.stop>
@@ -150,14 +150,15 @@
                 <span class="user-avatar large">{{ userInitials }}</span>
                 <div>
                   <strong>{{ dashboardDisplayName }}</strong>
-                  <small>{{ currentUser?.email ?? "未登录" }}</small>
+                  <small>{{ currentUser?.email ?? uiText.notSignedIn }}</small>
+                  <em>{{ currentStatusDisplay }}</em>
                 </div>
               </div>
 
               <div class="user-menu-section">
                 <div class="user-menu-label">
                   <Languages :size="15" />
-                  <span>切换语言</span>
+                  <span>{{ uiText.language }}</span>
                 </div>
                 <div class="segmented-options">
                   <button type="button" :class="{ active: uiLanguage === 'zh-CN' }" @click="setLanguage('zh-CN')">中文</button>
@@ -168,48 +169,114 @@
               <div class="user-menu-section">
                 <div class="user-menu-label">
                   <Sun :size="15" />
-                  <span>显示模式</span>
+                  <span>{{ uiText.displayMode }}</span>
                 </div>
                 <div class="segmented-options three">
-                  <button type="button" :class="{ active: colorMode === 'light' }" @click="setColorMode('light')">白天</button>
-                  <button type="button" :class="{ active: colorMode === 'dark' }" @click="setColorMode('dark')">黑夜</button>
-                  <button type="button" :class="{ active: colorMode === 'system' }" @click="setColorMode('system')">系统</button>
+                  <button type="button" :class="{ active: colorMode === 'light' }" @click="setColorMode('light')">{{ uiText.light }}</button>
+                  <button type="button" :class="{ active: colorMode === 'dark' }" @click="setColorMode('dark')">{{ uiText.dark }}</button>
+                  <button type="button" :class="{ active: colorMode === 'system' }" @click="setColorMode('system')">{{ uiText.system }}</button>
                 </div>
+                <label class="temperature-control">
+                  <span>
+                    <i>{{ uiText.cool }}</i>
+                    <strong>{{ uiText.temperature }}</strong>
+                    <i>{{ uiText.warm }}</i>
+                  </span>
+                  <input v-model.number="colorTemperature" type="range" min="-100" max="100" step="1" />
+                </label>
               </div>
 
               <div class="user-menu-section">
                 <div class="user-menu-label">
                   <CircleDot :size="15" />
-                  <span>设置状态</span>
+                  <span>{{ uiText.statusCurrent }}</span>
                 </div>
-                <select v-model="userStatus" class="user-status-select">
-                  <option value="available">可交流</option>
-                  <option value="focused">专注中</option>
-                  <option value="away">暂离</option>
-                  <option value="busy">请勿打扰</option>
-                </select>
+                <button class="status-open-button" type="button" @click="openStatusBox">
+                  <span>{{ currentStatusDisplay }}</span>
+                </button>
               </div>
 
               <label class="user-toggle-row">
                 <span>
                   <Wifi :size="15" />
-                  是否在线
+                  {{ uiText.online }}
                 </span>
                 <input v-model="userOnline" type="checkbox" />
               </label>
 
               <button class="user-menu-action" type="button" @click="openPreferences">
                 <Settings :size="16" />
-                <span>偏好设置</span>
+                <span>{{ uiText.preferences }}</span>
               </button>
               <button v-if="currentUser" class="user-menu-action danger" type="button" @click="signOutFromMenu">
                 <LogOut :size="16" />
-                <span>退出登录</span>
+                <span>{{ uiText.signOut }}</span>
               </button>
               <button v-else class="user-menu-action" type="button" @click="openAuth('sign-in')">
                 <UserRound :size="16" />
-                <span>登录</span>
+                <span>{{ uiText.signIn }}</span>
               </button>
+            </div>
+
+            <div v-if="statusBoxOpen" class="status-box" role="dialog" :aria-label="uiText.status" @click.stop>
+              <div class="status-box-head">
+                <div>
+                  <p class="eyebrow">{{ uiText.status }}</p>
+                  <h2>{{ draftStatusIcon }} {{ draftStatusText || uiText.statusPlaceholder }}</h2>
+                </div>
+                <button class="icon-button ghost" type="button" :title="uiText.statusCancel" @click="cancelStatusBox">
+                  <ArrowLeft :size="17" />
+                </button>
+              </div>
+
+              <div class="status-icon-grid" :aria-label="uiText.statusIconAria">
+                <button
+                  v-for="option in statusOptions"
+                  :key="option.icon"
+                  type="button"
+                  class="status-icon-option"
+                  :class="{ active: draftStatusIcon === option.icon }"
+                  :title="statusOptionLabel(option)"
+                  @click="selectDraftStatusOption(option)"
+                >
+                  <span aria-hidden="true">{{ option.icon }}</span>
+                  <small>{{ statusOptionLabel(option) }}</small>
+                </button>
+              </div>
+
+              <label class="status-text-field">
+                <span>{{ uiText.status }}</span>
+                <input
+                  v-model.trim="draftStatusText"
+                  class="status-text-input"
+                  type="text"
+                  maxlength="18"
+                  :placeholder="uiText.statusPlaceholder"
+                />
+              </label>
+
+              <div class="status-duration-group">
+                <div class="user-menu-label">
+                  <CircleDot :size="15" />
+                  <span>{{ uiText.statusDuration }}</span>
+                </div>
+                <div class="status-duration-grid" :aria-label="uiText.statusDurationAria">
+                  <button
+                    v-for="option in statusDurationOptions"
+                    :key="option.value"
+                    type="button"
+                    :class="{ active: draftStatusDuration === option.value }"
+                    @click="draftStatusDuration = option.value"
+                  >
+                    {{ statusDurationLabel(option) }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="status-box-actions">
+                <button class="secondary-button" type="button" @click="cancelStatusBox">{{ uiText.statusCancel }}</button>
+                <button class="primary-action compact" type="button" @click="confirmStatusBox">{{ uiText.statusConfirm }}</button>
+              </div>
             </div>
           </div>
         </nav>
@@ -221,25 +288,26 @@
           :modules="modules"
           :backend-online="backendOnline"
           :display-name="dashboardDisplayName"
+          :language="uiLanguage"
           @open="openModule"
         />
 
-        <section v-else-if="activeModuleId === 'chat'" class="chat-page telegram-chat-page" aria-label="交耳">
+        <section v-else-if="activeModuleId === 'chat'" class="chat-page telegram-chat-page" :aria-label="displayModuleName('chat')">
           <div class="telegram-shell" :data-mobile-view="mobileChatView">
-            <aside class="telegram-sidebar" aria-label="最近会话">
+            <aside class="telegram-sidebar" :aria-label="uiText.recentChats">
               <div class="telegram-sidebar-header">
                 <div>
                   <p class="eyebrow">Chat</p>
-                  <h1>交耳</h1>
+                  <h1>{{ displayModuleName('chat') }}</h1>
                 </div>
-                <button class="icon-button ghost" type="button" title="聚合" @click="openModule('provider-hub')">
+                <button class="icon-button ghost" type="button" :title="displayModuleName('provider-hub')" @click="openModule('provider-hub')">
                   <PlugZap :size="18" />
                 </button>
               </div>
 
               <label class="telegram-search">
                 <Search :size="16" />
-                <input type="search" placeholder="搜索" autocomplete="off" />
+                <input type="search" :placeholder="uiText.search" autocomplete="off" />
               </label>
 
               <div class="telegram-thread-list">
@@ -270,7 +338,7 @@
             <section class="telegram-chat-surface" :aria-label="activeChatThread.name">
               <div class="phone-topbar telegram-conversation-topbar">
                 <div class="phone-person">
-                  <button class="icon-button ghost mobile-thread-back" type="button" title="最近聊天" @click="mobileChatView = 'list'">
+                  <button class="icon-button ghost mobile-thread-back" type="button" :title="uiText.recentChats" @click="mobileChatView = 'list'">
                     <ArrowLeft :size="18" />
                   </button>
                   <span class="phone-avatar">
@@ -284,10 +352,10 @@
                 </div>
 
                 <div class="phone-tools">
-                  <button class="icon-button ghost" type="button" title="清空对话" @click="clearActiveThreadMessages">
+                  <button class="icon-button ghost" type="button" :title="uiText.clearChat" @click="clearActiveThreadMessages">
                     <Trash2 :size="18" />
                   </button>
-                  <button class="icon-button ghost" type="button" title="聚合" @click="openModule('provider-hub')">
+                  <button class="icon-button ghost" type="button" :title="displayModuleName('provider-hub')" @click="openModule('provider-hub')">
                     <PlugZap :size="18" />
                   </button>
                 </div>
@@ -298,6 +366,7 @@
                 :messages="activeChatMessages"
                 :loading="loading"
                 :error="error"
+                :language="uiLanguage"
                 @send="handleThreadSend"
                 @clear="clearActiveThreadMessages"
               />
@@ -309,6 +378,7 @@
           v-else-if="activeModuleId === 'image-generation'"
           :backend-online="backendOnline"
           :profiles="modelProfiles"
+          :language="uiLanguage"
         />
 
         <ModelHubPanel
@@ -317,9 +387,15 @@
           :active-profile-id="activeModelProfileId"
           :providers="providers"
           :current-config="config"
+          :language="uiLanguage"
           @save="saveModelProfile"
           @select="selectModelProfile"
           @delete="deleteModelProfile"
+        />
+
+        <NotesPanel
+          v-else-if="activeModuleId === 'notes'"
+          :language="uiLanguage"
         />
 
         <WorkflowPanel
@@ -333,25 +409,26 @@
           v-else-if="activeModuleId === 'admin'"
           :user="currentUser"
           :auth-token="authToken"
+          :language="uiLanguage"
           @open-auth="openAuth"
           @sign-out="signOut"
           @user-updated="handleUserUpdated"
         />
 
-        <section v-else class="placeholder-panel module-page-placeholder" :aria-label="activeModule?.name ?? '模块'">
+        <section v-else class="placeholder-panel module-page-placeholder" :aria-label="displayModuleName(activeModuleId)">
           <div class="module-view-header">
             <div>
               <p class="eyebrow">{{ moduleEnglishName(activeModuleId) }}</p>
-              <h1>{{ activeModule?.name ?? "模块" }}</h1>
+              <h1>{{ displayModuleName(activeModuleId) }}</h1>
             </div>
             <button class="secondary-button" type="button" @click="openModule('dashboard')">
               <LayoutDashboard :size="17" />
-              <span>见微知著</span>
+              <span>{{ displayModuleName('dashboard') }}</span>
             </button>
           </div>
           <div class="placeholder-body">
             <component :is="moduleIcon(activeModuleId)" :size="42" />
-            <h2>{{ activeModule?.description ?? "模块暂不可用。" }}</h2>
+            <h2>{{ displayModuleDescription(activeModuleId) }}</h2>
           </div>
         </section>
       </main>
@@ -372,6 +449,7 @@ import {
   Layers3,
   LogOut,
   MessageSquareText,
+  NotebookPen,
   PlugZap,
   Search,
   Settings,
@@ -390,6 +468,7 @@ import AuthPage from "../components/AuthPage.vue";
 import ImageGenerationPanel from "../components/ImageGenerationPanel.vue";
 import ModelHubPanel from "../components/ModelHubPanel.vue";
 import ModuleDashboard from "../components/ModuleDashboard.vue";
+import NotesPanel from "../components/NotesPanel.vue";
 import SelfPanel from "../components/SelfPanel.vue";
 import WorkflowPanel from "../components/WorkflowPanel.vue";
 import { fetchCurrentUser, fetchHealth, fetchModules, fetchProviders, sendChat, signIn, signUp } from "../services/api";
@@ -405,12 +484,27 @@ const authTokenKey = "4ever.auth.token";
 const authUserKey = "4ever.auth.user";
 const uiLanguageKey = "4ever.ui.language";
 const colorModeKey = "4ever.ui.colorMode";
-const userStatusKey = "4ever.user.status";
+const colorTemperatureKey = "4ever.ui.colorTemperature";
+const userStatusIconKey = "4ever.user.status.icon";
+const userStatusTextKey = "4ever.user.status.text";
+const userStatusExpireAtKey = "4ever.user.status.expireAt";
 const userOnlineKey = "4ever.user.online";
 
 type UiLanguage = "zh-CN" | "en-US";
 type ColorMode = "light" | "dark" | "system";
-type UserStatus = "available" | "focused" | "away" | "busy";
+type StatusOption = {
+  icon: string;
+  label: string;
+  text: string;
+  labelEn: string;
+  textEn: string;
+};
+type StatusDuration = "hour" | "four-hours" | "today" | "day" | "never";
+type StatusDurationOption = {
+  value: StatusDuration;
+  label: string;
+  labelEn: string;
+};
 
 type ChatThread = {
   id: string;
@@ -428,6 +522,7 @@ const moduleRoutes = {
   chat: "chat",
   "image-generation": "image",
   "provider-hub": "aggregation",
+  notes: "notes",
   workflow: "automation",
   admin: "self",
 } as const;
@@ -435,6 +530,127 @@ const moduleRoutes = {
 const routeModules = Object.fromEntries(
   Object.entries(moduleRoutes).map(([moduleId, route]) => [route, moduleId]),
 ) as Record<string, string>;
+
+const statusOptions: StatusOption[] = [
+  { icon: "🌴", label: "度假", text: "在路上", labelEn: "Travel", textEn: "On the road" },
+  { icon: "💻", label: "工作", text: "在工作", labelEn: "Work", textEn: "Working" },
+  { icon: "🍢", label: "美食", text: "觅食中", labelEn: "Food", textEn: "Finding food" },
+  { icon: "☕", label: "休息", text: "慢慢来", labelEn: "Break", textEn: "Taking it slow" },
+  { icon: "📚", label: "学习", text: "读点东西", labelEn: "Study", textEn: "Reading" },
+  { icon: "✨", label: "随想", text: "有点灵感", labelEn: "Ideas", textEn: "Catching ideas" },
+];
+
+const statusDurationOptions: StatusDurationOption[] = [
+  { value: "hour", label: "1 小时", labelEn: "1 hour" },
+  { value: "four-hours", label: "4 小时", labelEn: "4 hours" },
+  { value: "today", label: "到今天结束", labelEn: "Until tonight" },
+  { value: "day", label: "1 天", labelEn: "1 day" },
+  { value: "never", label: "不自动过期", labelEn: "No expiry" },
+];
+
+const uiCopies = {
+  "zh-CN": {
+    signIn: "登录",
+    signUp: "注册",
+    signOut: "退出登录",
+    landingQuote: "你眼中的别人，才是真实的你。",
+    enter: "进入",
+    backHome: "返回主页",
+    backInsight: "返回见微知著",
+    pageNav: "页面导航",
+    notSignedIn: "未登录",
+    language: "切换语言",
+    displayMode: "显示模式",
+    light: "白天",
+    dark: "黑夜",
+    system: "系统",
+    temperature: "冷暖色",
+    cool: "冷",
+    warm: "暖",
+    status: "设置状态",
+    statusFallback: "设置状态",
+    statusUnset: "未设置状态",
+    statusCurrent: "当前状态",
+    statusIconAria: "选择状态图标",
+    statusPlaceholder: "写一句当前状态",
+    statusDuration: "状态时长",
+    statusDurationAria: "选择状态时长",
+    statusConfirm: "确认",
+    statusCancel: "取消",
+    online: "是否在线",
+    preferences: "偏好设置",
+    recentChats: "最近会话",
+    search: "搜索",
+    clearChat: "清空对话",
+    moduleUnavailable: "模块暂不可用。",
+  },
+  "en-US": {
+    signIn: "Sign in",
+    signUp: "Sign up",
+    signOut: "Sign out",
+    landingQuote: "The self you reveal through others is the real you.",
+    enter: "Enter",
+    backHome: "Back home",
+    backInsight: "Back to Insight",
+    pageNav: "Page navigation",
+    notSignedIn: "Not signed in",
+    language: "Language",
+    displayMode: "Display mode",
+    light: "Light",
+    dark: "Dark",
+    system: "System",
+    temperature: "Temperature",
+    cool: "Cool",
+    warm: "Warm",
+    status: "Status",
+    statusFallback: "Set status",
+    statusUnset: "No status set",
+    statusCurrent: "Current status",
+    statusIconAria: "Choose a status icon",
+    statusPlaceholder: "Write your status",
+    statusDuration: "Duration",
+    statusDurationAria: "Choose status duration",
+    statusConfirm: "Confirm",
+    statusCancel: "Cancel",
+    online: "Online",
+    preferences: "Preferences",
+    recentChats: "Recent chats",
+    search: "Search",
+    clearChat: "Clear chat",
+    moduleUnavailable: "This module is not available yet.",
+  },
+} satisfies Record<UiLanguage, Record<string, string>>;
+
+const localizedModules: Record<string, { zh: [string, string]; en: [string, string] }> = {
+  dashboard: {
+    zh: ["见微知著", "查看平台模块、接口状态和扩展入口。"],
+    en: ["Insight", "View modules, API health, and extension entry points."],
+  },
+  chat: {
+    zh: ["交耳", "兼容 OpenAI、Anthropic、Gemini 格式的对话模块。"],
+    en: ["Chat", "A conversational module connected to aggregated model providers."],
+  },
+  "image-generation": {
+    zh: ["虚实", "文本生图、多模型聚合和生成记录能力。"],
+    en: ["Image", "Text-to-image generation with aggregated model configuration."],
+  },
+  "provider-hub": {
+    zh: ["聚合", "统一管理模型供应商、密钥和默认模型。"],
+    en: ["Aggregation", "Manage providers, API keys, and default models in one place."],
+  },
+  notes: {
+    zh: ["笔记", "Markdown 写作、笔记暂存和实时渲染。"],
+    en: ["Notes", "Markdown writing, draft storage, and live rendering."],
+  },
+  workflow: {
+    zh: ["秩序", "自动化流程、任务节点和触发器。"],
+    en: ["Automation", "Orchestrate workflows, task nodes, and triggers."],
+  },
+  admin: {
+    zh: ["自我", "个人简介、日记和账户安全。"],
+    en: ["Self", "Profile, private diary, and account security."],
+  },
+};
 
 const defaultConfig: ChatConfig = {
   provider: "openai",
@@ -462,14 +678,23 @@ const authMode = ref<"sign-in" | "sign-up">(initialRouteId === "sign-up" ? "sign
 const authLoading = ref(false);
 const authError = ref("");
 const userMenuOpen = ref(false);
+const statusBoxOpen = ref(false);
 const uiLanguage = ref<UiLanguage>(loadPreference<UiLanguage>(uiLanguageKey, "zh-CN"));
 const colorMode = ref<ColorMode>(loadPreference<ColorMode>(colorModeKey, "system"));
-const userStatus = ref<UserStatus>(loadPreference<UserStatus>(userStatusKey, "available"));
+const colorTemperature = ref(clampNumber(loadNumberPreference(colorTemperatureKey, 0), -100, 100));
+const userStatusIcon = ref(loadPreference(userStatusIconKey, statusOptions[1].icon));
+const userStatusText = ref(loadPreference(userStatusTextKey, statusOptions[1].text));
+const userStatusExpireAt = ref(loadNumberPreference(userStatusExpireAtKey, 0));
+const draftStatusIcon = ref(userStatusIcon.value);
+const draftStatusText = ref(userStatusText.value);
+const draftStatusDuration = ref<StatusDuration>("day");
 const userOnline = ref(loadBooleanPreference(userOnlineKey, true));
 const backendOnline = ref(false);
 const loading = ref(false);
 const error = ref("");
 let errorTimer: number | undefined;
+let statusExpiryTimer: number | undefined;
+const currentTime = ref(Date.now());
 const activeChatThreadId = ref("assistant");
 const mobileChatView = ref<"list" | "conversation">("list");
 const threadMessages = ref<Record<string, ChatMessage[]>>(createThreadMessageSamples());
@@ -479,15 +704,43 @@ const activeModule = computed(() => modules.value.find((module) => module.id ===
 const modulePageClass = computed(() => `module-page-${activeModuleId.value}`);
 const isAuthRoute = computed(() => routeId.value === "sign-in" || routeId.value === "sign-up");
 const dashboardDisplayName = computed(() => currentUser.value?.display_name || currentUser.value?.username || "访客");
-const userInitials = computed(() => dashboardDisplayName.value.slice(0, 2).toUpperCase());
+const userInitials = computed(() => firstAvatarLetter(dashboardDisplayName.value));
+const uiText = computed(() => uiCopies[uiLanguage.value]);
+const temperatureStyle = computed(() => {
+  const value = colorTemperature.value;
+  const intensity = Math.abs(value) / 100;
+  const overlay = value >= 0 ? "255, 142, 54" : "70, 132, 255";
+  const opacity = (intensity * 0.34).toFixed(3);
+  const panelShift = (intensity * 0.22).toFixed(3);
+  const hue = value >= 0 ? 28 : 218;
+  return {
+    "--temperature-overlay": overlay,
+    "--temperature-opacity": opacity,
+    "--temperature-panel-shift": panelShift,
+    "--temperature-hue": `${hue}deg`,
+  };
+});
+const isStatusActive = computed(() => !userStatusExpireAt.value || userStatusExpireAt.value > currentTime.value);
+const currentStatusDisplay = computed(() => {
+  if (!isStatusActive.value) {
+    return uiText.value.statusUnset;
+  }
+  const matched = statusOptions.find((option) => option.icon === userStatusIcon.value);
+  const storedText = userStatusText.value.trim();
+  const isPresetText = statusOptions.some((option) => option.text === storedText || option.textEn === storedText);
+  const text = isPresetText && matched
+    ? statusOptionText(matched)
+    : storedText || (matched ? statusOptionText(matched) : uiText.value.statusFallback);
+  return `${userStatusIcon.value} ${text}`;
+});
 const chatThreads = computed<ChatThread[]>(() => [
   {
     id: "assistant",
     type: "contact",
-    name: "交耳",
-    subtitle: latestMessagePreview() || "点击开始对话",
-    detail: "AI 助手",
-    time: "现在",
+    name: displayModuleName("chat"),
+    subtitle: latestMessagePreview() || (uiLanguage.value === "en-US" ? "Tap to start a chat" : "点击开始对话"),
+    detail: uiLanguage.value === "en-US" ? "AI assistant" : "AI 助手",
+    time: uiLanguage.value === "en-US" ? "Now" : "现在",
     tone: "ink",
   },
   {
@@ -495,7 +748,7 @@ const chatThreads = computed<ChatThread[]>(() => [
     type: "contact",
     name: "阿宁",
     subtitle: threadPreview("daily", "晚点再把这件事理一下"),
-    detail: "联系人",
+    detail: uiLanguage.value === "en-US" ? "Contact" : "联系人",
     time: "11:28",
     tone: "green",
   },
@@ -504,7 +757,7 @@ const chatThreads = computed<ChatThread[]>(() => [
     type: "group",
     name: "灵感群",
     subtitle: threadPreview("ideas", "把零碎念头先放这里"),
-    detail: "3 位成员",
+    detail: uiLanguage.value === "en-US" ? "3 members" : "3 位成员",
     time: "09:42",
     tone: "blue",
   },
@@ -513,8 +766,8 @@ const chatThreads = computed<ChatThread[]>(() => [
     type: "group",
     name: "ForEver 项目室",
     subtitle: threadPreview("workspace", "聚合、虚实、秩序"),
-    detail: "工作群",
-    time: "周二",
+    detail: uiLanguage.value === "en-US" ? "Work group" : "工作群",
+    time: uiLanguage.value === "en-US" ? "Tue" : "周二",
     tone: "clay",
   },
 ]);
@@ -529,6 +782,9 @@ onMounted(() => {
   window.addEventListener("hashchange", syncRoute);
   window.addEventListener("click", closeUserMenu);
   syncRoute();
+  statusExpiryTimer = window.setInterval(() => {
+    currentTime.value = Date.now();
+  }, 60_000);
 
   const activeProfile = modelProfiles.value.find((profile) => profile.id === activeModelProfileId.value);
   if (activeProfile) {
@@ -547,6 +803,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("hashchange", syncRoute);
   window.removeEventListener("click", closeUserMenu);
   clearErrorTimer();
+  if (statusExpiryTimer) {
+    window.clearInterval(statusExpiryTimer);
+  }
 });
 
 watch(
@@ -586,8 +845,24 @@ watch(
   { immediate: true },
 );
 
-watch(userStatus, (value) => {
-  localStorage.setItem(userStatusKey, value);
+watch(colorTemperature, (value) => {
+  localStorage.setItem(colorTemperatureKey, String(clampNumber(value, -100, 100)));
+});
+
+watch(userStatusIcon, (value) => {
+  localStorage.setItem(userStatusIconKey, value);
+});
+
+watch(userStatusText, (value) => {
+  localStorage.setItem(userStatusTextKey, value);
+});
+
+watch(userStatusExpireAt, (value) => {
+  if (value) {
+    localStorage.setItem(userStatusExpireAtKey, String(value));
+  } else {
+    localStorage.removeItem(userStatusExpireAtKey);
+  }
 });
 
 watch(userOnline, (value) => {
@@ -624,6 +899,7 @@ function readRoute() {
 function syncRoute() {
   const nextRoute = readRoute();
   userMenuOpen.value = false;
+  statusBoxOpen.value = false;
   if (nextRoute === "chat" && routeId.value !== "chat") {
     mobileChatView.value = "list";
   }
@@ -669,10 +945,14 @@ function goHome() {
 
 function toggleUserMenu() {
   userMenuOpen.value = !userMenuOpen.value;
+  if (userMenuOpen.value) {
+    statusBoxOpen.value = false;
+  }
 }
 
 function closeUserMenu() {
   userMenuOpen.value = false;
+  statusBoxOpen.value = false;
 }
 
 function setLanguage(language: UiLanguage) {
@@ -681,6 +961,68 @@ function setLanguage(language: UiLanguage) {
 
 function setColorMode(mode: ColorMode) {
   colorMode.value = mode;
+}
+
+function openStatusBox() {
+  draftStatusIcon.value = isStatusActive.value ? userStatusIcon.value : statusOptions[1].icon;
+  draftStatusText.value = isStatusActive.value ? userStatusText.value : statusOptionText(statusOptions[1]);
+  draftStatusDuration.value = "day";
+  userMenuOpen.value = false;
+  statusBoxOpen.value = true;
+}
+
+function cancelStatusBox() {
+  statusBoxOpen.value = false;
+}
+
+function confirmStatusBox() {
+  userStatusIcon.value = draftStatusIcon.value;
+  userStatusText.value = draftStatusText.value.trim() || statusOptionText(
+    statusOptions.find((option) => option.icon === draftStatusIcon.value) ?? statusOptions[1],
+  );
+  userStatusExpireAt.value = calculateStatusExpireAt(draftStatusDuration.value);
+  currentTime.value = Date.now();
+  statusBoxOpen.value = false;
+}
+
+function selectDraftStatusOption(option: StatusOption) {
+  const currentText = draftStatusText.value.trim();
+  const isPresetText = statusOptions.some((item) => item.text === currentText || item.textEn === currentText);
+  draftStatusIcon.value = option.icon;
+  if (!currentText || isPresetText) {
+    draftStatusText.value = statusOptionText(option);
+  }
+}
+
+function statusOptionLabel(option: StatusOption) {
+  return uiLanguage.value === "en-US" ? option.labelEn : option.label;
+}
+
+function statusOptionText(option: StatusOption) {
+  return uiLanguage.value === "en-US" ? option.textEn : option.text;
+}
+
+function statusDurationLabel(option: StatusDurationOption) {
+  return uiLanguage.value === "en-US" ? option.labelEn : option.label;
+}
+
+function calculateStatusExpireAt(duration: StatusDuration) {
+  const now = new Date();
+  if (duration === "never") {
+    return 0;
+  }
+  if (duration === "hour") {
+    return now.getTime() + 60 * 60 * 1000;
+  }
+  if (duration === "four-hours") {
+    return now.getTime() + 4 * 60 * 60 * 1000;
+  }
+  if (duration === "today") {
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+    return endOfDay.getTime();
+  }
+  return now.getTime() + 24 * 60 * 60 * 1000;
 }
 
 function openPreferences() {
@@ -970,12 +1312,30 @@ function loadBooleanPreference(key: string, fallback: boolean) {
   return raw === "true";
 }
 
+function loadNumberPreference(key: string, fallback: number) {
+  const raw = localStorage.getItem(key);
+  if (raw === null) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function firstAvatarLetter(value: string) {
+  return (Array.from(value.trim())[0] ?? "访").toUpperCase();
+}
+
 function moduleIcon(moduleId: string) {
   const icons = {
     dashboard: LayoutDashboard,
     chat: MessageSquareText,
     "image-generation": Image,
     "provider-hub": PlugZap,
+    notes: NotebookPen,
     workflow: Workflow,
     admin: Shield,
   };
@@ -988,10 +1348,27 @@ function moduleEnglishName(moduleId: string) {
     chat: "Chat",
     "image-generation": "Image",
     "provider-hub": "Aggregation",
+    notes: "Notes",
     workflow: "automation",
     admin: "Self",
   };
   return labels[moduleId as keyof typeof labels] ?? moduleId;
+}
+
+function displayModuleName(moduleId: string) {
+  const moduleCopy = localizedModules[moduleId];
+  if (!moduleCopy) {
+    return activeModule.value?.name ?? "Module";
+  }
+  return uiLanguage.value === "en-US" ? moduleCopy.en[0] : moduleCopy.zh[0];
+}
+
+function displayModuleDescription(moduleId: string) {
+  const moduleCopy = localizedModules[moduleId];
+  if (!moduleCopy) {
+    return activeModule.value?.description ?? uiText.value.moduleUnavailable;
+  }
+  return uiLanguage.value === "en-US" ? moduleCopy.en[1] : moduleCopy.zh[1];
 }
 
 function fallbackModules(): PlatformModule[] {
@@ -1019,6 +1396,12 @@ function fallbackModules(): PlatformModule[] {
       name: "聚合",
       description: "统一管理模型供应商、密钥和默认模型。",
       category: "integration",
+    },
+    {
+      id: "notes",
+      name: "笔记",
+      description: "Markdown 写作、笔记暂存和实时渲染。",
+      category: "productivity",
     },
     {
       id: "workflow",

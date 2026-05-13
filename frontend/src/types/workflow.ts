@@ -2,12 +2,15 @@ export type WorkflowNodeType = "ai" | "notes" | "image" | "chat";
 export type WorkflowRunStatus = "running" | "success" | "failed";
 export type WorkflowNodeResultStatus = "success";
 
+export type WorkflowInputType = "text" | "textarea" | "noteSelect";
+
 export interface WorkflowInputField {
   key: string;
   label: string;
   labelEn: string;
   placeholder: string;
   placeholderEn: string;
+  type?: WorkflowInputType;
   multiline?: boolean;
   required?: boolean;
 }
