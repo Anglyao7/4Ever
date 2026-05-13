@@ -343,6 +343,10 @@ button:disabled {
   background: #70483e;
 }
 
+:root[data-color-mode="dark"] .thread-avatar-gold {
+  background: #7b6834;
+}
+
 :root[data-color-mode="dark"] input,
 :root[data-color-mode="dark"] textarea,
 :root[data-color-mode="dark"] select,
@@ -618,6 +622,10 @@ button:disabled {
 
   :root[data-color-mode="system"] .thread-avatar-clay {
     background: #70483e;
+  }
+
+  :root[data-color-mode="system"] .thread-avatar-gold {
+    background: #7b6834;
   }
 
   :root[data-color-mode="system"] input,
@@ -2119,6 +2127,13 @@ h1 {
   font-size: 22px;
 }
 
+.telegram-sidebar-actions,
+.chat-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .telegram-search {
   position: relative;
   display: block;
@@ -2147,6 +2162,115 @@ h1 {
   gap: 4px;
   padding: 4px 8px 12px;
   overflow-y: auto;
+}
+
+.chat-character-composer,
+.chat-group-composer {
+  margin: 0 14px 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(214, 221, 214, 0.88);
+  border-radius: 8px;
+}
+
+.chat-character-composer textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.chat-tone-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 7px;
+}
+
+.chat-tone-picker button {
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(32, 38, 36, 0.16);
+  border-radius: 7px;
+}
+
+.chat-tone-picker button.active {
+  box-shadow:
+    0 0 0 2px var(--paper),
+    0 0 0 4px var(--ink);
+}
+
+.tone-ink,
+.thread-avatar-ink {
+  background: var(--ink);
+}
+
+.tone-green,
+.thread-avatar-green {
+  background: var(--accent);
+}
+
+.tone-blue,
+.thread-avatar-blue {
+  background: var(--blue);
+}
+
+.tone-clay,
+.thread-avatar-clay {
+  background: var(--clay);
+}
+
+.tone-gold,
+.thread-avatar-gold {
+  background: var(--gold);
+}
+
+.chat-member-picker {
+  max-height: 168px;
+  display: grid;
+  gap: 7px;
+  overflow: auto;
+}
+
+.chat-member-picker label {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(214, 221, 214, 0.78);
+  border-radius: 7px;
+}
+
+.chat-member-picker input {
+  width: 16px;
+  height: 16px;
+}
+
+.telegram-thread-section {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.telegram-thread-section button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .telegram-thread {
@@ -2182,22 +2306,6 @@ h1 {
   place-items: center;
   color: #ffffff;
   border-radius: 8px;
-}
-
-.thread-avatar-ink {
-  background: var(--ink);
-}
-
-.thread-avatar-green {
-  background: var(--accent);
-}
-
-.thread-avatar-blue {
-  background: var(--blue);
-}
-
-.thread-avatar-clay {
-  background: var(--clay);
 }
 
 .thread-main {
@@ -2248,7 +2356,7 @@ h1 {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(214, 221, 214, 0.28) 1px, transparent 1px),
@@ -2259,6 +2367,85 @@ h1 {
 
 .telegram-conversation-topbar {
   background: rgba(251, 250, 247, 0.92);
+}
+
+.active-persona-card {
+  width: min(720px, calc(100% - 40px));
+  min-width: 0;
+  justify-self: center;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin: 12px auto 0;
+  padding: 9px 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(214, 221, 214, 0.82);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(32, 38, 36, 0.06);
+}
+
+.active-persona-card span {
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.active-persona-card strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.active-persona-card p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-detail-popover {
+  position: absolute;
+  top: 84px;
+  right: 20px;
+  z-index: 9;
+  width: min(420px, calc(100% - 40px));
+  color: var(--ink);
+}
+
+.chat-persona-editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(251, 250, 247, 0.96);
+  border: 1px solid rgba(214, 221, 214, 0.92);
+  border-radius: 8px;
+  box-shadow: 0 22px 58px rgba(32, 38, 36, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.chat-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-detail-heading strong,
+.chat-detail-heading span {
+  display: block;
+}
+
+.chat-detail-heading span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-persona-editor textarea {
+  min-height: 132px;
 }
 
 .telegram-chat-panel.chat-panel {
@@ -4836,6 +5023,44 @@ select:focus {
   color: rgba(202, 211, 204, 0.62);
 }
 
+:root[data-color-mode="dark"] .chat-character-composer,
+:root[data-color-mode="dark"] .chat-group-composer,
+:root[data-color-mode="dark"] .chat-persona-editor,
+:root[data-color-mode="dark"] .active-persona-card {
+  color: var(--ink);
+  background: #1b211b;
+  border-color: rgba(202, 211, 204, 0.2);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-color-mode="dark"] .active-persona-card span,
+:root[data-color-mode="dark"] .active-persona-card p,
+:root[data-color-mode="dark"] .chat-detail-heading span,
+:root[data-color-mode="dark"] .telegram-thread-section {
+  color: #cbd6ce;
+}
+
+:root[data-color-mode="dark"] .active-persona-card strong,
+:root[data-color-mode="dark"] .chat-detail-heading strong {
+  color: var(--ink);
+}
+
+:root[data-color-mode="dark"] .chat-member-picker label {
+  color: var(--ink);
+  background: #222922;
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .chat-tone-picker button {
+  border-color: rgba(202, 211, 204, 0.24);
+}
+
+:root[data-color-mode="dark"] .chat-tone-picker button.active {
+  box-shadow:
+    0 0 0 2px #1b211b,
+    0 0 0 4px #e8efe8;
+}
+
 :root[data-color-mode="dark"] .telegram-thread {
   color: var(--ink);
   border-color: transparent;
@@ -5157,6 +5382,44 @@ select:focus {
 
   :root[data-color-mode="system"] .telegram-search input::placeholder {
     color: rgba(202, 211, 204, 0.62);
+  }
+
+  :root[data-color-mode="system"] .chat-character-composer,
+  :root[data-color-mode="system"] .chat-group-composer,
+  :root[data-color-mode="system"] .chat-persona-editor,
+  :root[data-color-mode="system"] .active-persona-card {
+    color: var(--ink);
+    background: #1b211b;
+    border-color: rgba(202, 211, 204, 0.2);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  }
+
+  :root[data-color-mode="system"] .active-persona-card span,
+  :root[data-color-mode="system"] .active-persona-card p,
+  :root[data-color-mode="system"] .chat-detail-heading span,
+  :root[data-color-mode="system"] .telegram-thread-section {
+    color: #cbd6ce;
+  }
+
+  :root[data-color-mode="system"] .active-persona-card strong,
+  :root[data-color-mode="system"] .chat-detail-heading strong {
+    color: var(--ink);
+  }
+
+  :root[data-color-mode="system"] .chat-member-picker label {
+    color: var(--ink);
+    background: #222922;
+    border-color: rgba(202, 211, 204, 0.18);
+  }
+
+  :root[data-color-mode="system"] .chat-tone-picker button {
+    border-color: rgba(202, 211, 204, 0.24);
+  }
+
+  :root[data-color-mode="system"] .chat-tone-picker button.active {
+    box-shadow:
+      0 0 0 2px #1b211b,
+      0 0 0 4px #e8efe8;
   }
 
   :root[data-color-mode="system"] .telegram-thread {

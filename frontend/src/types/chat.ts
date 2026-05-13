@@ -1,7 +1,6 @@
 export type ProviderFormat = "openai" | "anthropic" | "gemini";
 export type ChatRole = "system" | "user" | "assistant";
-export type ChatPersonaId = "assistant" | "mentor" | "architect" | "critic";
-export type ChatMode = "direct" | "roundtable";
+export type ChatThreadType = "contact" | "group";
 
 export interface ChatAttachment {
   id: string;
@@ -23,8 +22,21 @@ export interface ChatMessage {
 export interface ChatSendPayload {
   content: string;
   attachments: ChatAttachment[];
-  personaId: ChatPersonaId;
-  mode: ChatMode;
+}
+
+export interface ChatContact {
+  id: string;
+  name: string;
+  prompt: string;
+  tone: "ink" | "green" | "blue" | "clay" | "gold";
+  description?: string;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  memberIds: string[];
+  createdAt: string;
 }
 
 export interface ChatConfig {

@@ -1,44 +1,5 @@
 <template>
   <section class="chat-panel" :aria-label="copy.panelAria">
-    <div class="chat-heading">
-      <div>
-        <p class="eyebrow">Chat</p>
-        <h2>{{ copy.title }}</h2>
-      </div>
-      <button class="icon-button ghost" type="button" :title="copy.clear" @click="$emit('clear')">
-        <Trash2 :size="18" />
-      </button>
-    </div>
-
-    <div class="chat-control-rail">
-      <div class="chat-persona-strip" role="tablist" :aria-label="copy.personas">
-        <button
-          v-for="persona in personaOptions"
-          :key="persona.id"
-          type="button"
-          :class="{ active: persona.id === personaId }"
-          :title="persona.description"
-          :aria-selected="persona.id === personaId"
-          @click="$emit('persona-change', persona.id)"
-        >
-          <component :is="persona.icon" :size="15" />
-          <span>{{ persona.label }}</span>
-        </button>
-      </div>
-      <div class="chat-mode-toggle" :aria-label="copy.mode">
-        <button
-          v-for="option in modeOptions"
-          :key="option.id"
-          type="button"
-          :class="{ active: option.id === mode }"
-          @click="$emit('mode-change', option.id)"
-        >
-          <component :is="option.icon" :size="15" />
-          <span>{{ option.label }}</span>
-        </button>
-      </div>
-    </div>
-
     <div ref="messageListRef" class="message-list">
       <div v-if="messages.length === 0" class="empty-state">
         <Bot :size="32" />
@@ -127,54 +88,30 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import type { Component } from "vue";
 import {
   Bot,
-  Brain,
   File as FileIcon,
   FileImage,
   LoaderCircle,
-  MessagesSquare,
   Paperclip,
   SendHorizontal,
-  Sparkles,
-  Trash2,
   UserRound,
-  UsersRound,
-  WandSparkles,
   X,
 } from "lucide-vue-next";
 
-import type { ChatAttachment, ChatMessage, ChatMode, ChatPersonaId, ChatSendPayload } from "../types/chat";
+import type { ChatAttachment, ChatMessage, ChatSendPayload } from "../types/chat";
 
 const props = defineProps<{
   messages: ChatMessage[];
   loading: boolean;
   error: string;
   language: "zh-CN" | "en-US";
-  personaId: ChatPersonaId;
-  mode: ChatMode;
 }>();
 
 const emit = defineEmits<{
   send: [payload: ChatSendPayload];
   clear: [];
-  "persona-change": [personaId: ChatPersonaId];
-  "mode-change": [mode: ChatMode];
 }>();
-
-type PersonaOption = {
-  id: ChatPersonaId;
-  icon: Component;
-  label: string;
-  description: string;
-};
-
-type ModeOption = {
-  id: ChatMode;
-  icon: Component;
-  label: string;
-};
 
 const maxAttachments = 4;
 const maxAttachmentSize = 1024 * 1024;
@@ -189,24 +126,10 @@ const copy = computed(() =>
   props.language === "en-US"
     ? {
         panelAria: "Chat",
-        title: "Chat",
-        clear: "Clear chat",
         empty: "What would you like to talk about today?",
         responding: "Responding",
         placeholder: "Type a message",
         send: "Send",
-        personas: "Personas",
-        mode: "Conversation mode",
-        direct: "Direct",
-        roundtable: "Roundtable",
-        assistant: "Assistant",
-        mentor: "Mentor",
-        architect: "Architect",
-        critic: "Critic",
-        assistantDesc: "Balanced assistant",
-        mentorDesc: "Warm and reflective role-play voice",
-        architectDesc: "Structured planner for systems and products",
-        criticDesc: "Sharp reviewer that looks for weak assumptions",
         attach: "Attach files",
         removeAttachment: "Remove attachment",
         attachmentFallback: "Please review these attachments.",
@@ -215,24 +138,10 @@ const copy = computed(() =>
       }
     : {
         panelAria: "Chat 交耳",
-        title: "交耳",
-        clear: "清空对话",
         empty: "今天想聊什么？",
         responding: "正在响应",
         placeholder: "输入消息",
         send: "发送",
-        personas: "角色",
-        mode: "对话模式",
-        direct: "直聊",
-        roundtable: "群聊",
-        assistant: "助手",
-        mentor: "陪伴者",
-        architect: "架构师",
-        critic: "审稿人",
-        assistantDesc: "均衡可靠的默认助手",
-        mentorDesc: "更适合情绪、关系和角色扮演",
-        architectDesc: "更适合系统、产品和计划拆解",
-        criticDesc: "更适合代码 review、反驳和风险排查",
         attach: "添加附件",
         removeAttachment: "移除附件",
         attachmentFallback: "请先看这些附件。",
@@ -240,18 +149,6 @@ const copy = computed(() =>
         attachmentTooLarge: "附件不能超过 1 MB。",
       },
 );
-
-const personaOptions = computed<PersonaOption[]>(() => [
-  { id: "assistant", icon: Sparkles, label: copy.value.assistant, description: copy.value.assistantDesc },
-  { id: "mentor", icon: WandSparkles, label: copy.value.mentor, description: copy.value.mentorDesc },
-  { id: "architect", icon: Brain, label: copy.value.architect, description: copy.value.architectDesc },
-  { id: "critic", icon: MessagesSquare, label: copy.value.critic, description: copy.value.criticDesc },
-]);
-
-const modeOptions = computed<ModeOption[]>(() => [
-  { id: "direct", icon: UserRound, label: copy.value.direct },
-  { id: "roundtable", icon: UsersRound, label: copy.value.roundtable },
-]);
 
 const visibleError = computed(() => attachmentError.value || props.error);
 const canSubmit = computed(() => Boolean(draft.value.trim() || attachments.value.length));
@@ -267,8 +164,6 @@ function submit() {
   const payload: ChatSendPayload = {
     content: draft.value.trim() || copy.value.attachmentFallback,
     attachments: attachments.value,
-    personaId: props.personaId,
-    mode: props.mode,
   };
   emit("send", payload);
   draft.value = "";
