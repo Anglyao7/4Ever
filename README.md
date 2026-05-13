@@ -14,6 +14,13 @@ The current application includes a FastAPI backend, a Vue 3 frontend, authentica
 - Personal Self module for profile, diary drafts, password changes, status, and preferences.
 - FastAPI service with SQLite by default and support for PostgreSQL/MySQL URLs.
 
+## TODO List
+
+1. AI 聊天对象可视化
+2. MiniMax 语音合成 -> 语音聊天
+3. 笔记模块
+4. 全局 AI 代理工作流
+
 ## Repository Layout
 
 ```text

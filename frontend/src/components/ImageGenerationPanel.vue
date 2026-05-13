@@ -1,13 +1,13 @@
 <template>
-  <section class="image-panel" aria-label="Image 虚实">
+  <section class="image-panel" :aria-label="copy.panelAria">
     <div class="module-view-header">
       <div>
         <p class="eyebrow">Image</p>
-        <h1>虚实</h1>
+        <h1>{{ copy.title }}</h1>
       </div>
       <span class="status-pill" :class="{ online: backendOnline }">
         <CheckCircle2 :size="16" />
-        {{ backendOnline ? "API 就绪" : "API 离线" }}
+        {{ backendOnline ? copy.apiReady : copy.apiOffline }}
       </span>
     </div>
 
@@ -15,9 +15,9 @@
       <form class="image-form" @submit.prevent="submit">
         <div class="form-grid">
           <label class="full-field">
-            <span>聚合配置</span>
+            <span>{{ copy.aggregationConfig }}</span>
             <select :value="activeProfileId" @change="applyProfile(($event.target as HTMLSelectElement).value)">
-              <option value="">手动配置</option>
+              <option value="">{{ copy.manualConfig }}</option>
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id">
                 {{ profile.name }} / {{ profile.model }}
               </option>
@@ -51,7 +51,7 @@
             <button
               class="visibility-toggle"
               type="button"
-              :title="showApiKey ? '隐藏 Key' : '显示 Key'"
+              :title="showApiKey ? copy.hideKey : copy.showKey"
               @click="showApiKey = !showApiKey"
             >
               <EyeOff v-if="showApiKey" :size="16" />
@@ -72,7 +72,7 @@
 
         <label class="prompt-field">
           <span>Prompt</span>
-          <textarea v-model="config.prompt" rows="8" placeholder="描述要生成的图片" />
+          <textarea v-model="config.prompt" rows="8" :placeholder="copy.promptPlaceholder" />
         </label>
 
         <p v-if="error" class="error-line inline">{{ error }}</p>
@@ -81,15 +81,15 @@
         <button class="send-button image-submit" type="submit" :disabled="loading || !config.prompt.trim()">
           <LoaderCircle v-if="loading" :size="18" class="spin" />
           <ImagePlus v-else :size="18" />
-          <span>{{ loading ? "提交中" : "生成图片" }}</span>
+          <span>{{ loading ? copy.submitting : copy.generate }}</span>
         </button>
       </form>
 
       <div class="image-preview">
         <div class="preview-empty">
           <ImageIcon :size="42" />
-          <strong>生成预览</strong>
-          <span>等待聚合配置</span>
+          <strong>{{ copy.preview }}</strong>
+          <span>{{ copy.waiting }}</span>
         </div>
       </div>
     </div>
@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { CheckCircle2, Eye, EyeOff, Image as ImageIcon, ImagePlus, KeyRound, LoaderCircle } from "lucide-vue-next";
 
 import { generateImage } from "../services/api";
@@ -107,6 +107,7 @@ import type { ImageGenerationConfig } from "../types/images";
 const props = defineProps<{
   backendOnline: boolean;
   profiles: ModelProfile[];
+  language: "zh-CN" | "en-US";
 }>();
 
 const storageKey = "4ever.image.config";
@@ -126,6 +127,39 @@ const loading = ref(false);
 const error = ref("");
 const result = ref("");
 const showApiKey = ref(false);
+const copy = computed(() =>
+  props.language === "en-US"
+    ? {
+        panelAria: "Image",
+        title: "Image",
+        apiReady: "API ready",
+        apiOffline: "API offline",
+        aggregationConfig: "Aggregation config",
+        manualConfig: "Manual config",
+        hideKey: "Hide key",
+        showKey: "Show key",
+        promptPlaceholder: "Describe the image you want to generate",
+        submitting: "Submitting",
+        generate: "Generate image",
+        preview: "Generation preview",
+        waiting: "Waiting for aggregation config",
+      }
+    : {
+        panelAria: "Image 虚实",
+        title: "虚实",
+        apiReady: "API 就绪",
+        apiOffline: "API 离线",
+        aggregationConfig: "聚合配置",
+        manualConfig: "手动配置",
+        hideKey: "隐藏 Key",
+        showKey: "显示 Key",
+        promptPlaceholder: "描述要生成的图片",
+        submitting: "提交中",
+        generate: "生成图片",
+        preview: "生成预览",
+        waiting: "等待聚合配置",
+      },
+);
 
 watch(
   config,

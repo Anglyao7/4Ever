@@ -1,9 +1,42 @@
 export type ProviderFormat = "openai" | "anthropic" | "gemini";
 export type ChatRole = "system" | "user" | "assistant";
+export type ChatThreadType = "contact" | "group";
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  kind: "image" | "file";
+  dataUrl?: string;
+}
 
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  authorName?: string;
+  authorTone?: string;
+  attachments?: ChatAttachment[];
+}
+
+export interface ChatSendPayload {
+  content: string;
+  attachments: ChatAttachment[];
+}
+
+export interface ChatContact {
+  id: string;
+  name: string;
+  prompt: string;
+  tone: "ink" | "green" | "blue" | "clay" | "gold";
+  description?: string;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  memberIds: string[];
+  createdAt: string;
 }
 
 export interface ChatConfig {
