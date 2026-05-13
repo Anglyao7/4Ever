@@ -439,9 +439,35 @@ async function runAiNode(node: WorkflowNode, context: string) {
 }
 
 async function runImageNode(context: string) {
-  const prompt = context.slice(-1800);
+  const prompt = extractImagePrompt(context);
   const response = await generateImage({ ...loadImageConfig(), prompt });
-  return `${copy.value.imageQueued}\n${response.message}`;
+  return formatImageWorkflowOutput(response, prompt);
+}
+
+function extractImagePrompt(context: string) {
+  const match = context.match(/FINAL_PROMPT\s*:?\s*([\s\S]*?)(?:\n\s*(?:NEGATIVE_PROMPT|STYLE_TAGS|COMPOSITION_NOTES|MODEL_HINTS|REVISION_CHECKLIST)\s*:|$)/i);
+  const prompt = match?.[1]?.trim();
+  return truncateText(prompt || context.slice(-1800), 4000);
+}
+
+function formatImageWorkflowOutput(response: Awaited<ReturnType<typeof generateImage>>, prompt: string) {
+  const images = response.images ?? [];
+  const lines = [copy.value.imageQueued, `Status: ${response.status}`, response.message, `Images: ${images.length}`];
+  images.forEach((image, index) => {
+    const label = `${index + 1}.`;
+    if (image.url) {
+      lines.push(`${label} ${image.url}`);
+    } else if (image.b64_json) {
+      lines.push(`${label} Base64 image returned (${image.b64_json.length} chars).`);
+    } else {
+      lines.push(`${label} Image returned without preview data.`);
+    }
+    if (image.revised_prompt) {
+      lines.push(`Revised prompt: ${image.revised_prompt}`);
+    }
+  });
+  lines.push("", "Prompt used:", prompt);
+  return lines.join("\n");
 }
 
 function saveNote(node: WorkflowNode, context: string, input: Record<string, string>) {
@@ -764,10 +790,10 @@ function workflowTemplates(): WorkflowTemplate[] {
     },
     {
       id: "image",
-      name: "图片创作流",
-      nameEn: "Image creation",
-      description: "把想法扩写成图片 prompt，并提交给图片生成模块。",
-      descriptionEn: "Expand an idea into an image prompt and submit it to image generation.",
+      name: "视觉创意生产线",
+      nameEn: "Visual creative pipeline",
+      description: "把粗略想法变成创意简报、三套视觉方向、最终 Prompt、生成结果和可复用笔记。",
+      descriptionEn: "Turn a rough idea into a creative brief, three visual directions, a final prompt, generated output, and a reusable note.",
       category: "创作",
       categoryEn: "Creation",
       inputs: [
@@ -780,25 +806,75 @@ function workflowTemplates(): WorkflowTemplate[] {
           multiline: true,
           required: true,
         },
+        {
+          key: "usage",
+          label: "用途",
+          labelEn: "Usage",
+          placeholder: "例如：头像、海报、文章封面、小红书首图、产品概念图。",
+          placeholderEn: "Example: avatar, poster, article cover, social post, product concept.",
+        },
+        {
+          key: "style",
+          label: "风格偏好",
+          labelEn: "Style preference",
+          placeholder: "例如：电影感、商业摄影、东方赛博、极简、胶片。",
+          placeholderEn: "Example: cinematic, editorial photo, cyber-oriental, minimal, film look.",
+        },
+        {
+          key: "constraints",
+          label: "限制与禁忌",
+          labelEn: "Constraints",
+          placeholder: "例如：不要文字、避免恐怖元素、必须保留蓝绿色、适合方图。",
+          placeholderEn: "Example: no text, avoid horror, keep teal tones, square format.",
+          multiline: true,
+        },
       ],
       nodes: [
         {
-          id: "prompt",
+          id: "creative-brief",
           type: "ai",
-          title: "扩写 Prompt",
-          titleEn: "Expand prompt",
-          description: "生成可直接用于图片模型的描述。",
-          descriptionEn: "Create a prompt ready for an image model.",
-          prompt: "请把这个画面想法扩写成高质量图片生成 prompt，包含主体、场景、光线、镜头、风格和负面约束。",
-          promptEn: "Expand this image idea into a high-quality image prompt with subject, scene, lighting, camera, style, and negative constraints.",
+          title: "生成创意简报",
+          titleEn: "Build creative brief",
+          description: "明确用途、受众、情绪、必须元素和避坑点。",
+          descriptionEn: "Clarify usage, audience, mood, must-have elements, and constraints.",
+          prompt: "你是资深视觉创意总监。请基于输入生成一份图片创作简报，必须包含：1.核心画面目标；2.目标受众与使用场景；3.情绪和叙事张力；4.必须出现的元素；5.必须避免的元素；6.推荐构图方向；7.最可能节约试错时间的判断。输出要具体，不要泛泛而谈。",
+          promptEn: "Act as a senior visual creative director. Create an image production brief with: 1. core visual goal; 2. audience and usage context; 3. mood and narrative tension; 4. must-have elements; 5. avoid list; 6. recommended composition direction; 7. the judgment most likely to reduce iteration time. Be specific, not generic.",
+        },
+        {
+          id: "visual-directions",
+          type: "ai",
+          title: "提出三套方向",
+          titleEn: "Create three directions",
+          description: "给出商业稳妥、电影叙事和实验吸睛三种方案。",
+          descriptionEn: "Produce commercial-safe, cinematic-storytelling, and bold-experimental options.",
+          prompt: "基于上面的创意简报，提出三套差异明显的视觉方向：A 商业稳妥版、B 电影叙事版、C 实验吸睛版。每套都写清：场景、主体、构图、光线、色彩、镜头/质感、为什么它适合这个用途、潜在风险。最后推荐最值得先生成的一套，并说明原因。",
+          promptEn: "Based on the creative brief, propose three distinct directions: A commercial-safe, B cinematic-storytelling, C bold-experimental. For each, specify scene, subject, composition, lighting, palette, camera/texture, why it fits the usage, and risks. End by recommending the first direction to generate and why.",
+        },
+        {
+          id: "prompt-pack",
+          type: "ai",
+          title: "打包最终 Prompt",
+          titleEn: "Package final prompt",
+          description: "把最佳方向整理为可直接生图的 Prompt 包。",
+          descriptionEn: "Convert the best direction into a generation-ready prompt pack.",
+          prompt: "请把推荐方向整理成图片模型可直接使用的最终 Prompt 包。必须严格使用以下字段名，并让 FINAL_PROMPT 自包含、具体、适合直接提交给图片模型。不要输出额外分析。\nFINAL_PROMPT:\nNEGATIVE_PROMPT:\nSTYLE_TAGS:\nCOMPOSITION_NOTES:\nMODEL_HINTS:\nREVISION_CHECKLIST:",
+          promptEn: "Convert the recommended direction into a generation-ready image prompt pack. Use these exact field names, and make FINAL_PROMPT self-contained, specific, and ready to submit to an image model. Do not include extra analysis.\nFINAL_PROMPT:\nNEGATIVE_PROMPT:\nSTYLE_TAGS:\nCOMPOSITION_NOTES:\nMODEL_HINTS:\nREVISION_CHECKLIST:",
         },
         {
           id: "image",
           type: "image",
-          title: "提交生图",
-          titleEn: "Submit image",
-          description: "调用图片生成接口。",
-          descriptionEn: "Call the image generation endpoint.",
+          title: "生成首版图片",
+          titleEn: "Generate first image",
+          description: "提取 FINAL_PROMPT 并调用图片生成接口。",
+          descriptionEn: "Extract FINAL_PROMPT and call the image generation endpoint.",
+        },
+        {
+          id: "save-note",
+          type: "notes",
+          title: "保存创作包",
+          titleEn: "Save production package",
+          description: "把简报、方向、Prompt 和生成结果保存到笔记。",
+          descriptionEn: "Save the brief, directions, prompt, and generation result to Notes.",
         },
       ],
     },
