@@ -543,6 +543,13 @@
           :language="uiLanguage"
         />
 
+        <WorkflowPanel
+          v-else-if="activeModuleId === 'workflow'"
+          :backend-online="backendOnline"
+          :current-config="config"
+          :language="uiLanguage"
+        />
+
         <SelfPanel
           v-else-if="activeModuleId === 'admin'"
           :user="currentUser"
@@ -613,6 +620,7 @@ import ModelHubPanel from "../components/ModelHubPanel.vue";
 import ModuleDashboard from "../components/ModuleDashboard.vue";
 import NotesPanel from "../components/NotesPanel.vue";
 import SelfPanel from "../components/SelfPanel.vue";
+import WorkflowPanel from "../components/WorkflowPanel.vue";
 import { fetchCurrentUser, fetchHealth, fetchModules, fetchProviders, sendChat, signIn, signUp } from "../services/api";
 import type { AuthUser, SignInPayload, SignUpPayload } from "../types/auth";
 import type { ChatConfig, ChatContact, ChatGroup, ChatMessage, ChatSendPayload, ChatThreadType, ModelProfile, ProviderInfo } from "../types/chat";
