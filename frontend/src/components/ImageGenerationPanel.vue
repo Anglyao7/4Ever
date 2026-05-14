@@ -86,7 +86,17 @@
       </form>
 
       <div class="image-preview">
-        <div class="preview-empty">
+        <div v-if="generatedImages.length" class="generated-image-grid">
+          <article v-for="(image, index) in generatedImages" :key="imageKey(image, index)" class="generated-image-card">
+            <img v-if="imageSource(image)" :src="imageSource(image)" :alt="formatImageAlt(index)" />
+            <div v-else class="generated-image-missing">
+              <ImageIcon :size="34" />
+              <span>{{ copy.noPreview }}</span>
+            </div>
+            <p v-if="image.revised_prompt">{{ image.revised_prompt }}</p>
+          </article>
+        </div>
+        <div v-else class="preview-empty">
           <ImageIcon :size="42" />
           <strong>{{ copy.preview }}</strong>
           <span>{{ copy.waiting }}</span>
@@ -102,7 +112,7 @@ import { CheckCircle2, Eye, EyeOff, Image as ImageIcon, ImagePlus, KeyRound, Loa
 
 import { generateImage } from "../services/api";
 import type { ModelProfile } from "../types/chat";
-import type { ImageGenerationConfig } from "../types/images";
+import type { GeneratedImage, ImageGenerationConfig } from "../types/images";
 
 const props = defineProps<{
   backendOnline: boolean;
@@ -126,6 +136,7 @@ const activeProfileId = ref(localStorage.getItem(activeProfileKey) ?? "");
 const loading = ref(false);
 const error = ref("");
 const result = ref("");
+const generatedImages = ref<GeneratedImage[]>([]);
 const showApiKey = ref(false);
 const copy = computed(() =>
   props.language === "en-US"
@@ -143,6 +154,8 @@ const copy = computed(() =>
         generate: "Generate image",
         preview: "Generation preview",
         waiting: "Waiting for aggregation config",
+        noPreview: "Image returned without preview data",
+        imageAlt: "Generated image",
       }
     : {
         panelAria: "Image 虚实",
@@ -158,6 +171,8 @@ const copy = computed(() =>
         generate: "生成图片",
         preview: "生成预览",
         waiting: "等待聚合配置",
+        noPreview: "图片已返回，但没有可预览数据",
+        imageAlt: "生成图片",
       },
 );
 
@@ -212,15 +227,35 @@ async function submit() {
   loading.value = true;
   error.value = "";
   result.value = "";
+  generatedImages.value = [];
 
   try {
     const response = await generateImage(config);
     result.value = response.message;
+    generatedImages.value = response.images ?? [];
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : "生成请求失败";
   } finally {
     loading.value = false;
   }
+}
+
+function imageSource(image: GeneratedImage) {
+  if (image.url) {
+    return image.url;
+  }
+  if (image.b64_json) {
+    return `data:image/png;base64,${image.b64_json}`;
+  }
+  return "";
+}
+
+function imageKey(image: GeneratedImage, index: number) {
+  return image.url || image.revised_prompt || `${index}`;
+}
+
+function formatImageAlt(index: number) {
+  return `${copy.value.imageAlt} ${index + 1}`;
 }
 
 function loadConfig(): ImageGenerationConfig {

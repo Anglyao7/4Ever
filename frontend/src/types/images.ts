@@ -7,8 +7,15 @@ export interface ImageGenerationConfig {
   prompt: string;
 }
 
+export interface GeneratedImage {
+  url?: string;
+  b64_json?: string;
+  revised_prompt?: string;
+}
+
 export interface ImageGenerationResponse {
   status: string;
   message: string;
+  images?: GeneratedImage[];
+  prompt?: string;
 }
-

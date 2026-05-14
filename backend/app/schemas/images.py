@@ -12,7 +12,14 @@ class ImageGenerationRequest(BaseModel):
     base_url: Optional[str] = None
 
 
+class GeneratedImage(BaseModel):
+    url: Optional[str] = None
+    b64_json: Optional[str] = None
+    revised_prompt: Optional[str] = None
+
+
 class ImageGenerationResponse(BaseModel):
     status: str
     message: str
-
+    images: list[GeneratedImage] = []
+    prompt: Optional[str] = None
