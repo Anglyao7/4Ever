@@ -140,14 +140,20 @@
               :aria-expanded="userMenuOpen"
               @click.stop="toggleUserMenu"
             >
-              <span class="user-avatar">{{ userInitials }}</span>
+              <span class="user-avatar">
+                <img v-if="currentUserAvatarUrl" :src="currentUserAvatarUrl" :alt="dashboardDisplayName" />
+                <span v-else>{{ userInitials }}</span>
+              </span>
               <span class="user-menu-name">{{ dashboardDisplayName }}</span>
               <ChevronDown :size="16" />
             </button>
 
             <div v-if="userMenuOpen" class="user-dropdown" role="menu">
               <div class="user-dropdown-head">
-                <span class="user-avatar large">{{ userInitials }}</span>
+                <span class="user-avatar large">
+                  <img v-if="currentUserAvatarUrl" :src="currentUserAvatarUrl" :alt="dashboardDisplayName" />
+                  <span v-else>{{ userInitials }}</span>
+                </span>
                 <div>
                   <strong>{{ dashboardDisplayName }}</strong>
                   <small>{{ currentUser?.email ?? uiText.notSignedIn }}</small>
@@ -301,14 +307,8 @@
                   <h1>{{ displayModuleName('chat') }}</h1>
                 </div>
                 <div class="telegram-sidebar-actions">
-                  <button class="icon-button ghost" type="button" :title="uiText.newCharacter" @click.stop="startContactComposer">
+                  <button class="icon-button ghost" type="button" :title="uiText.newChat" @click.stop="toggleChatCreateMenu">
                     <UserPlus :size="18" />
-                  </button>
-                  <button class="icon-button ghost" type="button" :title="uiText.newGroup" @click.stop="startGroupComposer">
-                    <MessageCirclePlus :size="18" />
-                  </button>
-                  <button class="icon-button ghost" type="button" :title="displayModuleName('provider-hub')" @click="openModule('provider-hub')">
-                    <PlugZap :size="18" />
                   </button>
                 </div>
               </div>
@@ -318,55 +318,20 @@
                 <input v-model.trim="chatSearchQuery" type="search" :placeholder="uiText.search" autocomplete="off" />
               </label>
 
-              <form v-if="contactComposerOpen" class="chat-character-composer" @submit.prevent="createChatContact">
-                <input v-model.trim="contactDraftName" type="text" :placeholder="uiText.contactName" autocomplete="off" />
-                <div class="chat-tone-picker" :aria-label="uiText.characterTone">
-                  <button
-                    v-for="tone in chatToneOptions"
-                    :key="tone"
-                    type="button"
-                    :class="[`tone-${tone}`, { active: contactDraftTone === tone }]"
-                    @click="contactDraftTone = tone"
-                  />
-                </div>
-                <textarea v-model="contactDraftPrompt" rows="4" :placeholder="uiText.personalityPlaceholder" />
-                <div class="chat-compact-actions">
-                  <button class="secondary-button" type="button" @click="cancelContactComposer">{{ uiText.statusCancel }}</button>
-                  <button class="primary-action" type="submit">{{ uiText.create }}</button>
-                </div>
-              </form>
-
-              <form v-if="groupComposerOpen" class="chat-group-composer" @submit.prevent="createChatGroup">
-                <input v-model.trim="groupDraftName" type="text" :placeholder="uiText.groupNamePlaceholder" autocomplete="off" />
-                <div class="chat-member-picker">
-                  <label v-for="contact in chatContacts" :key="contact.id">
-                    <input
-                      type="checkbox"
-                      :checked="groupDraftMemberIds.includes(contact.id)"
-                      @change="toggleGroupDraftMember(contact.id)"
-                    />
-                    <span>{{ contact.name }}</span>
-                  </label>
-                </div>
-                <div class="chat-compact-actions">
-                  <button class="secondary-button" type="button" @click="cancelGroupComposer">{{ uiText.statusCancel }}</button>
-                  <button class="primary-action" type="submit">{{ uiText.create }}</button>
-                </div>
-              </form>
-
               <div class="telegram-thread-list">
-                <div class="telegram-thread-section">
-                  <span>{{ uiText.contacts }}</span>
-                </div>
                 <button
-                  v-for="thread in contactThreads"
+                  v-for="thread in chatThreads"
                   :key="thread.id"
                   class="telegram-thread"
                   :class="{ active: activeChatThreadId === thread.id }"
                   type="button"
                   @click="selectChatThread(thread.id)"
                 >
-                  <span class="thread-avatar" :class="`thread-avatar-${thread.tone}`">
+                  <span v-if="thread.type === 'contact' && thread.kind === 'human'" class="user-avatar thread-avatar">
+                    <img v-if="thread.avatarUrl" :src="thread.avatarUrl" :alt="thread.name" />
+                    <span v-else>{{ thread.avatarText }}</span>
+                  </span>
+                  <span v-else class="thread-avatar" :class="`thread-avatar-${thread.tone}`">
                     <UsersRound v-if="thread.type === 'group'" :size="18" />
                     <UserRound v-else :size="18" />
                   </span>
@@ -379,34 +344,10 @@
                     <i v-if="thread.unread">{{ thread.unread }}</i>
                   </span>
                 </button>
-
-                <div class="telegram-thread-section">
-                  <span>{{ uiText.groups }}</span>
-                  <button type="button" @click.stop="startGroupComposer">
-                    <MessageCirclePlus :size="14" />
-                    {{ uiText.newGroup }}
-                  </button>
+                <div v-if="chatThreads.length === 0" class="chat-list-empty">
+                  <Search :size="22" />
+                  <p>{{ uiText.noChatsFound }}</p>
                 </div>
-                <button
-                  v-for="thread in groupThreads"
-                  :key="thread.id"
-                  class="telegram-thread"
-                  :class="{ active: activeChatThreadId === thread.id }"
-                  type="button"
-                  @click="selectChatThread(thread.id)"
-                >
-                  <span class="thread-avatar" :class="`thread-avatar-${thread.tone}`">
-                    <UsersRound :size="18" />
-                  </span>
-                  <span class="thread-main">
-                    <strong>{{ thread.name }}</strong>
-                    <small>{{ thread.subtitle }}</small>
-                  </span>
-                  <span class="thread-meta">
-                    <time>{{ thread.time }}</time>
-                    <i v-if="thread.unread">{{ thread.unread }}</i>
-                  </span>
-                </button>
               </div>
             </aside>
 
@@ -416,7 +357,17 @@
                   <button class="icon-button ghost mobile-thread-back" type="button" :title="uiText.recentChats" @click="mobileChatView = 'list'">
                     <ArrowLeft :size="18" />
                   </button>
-                  <span class="phone-avatar">
+                  <button
+                    v-if="activeContact?.kind === 'human'"
+                    class="user-avatar phone-avatar profile-avatar-button"
+                    type="button"
+                    :title="uiText.personProfile"
+                    @click="openChatProfile(activeContact)"
+                  >
+                    <img v-if="activeContact.avatarUrl" :src="activeContact.avatarUrl" :alt="displayContactName(activeContact)" />
+                    <span v-else>{{ contactAvatarText(activeContact) }}</span>
+                  </button>
+                  <span v-else class="phone-avatar">
                     <UsersRound v-if="activeChatThread.type === 'group'" :size="17" />
                     <UserRound v-else :size="17" />
                   </span>
@@ -427,48 +378,298 @@
                 </div>
 
                 <div class="phone-tools">
-                  <button class="icon-button ghost" type="button" :title="activeChatThread.type === 'group' ? uiText.manageGroup : uiText.editCharacter" @click.stop="toggleChatDetails">
-                    <UserPlus v-if="activeChatThread.type === 'group'" :size="18" />
-                    <Pencil v-else :size="18" />
-                  </button>
-                  <button class="icon-button ghost" type="button" :title="uiText.clearChat" @click="clearActiveThreadMessages">
-                    <Trash2 :size="18" />
-                  </button>
-                  <button class="icon-button ghost" type="button" :title="displayModuleName('provider-hub')" @click="openModule('provider-hub')">
-                    <PlugZap :size="18" />
+                  <button class="icon-button ghost" type="button" :title="activeThreadSettingsTitle" @click.stop="toggleChatDetails">
+                    <MoreHorizontal :size="20" />
                   </button>
                 </div>
               </div>
 
-              <div v-if="activeContact" class="active-persona-card">
-                <span>{{ uiText.currentCharacter }}</span>
-                <strong>{{ activeContact.name }}</strong>
-                <p>{{ activeContact.prompt }}</p>
+              <div v-if="chatSetupOpen" class="chat-setup-backdrop" @click.self="closeChatSetup">
+                <section class="chat-setup-box" role="dialog" :aria-label="uiText.newChat" @click.stop>
+                  <header class="chat-setup-head">
+                    <div>
+                      <strong>{{ uiText.newChat }}</strong>
+                      <span>{{ chatSetupSubtitle }}</span>
+                    </div>
+                    <button class="icon-button ghost" type="button" :title="uiText.statusCancel" @click="closeChatSetup">
+                      <X :size="16" />
+                    </button>
+                  </header>
+
+                  <div class="chat-setup-tabs" role="tablist" :aria-label="uiText.newChat">
+                    <button
+                      type="button"
+                      :class="{ active: chatSetupMode === 'contact' }"
+                      @click="chatSetupMode = 'contact'"
+                    >
+                      <UserRound :size="16" />
+                      <span>{{ uiText.addContact }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: chatSetupMode === 'requests' }"
+                      @click="openFriendRequestBox"
+                    >
+                      <span>{{ friendRequestTabLabel }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: chatSetupMode === 'character' }"
+                      @click="startContactComposer('ai')"
+                    >
+                      <MessageSquareText :size="16" />
+                      <span>{{ uiText.newCharacter }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: chatSetupMode === 'group' }"
+                      @click="startGroupComposer"
+                    >
+                      <UsersRound :size="16" />
+                      <span>{{ uiText.newGroup }}</span>
+                    </button>
+                  </div>
+
+                  <form v-if="chatSetupMode === 'contact'" class="chat-setup-form" @submit.prevent="requestSelectedContact">
+                    <label class="chat-search-field">
+                      <Search :size="16" />
+                      <input v-model.trim="contactLookupQuery" type="search" :placeholder="uiText.contactLookupPlaceholder" autocomplete="off" />
+                    </label>
+                    <div class="chat-suggestion-list">
+                      <button
+                        v-for="candidate in contactSearchResults"
+                        :key="candidate.id"
+                        type="button"
+                        :class="{ active: selectedContactUserId === candidate.id }"
+                        @click="openContactPreview(candidate.id)"
+                      >
+                        <span class="user-avatar suggestion-avatar">
+                          <img
+                            v-if="candidate.avatar_url"
+                            :src="resolveMediaUrl(candidate.avatar_url)"
+                            :alt="candidate.display_name"
+                          />
+                          <span v-else>{{ profileInitial(candidate) }}</span>
+                        </span>
+                        <span>
+                          <strong>{{ candidate.display_name }}</strong>
+                          <small>@{{ candidate.username }} · {{ candidate.email }}</small>
+                        </span>
+                      </button>
+                      <p v-if="contactLookupLoading" class="chat-setup-empty">
+                        {{ uiText.searchingContacts }}
+                      </p>
+                      <p v-else-if="contactLookupError" class="chat-setup-empty error">
+                        {{ contactLookupError }}
+                      </p>
+                      <p v-else-if="!authToken" class="chat-setup-empty">
+                        {{ uiText.signInToSearchContacts }}
+                      </p>
+                      <p v-else-if="!contactLookupQuery" class="chat-setup-empty">
+                        {{ uiText.typeToSearchContacts }}
+                      </p>
+                      <p v-else-if="contactLookupQuery && contactSearchResults.length === 0" class="chat-setup-empty">
+                        {{ uiText.noContactResults }}
+                      </p>
+                    </div>
+                    <div class="chat-compact-actions">
+                      <button class="secondary-button" type="button" @click="closeChatSetup">{{ uiText.statusCancel }}</button>
+                      <button class="primary-action" type="submit" :disabled="!selectedContactCandidate || selectedRelationState !== 'none'">{{ selectedContactActionLabel }}</button>
+                    </div>
+                  </form>
+
+                  <section v-if="chatSetupMode === 'requests'" class="chat-setup-form friend-request-panel">
+                    <div class="friend-request-section">
+                      <strong>{{ uiText.incomingRequests }}</strong>
+                      <div
+                        v-for="request in incomingFriendRequests"
+                        :key="request.id"
+                        class="friend-request-card"
+                      >
+                        <span class="user-avatar suggestion-avatar">
+                          <img
+                            v-if="request.requester.avatar_url"
+                            :src="resolveMediaUrl(request.requester.avatar_url)"
+                            :alt="request.requester.display_name"
+                          />
+                          <span v-else>{{ profileInitial(request.requester) }}</span>
+                        </span>
+                        <span>
+                          <b>{{ request.requester.display_name }}</b>
+                          <small>@{{ request.requester.username }} · {{ request.requester.email }}</small>
+                        </span>
+                        <span class="friend-request-actions">
+                          <button class="primary-action compact" type="button" @click.stop="approveFriendRequest(request.id)">{{ uiText.approveFriend }}</button>
+                          <button class="secondary-button" type="button" @click.stop="declineFriendRequest(request.id)">{{ uiText.rejectFriend }}</button>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="friend-request-section">
+                      <strong>{{ uiText.outgoingRequests }}</strong>
+                      <div
+                        v-for="request in outgoingFriendRequests"
+                        :key="request.id"
+                        class="friend-request-card"
+                      >
+                        <span class="user-avatar suggestion-avatar">
+                          <img
+                            v-if="request.addressee.avatar_url"
+                            :src="resolveMediaUrl(request.addressee.avatar_url)"
+                            :alt="request.addressee.display_name"
+                          />
+                          <span v-else>{{ profileInitial(request.addressee) }}</span>
+                        </span>
+                        <span>
+                          <b>{{ request.addressee.display_name }}</b>
+                          <small>@{{ request.addressee.username }} · {{ uiText.waitingApproval }}</small>
+                        </span>
+                      </div>
+                    </div>
+                    <p v-if="!incomingFriendRequests.length && !outgoingFriendRequests.length" class="chat-setup-empty">
+                      {{ friendLoading ? uiText.searchingContacts : uiText.noFriendRequests }}
+                    </p>
+                  </section>
+
+                  <div v-if="selectedContactCandidate" class="contact-profile-popover-backdrop" @click.self="closeContactPreview">
+                    <section class="contact-profile-card floating" @click.stop>
+                      <button class="icon-button ghost contact-profile-close" type="button" :title="uiText.closeProfile" @click="closeContactPreview">
+                        <X :size="16" />
+                      </button>
+                      <div class="contact-profile-cover">
+                        <div class="contact-profile-cover-glow"></div>
+                        <div class="contact-profile-main">
+                          <span class="user-avatar contact-profile-avatar">
+                            <img
+                              v-if="selectedContactCandidate.avatar_url"
+                              :src="resolveMediaUrl(selectedContactCandidate.avatar_url)"
+                              :alt="selectedContactCandidate.display_name"
+                            />
+                            <span v-else>{{ profileInitial(selectedContactCandidate) }}</span>
+                          </span>
+                          <div>
+                            <strong>{{ selectedContactCandidate.display_name }}</strong>
+                            <span>@{{ selectedContactCandidate.username }}</span>
+                            <em>{{ contactStatusLabel(selectedContactCandidate) }}</em>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="contact-profile-body">
+                        <div class="contact-profile-section">
+                          <small>{{ uiText.personProfile }}</small>
+                          <p>{{ selectedContactCandidate.bio || uiText.emptySignature }}</p>
+                        </div>
+                        <div class="contact-profile-section">
+                          <small>Email</small>
+                          <div class="contact-profile-meta">
+                            <span>{{ selectedContactCandidate.email }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="contact-profile-actions">
+                        <button class="primary-action compact" type="button" :disabled="selectedRelationState !== 'friend'" @click="messageSelectedContact">
+                          <MessageSquareText :size="16" />
+                          <span>{{ selectedRelationState === 'friend' ? uiText.privateMessage : uiText.mustBeFriendsToMessage }}</span>
+                        </button>
+                        <button v-if="selectedRelationState === 'incoming'" class="secondary-button" type="button" @click="approveSelectedContactRequest">
+                          <Check :size="16" />
+                          <span>{{ uiText.approveFriend }}</span>
+                        </button>
+                        <button v-else class="secondary-button" type="button" :disabled="!selectedContactCandidate || selectedRelationState !== 'none'" @click="requestSelectedContact">
+                          <UserPlus :size="16" />
+                          <span>{{ selectedContactActionLabel }}</span>
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+
+                  <form v-if="chatSetupMode === 'character'" class="chat-setup-form" @submit.prevent="createChatContact">
+                    <input v-model.trim="contactDraftName" type="text" :placeholder="uiText.contactName" autocomplete="off" />
+                    <div class="chat-tone-picker" :aria-label="uiText.characterTone">
+                      <button
+                        v-for="tone in chatToneOptions"
+                        :key="tone"
+                        type="button"
+                        :class="[`tone-${tone}`, { active: contactDraftTone === tone }]"
+                        @click="contactDraftTone = tone"
+                      />
+                    </div>
+                    <textarea v-model="contactDraftPrompt" rows="5" :placeholder="uiText.personalityPlaceholder" />
+                    <div class="chat-compact-actions">
+                      <button class="secondary-button" type="button" @click="closeChatSetup">{{ uiText.statusCancel }}</button>
+                      <button class="primary-action" type="submit" :disabled="!canCreateContact">{{ uiText.create }}</button>
+                    </div>
+                  </form>
+
+                  <form v-if="chatSetupMode === 'group'" class="chat-setup-form" @submit.prevent="createChatGroup">
+                    <input v-model.trim="groupDraftName" type="text" :placeholder="uiText.groupNamePlaceholder" autocomplete="off" />
+                    <label class="chat-search-field">
+                      <Search :size="16" />
+                      <input v-model.trim="groupMemberQuery" type="search" :placeholder="uiText.groupMemberSearch" autocomplete="off" />
+                    </label>
+                    <div class="chat-member-picker">
+                      <label v-for="contact in filteredGroupMembers" :key="contact.id">
+                        <input
+                          type="checkbox"
+                          :checked="groupDraftMemberIds.includes(contact.id)"
+                          @change="toggleGroupDraftMember(contact.id)"
+                        />
+                        <span>{{ contact.name }}</span>
+                        <em>{{ contact.kind === 'ai' ? uiText.aiContact : uiText.personContact }}</em>
+                      </label>
+                    </div>
+                    <div class="chat-compact-actions">
+                      <button class="secondary-button" type="button" @click="closeChatSetup">{{ uiText.statusCancel }}</button>
+                      <button class="primary-action" type="submit" :disabled="!canCreateGroup">{{ uiText.create }}</button>
+                    </div>
+                  </form>
+                </section>
               </div>
 
               <div v-if="chatDetailsOpen" class="chat-detail-popover" @click.stop>
                 <form v-if="activeContact" class="chat-persona-editor" @submit.prevent="saveActiveContactPrompt">
                   <div class="chat-detail-heading">
                     <div>
-                      <strong>{{ uiText.characterPrompt }}</strong>
-                      <span>{{ activeContact.name }}</span>
+                      <strong>{{ activeContact.kind === 'human' ? uiText.contactSettings : uiText.characterPrompt }}</strong>
+                      <span>{{ displayContactName(activeContact) }}</span>
                     </div>
                     <button class="icon-button ghost" type="button" :title="uiText.statusCancel" @click="chatDetailsOpen = false">
                       <X :size="16" />
                     </button>
                   </div>
-                  <label>
-                    <span>{{ uiText.contactName }}</span>
-                    <input v-model.trim="contactNameDraft" type="text" autocomplete="off" />
-                  </label>
-                  <label>
-                    <span>{{ uiText.personalityPrompt }}</span>
-                    <textarea v-model="contactPromptDraft" rows="5" :placeholder="uiText.personalityPlaceholder" />
-                  </label>
-                  <button class="secondary-button" type="button" @click="polishContactPrompt">
-                    <Pencil :size="16" />
-                    <span>{{ uiText.polishPrompt }}</span>
-                  </button>
+                  <template v-if="activeContact.kind === 'human'">
+                    <div class="contact-settings-summary">
+                      <span class="user-avatar contact-profile-avatar compact">
+                        <img v-if="activeContact.avatarUrl" :src="activeContact.avatarUrl" :alt="displayContactName(activeContact)" />
+                        <span v-else>{{ contactAvatarText(activeContact) }}</span>
+                      </span>
+                      <div>
+                        <strong>{{ activeContact.name }}</strong>
+                        <span>{{ activeContact.description }}</span>
+                      </div>
+                    </div>
+                    <label>
+                      <span>{{ uiText.remarkName }}</span>
+                      <input v-model.trim="contactRemarkDraft" type="text" :placeholder="activeContact.name" autocomplete="off" />
+                    </label>
+                    <button class="secondary-button danger" type="button" @click="deleteActiveContact">
+                      <Trash2 :size="16" />
+                      <span>{{ uiText.removeFriend }}</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <label>
+                      <span>{{ uiText.contactName }}</span>
+                      <input v-model.trim="contactNameDraft" type="text" autocomplete="off" />
+                    </label>
+                    <label>
+                      <span>{{ uiText.personalityPrompt }}</span>
+                      <textarea v-model="contactPromptDraft" rows="5" :placeholder="uiText.personalityPlaceholder" />
+                    </label>
+                    <button class="secondary-button" type="button" @click="polishContactPrompt">
+                      <Pencil :size="16" />
+                      <span>{{ uiText.polishPrompt }}</span>
+                    </button>
+                  </template>
                   <button class="primary-action" type="submit">
                     <Check :size="16" />
                     <span>{{ uiText.statusConfirm }}</span>
@@ -506,6 +707,40 @@
                 </form>
               </div>
 
+              <div v-if="chatProfileContact" class="contact-profile-popover-backdrop chat-profile-popover-backdrop" @click.self="closeChatProfile">
+                <section class="contact-profile-card floating" @click.stop>
+                  <button class="icon-button ghost contact-profile-close" type="button" :title="uiText.closeProfile" @click="closeChatProfile">
+                    <X :size="16" />
+                  </button>
+                  <div class="contact-profile-cover">
+                    <div class="contact-profile-cover-glow"></div>
+                    <div class="contact-profile-main">
+                      <span class="user-avatar contact-profile-avatar">
+                        <img v-if="chatProfileContact.avatarUrl" :src="chatProfileContact.avatarUrl" :alt="displayContactName(chatProfileContact)" />
+                        <span v-else>{{ contactAvatarText(chatProfileContact) }}</span>
+                      </span>
+                      <div>
+                        <strong>{{ displayContactName(chatProfileContact) }}</strong>
+                        <span>{{ chatProfileContact.description }}</span>
+                        <em>{{ uiText.friendAdded }}</em>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="contact-profile-body">
+                    <div class="contact-profile-section">
+                      <small>{{ uiText.personProfile }}</small>
+                      <p>{{ uiText.emptySignature }}</p>
+                    </div>
+                  </div>
+                  <div class="contact-profile-actions single">
+                    <button class="primary-action compact" type="button" @click="messageProfileContact">
+                      <MessageSquareText :size="16" />
+                      <span>{{ uiText.privateMessage }}</span>
+                    </button>
+                  </div>
+                </section>
+              </div>
+
               <ChatPanel
                 class="phone-chat-panel telegram-chat-panel"
                 :messages="activeChatMessages"
@@ -514,6 +749,7 @@
                 :language="uiLanguage"
                 @send="handleThreadSend"
                 @clear="clearActiveThreadMessages"
+                @avatar-click="handleMessageAvatarClick"
               />
             </section>
           </div>
@@ -594,8 +830,8 @@ import {
   LayoutDashboard,
   Layers3,
   LogOut,
-  MessageCirclePlus,
   MessageSquareText,
+  MoreHorizontal,
   NotebookPen,
   Pencil,
   PlugZap,
@@ -621,9 +857,41 @@ import ModuleDashboard from "../components/ModuleDashboard.vue";
 import NotesPanel from "../components/NotesPanel.vue";
 import SelfPanel from "../components/SelfPanel.vue";
 import WorkflowPanel from "../components/WorkflowPanel.vue";
-import { fetchCurrentUser, fetchHealth, fetchModules, fetchProviders, sendChat, signIn, signUp } from "../services/api";
-import type { AuthUser, SignInPayload, SignUpPayload } from "../types/auth";
-import type { ChatConfig, ChatContact, ChatGroup, ChatMessage, ChatSendPayload, ChatThreadType, ModelProfile, ProviderInfo } from "../types/chat";
+import {
+  acceptFriendRequest,
+  fetchCurrentUser,
+  fetchDirectMessages,
+  fetchFriendSummary,
+  fetchHealth,
+  fetchModules,
+  fetchProviders,
+  rejectFriendRequest,
+  removeFriend,
+  resolveMediaUrl,
+  requestFriend,
+  searchUsers,
+  sendChat,
+  sendDirectMessage,
+  signIn,
+  signUp,
+} from "../services/api";
+import type { AuthUser, SignInPayload, SignUpPayload, UserSearchResult } from "../types/auth";
+import type {
+  ChatAttachment,
+  ChatConfig,
+  ChatContact,
+  ChatGroup,
+  ChatMessage,
+  ChatSendPayload,
+  ChatThreadType,
+  DirectAttachment,
+  DirectMessageRecord,
+  FriendProfile,
+  FriendRequestRecord,
+  FriendSummary,
+  ModelProfile,
+  ProviderInfo,
+} from "../types/chat";
 import type { PlatformModule } from "../types/platform";
 
 const storageKey = "4ever.chat.config";
@@ -661,14 +929,26 @@ type StatusDurationOption = {
 type ChatThread = {
   id: string;
   type: ChatThreadType;
+  kind?: ChatContact["kind"];
   name: string;
+  avatarText: string;
+  avatarUrl?: string;
   subtitle: string;
   detail: string;
   time: string;
+  sortTime: number;
   tone: ChatContact["tone"];
   memberIds?: string[];
   unread?: number;
 };
+type ChatSetupMode = "contact" | "requests" | "character" | "group";
+type FriendRelationState = "none" | "friend" | "outgoing" | "incoming";
+
+const emptyFriendSummary = (): FriendSummary => ({
+  friends: [],
+  incoming_requests: [],
+  outgoing_requests: [],
+});
 
 const moduleRoutes = {
   dashboard: "insight",
@@ -739,13 +1019,50 @@ const uiCopies = {
     clearChat: "清空对话",
     contacts: "联系人",
     groups: "群聊",
+    newChat: "新建会话",
     newCharacter: "新建角色",
+    newCharacterHint: "为一个虚拟角色设置性格和回复方式",
+    addContact: "添加联系人",
+    newPerson: "添加联系人",
+    newHuman: "添加联系人",
+    newHumanHint: "通过用户名或邮箱查找联系人",
     newGroup: "新建群聊",
+    newGroupHint: "把联系人和 AI 角色放进同一个会话",
     create: "创建",
     groupNamePlaceholder: "群聊名称",
     manageGroup: "管理群聊",
     editCharacter: "角色设定",
+    contactSettings: "联系人设置",
     characterPrompt: "角色提示词",
+    personProfile: "联系人资料",
+    humanProfile: "联系人资料",
+    aiContact: "AI",
+    personContact: "联系人",
+    noChatsFound: "没有匹配的会话",
+    contactLookupPlaceholder: "搜索用户名或邮箱",
+    noContactResults: "没有找到匹配联系人",
+    searchingContacts: "正在搜索联系人",
+    signInToSearchContacts: "登录后可以搜索真实用户",
+    typeToSearchContacts: "输入用户名、邮箱或昵称开始搜索",
+    activeUser: "活跃用户",
+    emptySignature: "这个用户还没有填写个性签名。",
+    privateMessage: "私信",
+    addFriend: "添加好友",
+    friendAdded: "已添加",
+    friendRequests: "好友申请",
+    incomingRequests: "收到的申请",
+    outgoingRequests: "发出的申请",
+    noFriendRequests: "暂无好友申请",
+    approveFriend: "同意",
+    rejectFriend: "拒绝",
+    requestSent: "已发送申请",
+    waitingApproval: "等待对方同意",
+    mustBeFriendsToMessage: "对方同意好友申请后才能私信",
+    friendshipRequired: "需要先成为好友才能发送消息",
+    closeProfile: "关闭资料卡",
+    remarkName: "备注名",
+    removeFriend: "删除好友",
+    groupMemberSearch: "搜索群成员",
     contactName: "联系人名称",
     currentCharacter: "当前角色",
     characterTone: "角色色彩",
@@ -789,13 +1106,50 @@ const uiCopies = {
     clearChat: "Clear chat",
     contacts: "Contacts",
     groups: "Groups",
+    newChat: "New chat",
     newCharacter: "New character",
+    newCharacterHint: "Set up a character with its own voice",
+    addContact: "Add contact",
+    newPerson: "Add contact",
+    newHuman: "Add contact",
+    newHumanHint: "Find someone by username or email",
     newGroup: "New group",
+    newGroupHint: "Put contacts and AI characters together",
     create: "Create",
     groupNamePlaceholder: "Group name",
     manageGroup: "Manage group",
     editCharacter: "Character",
+    contactSettings: "Contact settings",
     characterPrompt: "Character prompt",
+    personProfile: "Contact profile",
+    humanProfile: "Contact profile",
+    aiContact: "AI",
+    personContact: "Contact",
+    noChatsFound: "No matching chats",
+    contactLookupPlaceholder: "Search username or email",
+    noContactResults: "No matching contacts",
+    searchingContacts: "Searching contacts",
+    signInToSearchContacts: "Sign in to search real users",
+    typeToSearchContacts: "Type a username, email, or display name",
+    activeUser: "Active user",
+    emptySignature: "This user has not added a signature yet.",
+    privateMessage: "Message",
+    addFriend: "Add friend",
+    friendAdded: "Added",
+    friendRequests: "Requests",
+    incomingRequests: "Incoming",
+    outgoingRequests: "Outgoing",
+    noFriendRequests: "No friend requests",
+    approveFriend: "Accept",
+    rejectFriend: "Reject",
+    requestSent: "Request sent",
+    waitingApproval: "Waiting for approval",
+    mustBeFriendsToMessage: "You can message after the request is accepted",
+    friendshipRequired: "You need to be friends before messaging",
+    closeProfile: "Close profile",
+    remarkName: "Remark",
+    removeFriend: "Remove friend",
+    groupMemberSearch: "Search members",
     contactName: "Contact name",
     currentCharacter: "Current character",
     characterTone: "Character color",
@@ -882,17 +1236,29 @@ const currentTime = ref(Date.now());
 const activeChatThreadId = ref("assistant");
 const chatContacts = ref<ChatContact[]>(loadChatContacts());
 const chatGroups = ref<ChatGroup[]>(loadChatGroups());
+const directMessages = ref<Record<string, DirectMessageRecord[]>>({});
+const friendSummary = ref<FriendSummary>(emptyFriendSummary());
+const friendLoading = ref(false);
 const chatSearchQuery = ref("");
-const contactComposerOpen = ref(false);
+const chatSetupOpen = ref(false);
+const chatSetupMode = ref<ChatSetupMode>("contact");
+const contactLookupQuery = ref("");
+const contactLookupResults = ref<UserSearchResult[]>([]);
+const contactLookupLoading = ref(false);
+const contactLookupError = ref("");
+const selectedContactUserId = ref("");
+const groupMemberQuery = ref("");
 const contactDraftName = ref("");
 const contactDraftPrompt = ref("");
 const contactDraftTone = ref<ChatContact["tone"]>("green");
-const groupComposerOpen = ref(false);
+const contactDraftKind = ref<ChatContact["kind"]>("ai");
 const groupDraftName = ref("");
 const groupDraftMemberIds = ref<string[]>([]);
 const chatDetailsOpen = ref(false);
+const chatProfileContact = ref<ChatContact | null>(null);
 const contactNameDraft = ref("");
 const contactPromptDraft = ref("");
+const contactRemarkDraft = ref("");
 const groupEditName = ref("");
 const groupEditMemberIds = ref<string[]>([]);
 const mobileChatView = ref<"list" | "conversation">("list");
@@ -904,6 +1270,7 @@ const modulePageClass = computed(() => `module-page-${activeModuleId.value}`);
 const isAuthRoute = computed(() => routeId.value === "sign-in" || routeId.value === "sign-up");
 const dashboardDisplayName = computed(() => currentUser.value?.display_name || currentUser.value?.username || "访客");
 const userInitials = computed(() => firstAvatarLetter(dashboardDisplayName.value));
+const currentUserAvatarUrl = computed(() => resolveMediaUrl(currentUser.value?.avatar_url));
 const uiText = computed(() => uiCopies[uiLanguage.value]);
 const temperatureStyle = computed(() => {
   const value = colorTemperature.value;
@@ -935,16 +1302,27 @@ const currentStatusDisplay = computed(() => {
 const contactThreads = computed<ChatThread[]>(() => {
   const query = chatSearchQuery.value.toLowerCase();
   return chatContacts.value
-    .filter((contact) => !query || `${contact.name}\n${contact.description ?? ""}`.toLowerCase().includes(query))
-    .map((contact) => ({
-      id: contact.id,
-      type: "contact",
-      name: contact.name,
-      subtitle: threadPreview(contact.id, contact.description || (uiLanguage.value === "en-US" ? "Tap to start a chat" : "点击开始对话")),
-      detail: uiLanguage.value === "en-US" ? "AI contact" : "AI 联系人",
-      time: uiLanguage.value === "en-US" ? "Now" : "现在",
-      tone: contact.tone,
-    }));
+    .filter((contact) => !query || `${contact.name}\n${contact.description ?? ""}\n${contact.kind}`.toLowerCase().includes(query))
+    .map((contact) => {
+      const fallback = contact.description || (uiLanguage.value === "en-US" ? "Tap to start a chat" : "点击开始对话");
+      return {
+        id: contact.id,
+        type: "contact",
+        kind: contact.kind,
+        name: displayContactName(contact),
+        avatarText: contactAvatarText(contact),
+        avatarUrl: contact.avatarUrl,
+        subtitle: contact.kind === "human" ? directThreadPreview(contact.id, fallback) : threadPreview(contact.id, fallback),
+        detail: contact.kind === "human"
+          ? uiText.value.personContact
+          : (uiLanguage.value === "en-US" ? "AI contact" : "AI 联系人"),
+        time: contact.kind === "human"
+          ? uiText.value.personContact
+          : uiText.value.aiContact,
+        sortTime: contact.kind === "human" ? latestDirectMessageTime(contact.id) : latestThreadTime(contact.id),
+        tone: contact.tone,
+      };
+    });
 });
 const groupThreads = computed<ChatThread[]>(() => {
   const query = chatSearchQuery.value.toLowerCase();
@@ -956,19 +1334,107 @@ const groupThreads = computed<ChatThread[]>(() => {
         id: group.id,
         type: "group",
         name: group.name,
+        avatarText: firstAvatarLetter(group.name),
         subtitle: threadPreview(group.id, members.map((member) => member.name).join("、") || (uiLanguage.value === "en-US" ? "No members yet" : "还没有成员")),
         detail: uiLanguage.value === "en-US" ? `${members.length} members` : `${members.length} 位成员`,
         time: uiLanguage.value === "en-US" ? "Group" : "群聊",
+        sortTime: latestThreadTime(group.id),
         tone: "blue",
         memberIds: group.memberIds,
       };
     });
 });
-const chatThreads = computed<ChatThread[]>(() => [...contactThreads.value, ...groupThreads.value]);
+const chatThreads = computed<ChatThread[]>(() =>
+  [...contactThreads.value, ...groupThreads.value].sort((left, right) => right.sortTime - left.sortTime),
+);
+const canCreateContact = computed(() =>
+  Boolean(contactDraftName.value.trim() && (contactDraftKind.value === "human" || contactDraftPrompt.value.trim())),
+);
+const canCreateGroup = computed(() => Boolean(groupDraftName.value.trim() && groupDraftMemberIds.value.length));
+const contactSearchResults = computed(() => {
+  return contactLookupResults.value;
+});
+const selectedContactCandidate = computed(() =>
+  contactSearchResults.value.find((candidate) => candidate.id === selectedContactUserId.value) ?? null,
+);
+const isSelectedContactAdded = computed(() =>
+  Boolean(selectedContactCandidate.value && chatContacts.value.some((contact) => contact.id === selectedContactCandidate.value?.id)),
+);
+const incomingFriendRequests = computed(() => friendSummary.value.incoming_requests);
+const outgoingFriendRequests = computed(() => friendSummary.value.outgoing_requests);
+const friendRequestTabLabel = computed(() =>
+  incomingFriendRequests.value.length
+    ? `${uiText.value.friendRequests} ${incomingFriendRequests.value.length}`
+    : uiText.value.friendRequests,
+);
+const selectedIncomingRequest = computed(() =>
+  selectedContactCandidate.value
+    ? incomingFriendRequests.value.find((request) => request.requester.id === selectedContactCandidate.value?.id) ?? null
+    : null,
+);
+const selectedOutgoingRequest = computed(() =>
+  selectedContactCandidate.value
+    ? outgoingFriendRequests.value.find((request) => request.addressee.id === selectedContactCandidate.value?.id) ?? null
+    : null,
+);
+const selectedRelationState = computed<FriendRelationState>(() => {
+  const candidate = selectedContactCandidate.value;
+  if (!candidate) {
+    return "none";
+  }
+  if (chatContacts.value.some((contact) => contact.kind === "human" && contact.id === candidate.id)) {
+    return "friend";
+  }
+  if (selectedIncomingRequest.value) {
+    return "incoming";
+  }
+  if (selectedOutgoingRequest.value) {
+    return "outgoing";
+  }
+  return "none";
+});
+const selectedContactActionLabel = computed(() => {
+  if (selectedRelationState.value === "friend") {
+    return uiText.value.friendAdded;
+  }
+  if (selectedRelationState.value === "incoming") {
+    return uiText.value.approveFriend;
+  }
+  if (selectedRelationState.value === "outgoing") {
+    return uiText.value.waitingApproval;
+  }
+  return uiText.value.addFriend;
+});
+const filteredGroupMembers = computed(() => {
+  const query = groupMemberQuery.value.toLowerCase().trim();
+  if (!query) {
+    return chatContacts.value;
+  }
+  return chatContacts.value.filter((contact) =>
+    fuzzyMatch(`${contact.name}\n${contact.description ?? ""}\n${contact.kind}`, query),
+  );
+});
+const chatSetupSubtitle = computed(() => {
+  if (chatSetupMode.value === "character") {
+    return uiText.value.newCharacterHint;
+  }
+  if (chatSetupMode.value === "group") {
+    return uiText.value.newGroupHint;
+  }
+  if (chatSetupMode.value === "requests") {
+    return uiText.value.friendRequests;
+  }
+  return uiText.value.newHumanHint;
+});
+const activeThreadSettingsTitle = computed(() => {
+  if (activeChatThread.value?.type === "group") {
+    return uiText.value.manageGroup;
+  }
+  return activeContact.value?.kind === "human" ? uiText.value.contactSettings : uiText.value.editCharacter;
+});
 const activeChatThread = computed(
   () => chatThreads.value.find((thread) => thread.id === activeChatThreadId.value) ?? chatThreads.value[0],
 );
-const activeChatMessages = computed(() => threadMessages.value[activeChatThreadId.value] ?? []);
 const activeContact = computed(() =>
   activeChatThread.value?.type === "contact"
     ? chatContacts.value.find((contact) => contact.id === activeChatThread.value.id) ?? null
@@ -979,6 +1445,12 @@ const activeGroup = computed(() =>
     ? chatGroups.value.find((group) => group.id === activeChatThread.value.id) ?? null
     : null,
 );
+const activeChatMessages = computed(() => {
+  if (activeContact.value?.kind === "human") {
+    return directMessagesForContact(activeContact.value);
+  }
+  return threadMessages.value[activeChatThreadId.value] ?? [];
+});
 
 onMounted(() => {
   window.addEventListener("hashchange", syncRoute);
@@ -1021,7 +1493,7 @@ watch(
 watch(
   threadMessages,
   (value) => {
-    localStorage.setItem(threadMessagesKey, JSON.stringify(value));
+    localStorage.setItem(scopedStorageKey(threadMessagesKey), JSON.stringify(value));
   },
   { deep: true },
 );
@@ -1029,7 +1501,7 @@ watch(
 watch(
   chatContacts,
   (value) => {
-    localStorage.setItem(chatContactsKey, JSON.stringify(value));
+    localStorage.setItem(scopedStorageKey(chatContactsKey), JSON.stringify(value));
   },
   { deep: true },
 );
@@ -1037,9 +1509,34 @@ watch(
 watch(
   chatGroups,
   (value) => {
-    localStorage.setItem(chatGroupsKey, JSON.stringify(value));
+    localStorage.setItem(scopedStorageKey(chatGroupsKey), JSON.stringify(value));
   },
   { deep: true },
+);
+
+watch(
+  () => currentUser.value?.id ?? "guest",
+  () => {
+    activeChatThreadId.value = "assistant";
+    chatContacts.value = loadChatContacts();
+    chatGroups.value = loadChatGroups();
+    threadMessages.value = loadThreadMessages();
+    directMessages.value = {};
+  },
+);
+
+watch(contactLookupQuery, (query) => {
+  void refreshContactLookup(query);
+});
+
+watch(
+  () => [activeContact.value?.id, authToken.value] as const,
+  () => {
+    if (activeContact.value?.kind === "human") {
+      void refreshDirectThread(activeContact.value);
+    }
+  },
+  { immediate: true },
 );
 
 watch(
@@ -1118,6 +1615,13 @@ function syncRoute() {
   const nextRoute = readRoute();
   userMenuOpen.value = false;
   statusBoxOpen.value = false;
+  if (!authToken.value && isProtectedRoute(nextRoute)) {
+    routeId.value = "home";
+    if (window.location.hash !== "#/" && window.location.hash !== "") {
+      window.location.hash = "/";
+    }
+    return;
+  }
   if (nextRoute === "chat" && routeId.value !== "chat") {
     mobileChatView.value = "list";
   }
@@ -1128,7 +1632,15 @@ function syncRoute() {
   routeId.value = nextRoute;
 }
 
+function isProtectedRoute(route: string) {
+  return route !== "home" && route !== "sign-in" && route !== "sign-up";
+}
+
 function openModule(moduleId: string) {
+  if (!authToken.value) {
+    openAuth("sign-in");
+    return;
+  }
   const route = moduleRoutes[moduleId as keyof typeof moduleRoutes] ?? moduleId;
   const nextHash = `#/${route}`;
   if (window.location.hash === nextHash) {
@@ -1139,6 +1651,10 @@ function openModule(moduleId: string) {
 }
 
 function enterWorkspace() {
+  if (!authToken.value) {
+    openAuth("sign-in");
+    return;
+  }
   openModule("dashboard");
 }
 
@@ -1171,6 +1687,7 @@ function toggleUserMenu() {
 function closeUserMenu() {
   userMenuOpen.value = false;
   statusBoxOpen.value = false;
+  chatSetupOpen.value = false;
 }
 
 function setLanguage(language: UiLanguage) {
@@ -1258,8 +1775,9 @@ async function refreshCurrentUser() {
     return;
   }
   try {
-    currentUser.value = await fetchCurrentUser(authToken.value);
+    currentUser.value = normalizeAuthUser(await fetchCurrentUser(authToken.value));
     localStorage.setItem(authUserKey, JSON.stringify(currentUser.value));
+    await refreshFriends();
   } catch {
     signOut();
   }
@@ -1291,31 +1809,73 @@ async function handleSignUp(payload: SignUpPayload) {
 
 function persistAuth(response: { token: string; user: AuthUser }) {
   authToken.value = response.token;
-  currentUser.value = response.user;
+  currentUser.value = normalizeAuthUser(response.user);
   localStorage.setItem(authTokenKey, response.token);
-  localStorage.setItem(authUserKey, JSON.stringify(response.user));
-  openModule("admin");
+  localStorage.setItem(authUserKey, JSON.stringify(currentUser.value));
+  void refreshFriends();
+  openModule("dashboard");
 }
 
 function handleUserUpdated(user: AuthUser) {
-  currentUser.value = user;
-  localStorage.setItem(authUserKey, JSON.stringify(user));
+  currentUser.value = normalizeAuthUser(user);
+  localStorage.setItem(authUserKey, JSON.stringify(currentUser.value));
+  syncFriendContacts();
 }
 
 function signOut() {
   authToken.value = "";
   currentUser.value = null;
+  friendSummary.value = emptyFriendSummary();
+  directMessages.value = {};
   localStorage.removeItem(authTokenKey);
   localStorage.removeItem(authUserKey);
+  goHome();
+}
+
+async function refreshFriends() {
+  if (!authToken.value || !currentUser.value) {
+    friendSummary.value = emptyFriendSummary();
+    syncFriendContacts();
+    return;
+  }
+  friendLoading.value = true;
+  try {
+    friendSummary.value = await fetchFriendSummary(authToken.value);
+    syncFriendContacts();
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "好友列表加载失败");
+  } finally {
+    friendLoading.value = false;
+  }
+}
+
+function syncFriendContacts() {
+  const existingById = new Map(chatContacts.value.map((contact) => [contact.id, contact]));
+  const aiContacts = chatContacts.value.filter((contact) => contact.kind === "ai");
+  const friendContacts = friendSummary.value.friends.map(({ user }) => {
+    const existing = existingById.get(user.id);
+    return {
+      ...profileToContact(user),
+      remark: existing?.remark,
+    };
+  });
+  chatContacts.value = [...friendContacts, ...aiContacts];
 }
 
 async function handleThreadSend(payload: ChatSendPayload) {
   clearError();
+  const contact = activeContact.value;
+  if (contact?.kind === "human") {
+    await sendHumanDirectMessage(contact, payload);
+    return;
+  }
   const threadId = activeChatThreadId.value;
   const existing = threadMessages.value[threadId] ?? [];
   const userMessage: ChatMessage = {
     role: "user",
     content: payload.content,
+    avatarText: userInitials.value,
+    avatarUrl: currentUserAvatarUrl.value,
     attachments: payload.attachments,
   };
   const nextMessages = [...existing, userMessage];
@@ -1326,9 +1886,7 @@ async function handleThreadSend(payload: ChatSendPayload) {
 
   loading.value = true;
   try {
-    const replies = activeContact.value
-      ? [await createContactReply(activeContact.value, nextMessages)]
-      : await createGroupReplies(nextMessages);
+    const replies = contact ? [await createContactReply(contact, nextMessages)] : await createGroupReplies(nextMessages);
     threadMessages.value = {
       ...threadMessages.value,
       [threadId]: [...nextMessages, ...replies],
@@ -1338,8 +1896,46 @@ async function handleThreadSend(payload: ChatSendPayload) {
   }
 }
 
+async function sendHumanDirectMessage(contact: ChatContact, payload: ChatSendPayload) {
+  if (!authToken.value || !currentUser.value) {
+    showTransientError(uiText.value.signInToSearchContacts);
+    return;
+  }
+  loading.value = true;
+  try {
+    const message = await sendDirectMessage(authToken.value, contact.id, payload);
+    directMessages.value = {
+      ...directMessages.value,
+      [contact.id]: [...(directMessages.value[contact.id] ?? []), message],
+    };
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "私信发送失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function refreshDirectThread(contact: ChatContact) {
+  if (contact.kind !== "human" || !authToken.value || !currentUser.value) {
+    return;
+  }
+  try {
+    const messages = await fetchDirectMessages(authToken.value, contact.id);
+    directMessages.value = {
+      ...directMessages.value,
+      [contact.id]: messages,
+    };
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "私信加载失败");
+  }
+}
+
 function clearActiveThreadMessages() {
   clearError();
+  if (activeContact.value?.kind === "human") {
+    showTransientError(uiText.value.friendshipRequired);
+    return;
+  }
   threadMessages.value = {
     ...threadMessages.value,
     [activeChatThreadId.value]: [],
@@ -1350,37 +1946,117 @@ function selectChatThread(threadId: string) {
   clearError();
   activeChatThreadId.value = threadId;
   chatDetailsOpen.value = false;
-  contactComposerOpen.value = false;
+  chatProfileContact.value = null;
+  chatSetupOpen.value = false;
   mobileChatView.value = "conversation";
 }
 
-function startContactComposer() {
-  contactComposerOpen.value = true;
-  groupComposerOpen.value = false;
+function toggleChatCreateMenu() {
+  openChatSetup("contact");
+}
+
+function openContactPreview(userId: string) {
+  selectedContactUserId.value = userId;
+}
+
+function closeContactPreview() {
+  selectedContactUserId.value = "";
+}
+
+function openChatProfile(contact: ChatContact) {
+  if (contact.kind !== "human") {
+    return;
+  }
+  chatDetailsOpen.value = false;
+  chatProfileContact.value = contact;
+}
+
+function closeChatProfile() {
+  chatProfileContact.value = null;
+}
+
+function messageProfileContact() {
+  const contact = chatProfileContact.value;
+  if (!contact) {
+    return;
+  }
+  closeChatProfile();
+  selectChatThread(contact.id);
+}
+
+function handleMessageAvatarClick(message: ChatMessage) {
+  if (message.source !== "human" || !message.senderId || message.senderId === currentUser.value?.id) {
+    return;
+  }
+  const contact = chatContacts.value.find((item) => item.kind === "human" && item.id === message.senderId);
+  if (contact) {
+    openChatProfile(contact);
+  }
+}
+
+function openChatSetup(mode: ChatSetupMode) {
+  chatSetupOpen.value = true;
+  chatSetupMode.value = mode;
+  chatDetailsOpen.value = false;
+  if (mode === "contact") {
+    contactLookupQuery.value = "";
+    contactLookupResults.value = [];
+    contactLookupError.value = "";
+    selectedContactUserId.value = "";
+  }
+  if (mode === "character") {
+    resetContactComposer("ai");
+  }
+  if (mode === "group") {
+    resetGroupComposer();
+  }
+}
+
+function closeChatSetup() {
+  chatSetupOpen.value = false;
+  contactLookupQuery.value = "";
+  contactLookupResults.value = [];
+  contactLookupError.value = "";
+  selectedContactUserId.value = "";
+  groupMemberQuery.value = "";
+  cancelContactComposer();
+  cancelGroupComposer();
+}
+
+function startContactComposer(kind: ChatContact["kind"]) {
+  chatSetupMode.value = kind === "ai" ? "character" : "contact";
+  resetContactComposer(kind);
+}
+
+function resetContactComposer(kind: ChatContact["kind"]) {
+  contactDraftKind.value = kind;
   contactDraftName.value = "";
   contactDraftPrompt.value = "";
-  contactDraftTone.value = "green";
+  contactDraftTone.value = kind === "human" ? "gold" : "green";
 }
 
 function cancelContactComposer() {
-  contactComposerOpen.value = false;
   contactDraftName.value = "";
   contactDraftPrompt.value = "";
   contactDraftTone.value = "green";
+  contactDraftKind.value = "ai";
 }
 
 function createChatContact() {
   const name = contactDraftName.value.trim();
   const prompt = contactDraftPrompt.value.trim();
-  if (!name || !prompt) {
+  if (!name || (contactDraftKind.value === "ai" && !prompt)) {
     return;
   }
   const contact: ChatContact = {
     id: `contact-${crypto.randomUUID()}`,
     name,
     tone: contactDraftTone.value,
-    description: uiLanguage.value === "en-US" ? "Custom character" : "自定义角色",
-    prompt: normalizePersonalityPrompt(name, prompt),
+    kind: contactDraftKind.value,
+    description: contactDraftKind.value === "human"
+      ? uiText.value.personContact
+      : (uiLanguage.value === "en-US" ? "Custom character" : "自定义角色"),
+    prompt: contactDraftKind.value === "ai" ? normalizePersonalityPrompt(name, prompt) : "",
   };
   chatContacts.value = [contact, ...chatContacts.value];
   threadMessages.value = {
@@ -1388,18 +2064,22 @@ function createChatContact() {
     [contact.id]: [],
   };
   cancelContactComposer();
+  chatSetupOpen.value = false;
   selectChatThread(contact.id);
 }
 
 function startGroupComposer() {
-  groupComposerOpen.value = true;
-  contactComposerOpen.value = false;
+  chatSetupMode.value = "group";
+  resetGroupComposer();
+}
+
+function resetGroupComposer() {
   groupDraftName.value = "";
+  groupMemberQuery.value = "";
   groupDraftMemberIds.value = chatContacts.value.slice(0, 2).map((contact) => contact.id);
 }
 
 function cancelGroupComposer() {
-  groupComposerOpen.value = false;
   groupDraftName.value = "";
   groupDraftMemberIds.value = [];
 }
@@ -1425,17 +2105,171 @@ function createChatGroup() {
     [group.id]: [],
   };
   cancelGroupComposer();
+  chatSetupOpen.value = false;
   selectChatThread(group.id);
+}
+
+async function requestSelectedContact() {
+  const candidate = selectedContactCandidate.value;
+  if (!candidate) {
+    return;
+  }
+  if (selectedRelationState.value === "incoming") {
+    await approveSelectedContactRequest();
+    return;
+  }
+  if (selectedRelationState.value !== "none") {
+    return;
+  }
+  if (!authToken.value) {
+    showTransientError(uiText.value.signInToSearchContacts);
+    return;
+  }
+  friendLoading.value = true;
+  try {
+    await requestFriend(authToken.value, candidate.id);
+    await refreshFriends();
+    showTransientError(uiText.value.requestSent);
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "好友申请发送失败");
+  } finally {
+    friendLoading.value = false;
+  }
+}
+
+function messageSelectedContact() {
+  const candidate = selectedContactCandidate.value;
+  if (!candidate) {
+    return;
+  }
+  const contact = chatContacts.value.find((item) => item.kind === "human" && item.id === candidate.id);
+  if (!contact) {
+    showTransientError(uiText.value.mustBeFriendsToMessage);
+    return;
+  }
+  closeChatSetup();
+  selectChatThread(contact.id);
+}
+
+async function approveSelectedContactRequest() {
+  const request = selectedIncomingRequest.value;
+  if (!request) {
+    return;
+  }
+  await approveFriendRequest(request.id);
+}
+
+function openFriendRequestBox() {
+  chatSetupMode.value = "requests";
+  closeContactPreview();
+  void refreshFriends();
+}
+
+async function approveFriendRequest(requestId: number) {
+  if (!authToken.value) {
+    showTransientError(uiText.value.signInToSearchContacts);
+    return;
+  }
+  friendLoading.value = true;
+  try {
+    await acceptFriendRequest(authToken.value, requestId);
+    await refreshFriends();
+    const contactId = selectedContactCandidate.value?.id;
+    if (contactId && chatContacts.value.some((contact) => contact.id === contactId)) {
+      closeChatSetup();
+      selectChatThread(contactId);
+    }
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "好友申请处理失败");
+  } finally {
+    friendLoading.value = false;
+  }
+}
+
+async function declineFriendRequest(requestId: number) {
+  if (!authToken.value) {
+    showTransientError(uiText.value.signInToSearchContacts);
+    return;
+  }
+  friendLoading.value = true;
+  try {
+    await rejectFriendRequest(authToken.value, requestId);
+    await refreshFriends();
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "好友申请处理失败");
+  } finally {
+    friendLoading.value = false;
+  }
+}
+
+function userToContact(user: UserSearchResult): ChatContact {
+  return profileToContact(user);
+}
+
+function profileToContact(user: FriendProfile | UserSearchResult): ChatContact {
+  return {
+    id: user.id,
+    name: user.display_name || user.username,
+    tone: "gold",
+    kind: "human",
+    description: `@${user.username} · ${user.email}`,
+    prompt: "",
+    avatarUrl: resolveMediaUrl(user.avatar_url),
+  };
+}
+
+function contactAvatarText(contact: ChatContact) {
+  return firstAvatarLetter(contact.remark?.trim() || contact.name);
+}
+
+function profileInitial(user: UserSearchResult | FriendProfile) {
+  return firstAvatarLetter(user.display_name || user.username || "?");
+}
+
+function contactStatusLabel(user: UserSearchResult) {
+  return user.status === "active" ? uiText.value.activeUser : user.status;
+}
+
+async function refreshContactLookup(query: string) {
+  const keyword = query.trim();
+  selectedContactUserId.value = "";
+  contactLookupResults.value = [];
+  contactLookupError.value = "";
+  if (!keyword || !authToken.value) {
+    return;
+  }
+  const requestedKeyword = keyword;
+  contactLookupLoading.value = true;
+  try {
+    const results = await searchUsers(authToken.value, requestedKeyword);
+    if (contactLookupQuery.value.trim() === requestedKeyword) {
+      contactLookupResults.value = results;
+    }
+  } catch (cause) {
+    contactLookupError.value = cause instanceof Error ? cause.message : "联系人搜索失败";
+  } finally {
+    if (contactLookupQuery.value.trim() === requestedKeyword) {
+      contactLookupLoading.value = false;
+    }
+  }
+}
+
+function displayContactName(contact: ChatContact) {
+  return contact.remark?.trim() || contact.name;
 }
 
 function toggleChatDetails() {
   chatDetailsOpen.value = !chatDetailsOpen.value;
+  if (chatDetailsOpen.value) {
+    chatProfileContact.value = null;
+  }
   if (!chatDetailsOpen.value) {
     return;
   }
   if (activeContact.value) {
     contactNameDraft.value = activeContact.value.name;
     contactPromptDraft.value = activeContact.value.prompt;
+    contactRemarkDraft.value = activeContact.value.remark ?? "";
   }
   if (activeGroup.value) {
     groupEditName.value = activeGroup.value.name;
@@ -1452,12 +2286,45 @@ function saveActiveContactPrompt() {
     item.id === contact.id
       ? {
           ...item,
-          name: contactNameDraft.value.trim() || item.name,
-          prompt: normalizePersonalityPrompt(contactNameDraft.value.trim() || item.name, contactPromptDraft.value.trim() || item.prompt),
+          name: item.kind === "ai" ? contactNameDraft.value.trim() || item.name : item.name,
+          remark: item.kind === "human" ? contactRemarkDraft.value.trim() || undefined : item.remark,
+          prompt: item.kind === "ai"
+            ? normalizePersonalityPrompt(contactNameDraft.value.trim() || item.name, contactPromptDraft.value.trim() || item.prompt)
+            : item.prompt,
         }
       : item,
   );
   chatDetailsOpen.value = false;
+}
+
+async function deleteActiveContact() {
+  const contact = activeContact.value;
+  if (!contact || contact.kind !== "human") {
+    return;
+  }
+  if (authToken.value) {
+    try {
+      await removeFriend(authToken.value, contact.id);
+    } catch (cause) {
+      showTransientError(cause instanceof Error ? cause.message : "删除好友失败");
+      return;
+    }
+  }
+  chatContacts.value = chatContacts.value.filter((item) => item.id !== contact.id);
+  const { [contact.id]: _removedDirect, ...remainingDirectMessages } = directMessages.value;
+  directMessages.value = remainingDirectMessages;
+  friendSummary.value = {
+    ...friendSummary.value,
+    friends: friendSummary.value.friends.filter((friendship) => friendship.user.id !== contact.id),
+  };
+  const { [contact.id]: _removed, ...remainingMessages } = threadMessages.value;
+  threadMessages.value = remainingMessages;
+  chatGroups.value = chatGroups.value.map((group) => ({
+    ...group,
+    memberIds: group.memberIds.filter((memberId) => memberId !== contact.id),
+  }));
+  chatDetailsOpen.value = false;
+  activeChatThreadId.value = chatThreads.value.find((thread) => thread.id !== contact.id)?.id ?? "assistant";
 }
 
 function polishContactPrompt() {
@@ -1537,17 +2404,20 @@ async function createGroupReplies(history: ChatMessage[]) {
     return [];
   }
   const members = groupMembers(group);
-  if (members.length === 0) {
+  const aiMembers = members.filter((contact) => contact.kind === "ai");
+  if (aiMembers.length === 0) {
     return [
       {
         role: "assistant",
         authorName: group.name,
         authorTone: "blue",
-        content: uiLanguage.value === "en-US" ? "Add contacts to this group before chatting." : "先把联系人拉进这个群聊，再开始对话。",
+        content: uiLanguage.value === "en-US"
+          ? "This group has no AI characters yet. The message is saved for the people in the group."
+          : "这个群里暂时没有 AI 角色，消息已经留给群里的联系人。",
       } satisfies ChatMessage,
     ];
   }
-  return Promise.all(members.map((contact) => createGroupMemberReply(contact, group, history)));
+  return Promise.all(aiMembers.map((contact) => createGroupMemberReply(contact, group, history)));
 }
 
 async function createGroupMemberReply(contact: ChatContact, group: ChatGroup, history: ChatMessage[]): Promise<ChatMessage> {
@@ -1634,9 +2504,74 @@ function threadPreview(threadId: string, fallback: string) {
   return truncatePreview(latest.content);
 }
 
+function latestThreadTime(threadId: string) {
+  const messages = threadMessages.value[threadId] ?? [];
+  return messages.length ? messages.length : 0;
+}
+
+function directMessagesForContact(contact: ChatContact): ChatMessage[] {
+  const currentUserId = currentUser.value?.id;
+  return (directMessages.value[contact.id] ?? []).map((message) => {
+    const isOwn = message.sender_id === currentUserId;
+    return {
+      id: `direct-${message.id}`,
+      role: isOwn ? "user" : "assistant",
+      source: "human",
+      senderId: message.sender_id,
+      content: message.content,
+      avatarText: isOwn ? userInitials.value : contactAvatarText(contact),
+      avatarUrl: isOwn ? currentUserAvatarUrl.value : contact.avatarUrl,
+      renderMarkdown: false,
+      createdAt: message.created_at,
+      attachments: directAttachmentsToChat(message.attachments),
+    } satisfies ChatMessage;
+  });
+}
+
+function directThreadPreview(contactId: string, fallback: string) {
+  const latest = [...(directMessages.value[contactId] ?? [])].reverse().find((message) => message.content.trim());
+  return latest ? truncatePreview(latest.content) : fallback;
+}
+
+function latestDirectMessageTime(contactId: string) {
+  const messages = directMessages.value[contactId] ?? [];
+  const latest = messages[messages.length - 1];
+  if (!latest) {
+    return 0;
+  }
+  const timestamp = new Date(latest.created_at).getTime();
+  return Number.isFinite(timestamp) ? timestamp : latest.id;
+}
+
+function directAttachmentsToChat(attachments: DirectAttachment[] = []): ChatAttachment[] {
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    name: attachment.name,
+    type: attachment.type,
+    size: attachment.size,
+    kind: attachment.kind,
+    dataUrl: attachment.data_url,
+  }));
+}
+
 function truncatePreview(value: string) {
   const content = value.replace(/\s+/g, " ").trim();
   return content.length > 28 ? `${content.slice(0, 28)}...` : content;
+}
+
+function fuzzyMatch(value: string, query: string) {
+  if (value.includes(query)) {
+    return true;
+  }
+  let cursor = 0;
+  for (const char of query) {
+    cursor = value.indexOf(char, cursor);
+    if (cursor === -1) {
+      return false;
+    }
+    cursor += 1;
+  }
+  return true;
 }
 
 function createThreadMessageSamples(): Record<string, ChatMessage[]> {
@@ -1658,8 +2593,12 @@ function createThreadMessageSamples(): Record<string, ChatMessage[]> {
   };
 }
 
+function scopedStorageKey(key: string) {
+  return `${key}.${currentUser.value?.id ?? "guest"}`;
+}
+
 function loadThreadMessages(): Record<string, ChatMessage[]> {
-  const raw = localStorage.getItem(threadMessagesKey);
+  const raw = localStorage.getItem(scopedStorageKey(threadMessagesKey));
   if (!raw) {
     return migrateLegacyThreadMessages(createThreadMessageSamples());
   }
@@ -1694,20 +2633,30 @@ function loadLegacyMessages(): ChatMessage[] {
 }
 
 function loadChatContacts(): ChatContact[] {
-  const raw = localStorage.getItem(chatContactsKey);
+  const raw = localStorage.getItem(scopedStorageKey(chatContactsKey));
   if (!raw) {
     return defaultChatContacts();
   }
   try {
     const parsed = JSON.parse(raw) as ChatContact[];
-    return Array.isArray(parsed) && parsed.length ? parsed : defaultChatContacts();
+    return Array.isArray(parsed) && parsed.length ? parsed.map(normalizeChatContact) : defaultChatContacts();
   } catch {
     return defaultChatContacts();
   }
 }
 
+function normalizeChatContact(contact: ChatContact): ChatContact {
+  return {
+    ...contact,
+    kind: contact.kind ?? "ai",
+    prompt: contact.prompt ?? "",
+    remark: contact.remark ?? undefined,
+    avatarUrl: contact.avatarUrl ?? undefined,
+  };
+}
+
 function loadChatGroups(): ChatGroup[] {
-  const raw = localStorage.getItem(chatGroupsKey);
+  const raw = localStorage.getItem(scopedStorageKey(chatGroupsKey));
   if (!raw) {
     return defaultChatGroups();
   }
@@ -1725,6 +2674,7 @@ function defaultChatContacts(): ChatContact[] {
       id: "assistant",
       name: uiLanguage.value === "en-US" ? "Assistant" : "交耳",
       tone: "ink",
+      kind: "ai",
       description: uiLanguage.value === "en-US" ? "Default AI contact" : "默认 AI 联系人",
       prompt: "你是一个简洁、可靠的 AI 助手。回复要具体，不要端着，不要把简单问题讲复杂。",
     },
@@ -1732,6 +2682,7 @@ function defaultChatContacts(): ChatContact[] {
       id: "aning",
       name: "阿宁",
       tone: "green",
+      kind: "ai",
       description: uiLanguage.value === "en-US" ? "Life and emotion" : "生活与情绪",
       prompt: "你叫阿宁。你像一个熟人，温和、短句、会承接情绪，但不会讲大道理。你会先回应人的感受，再给一个很小的下一步。",
     },
@@ -1739,6 +2690,7 @@ function defaultChatContacts(): ChatContact[] {
       id: "planner",
       name: uiLanguage.value === "en-US" ? "Planner" : "策划师",
       tone: "blue",
+      kind: "ai",
       description: uiLanguage.value === "en-US" ? "Ideas and plans" : "灵感与计划",
       prompt: "你是一个产品策划师。你擅长把模糊想法拆成目标、场景、约束和下一步。回复要像在真实会议里推进事情。",
     },
@@ -1746,6 +2698,7 @@ function defaultChatContacts(): ChatContact[] {
       id: "critic",
       name: uiLanguage.value === "en-US" ? "Reviewer" : "审稿人",
       tone: "clay",
+      kind: "ai",
       description: uiLanguage.value === "en-US" ? "Risks and counterpoints" : "风险与反例",
       prompt: "你是一个严格审稿人。你要指出薄弱假设、风险和反例，但语气克制，重点是帮用户把事情做扎实。",
     },
@@ -1831,10 +2784,17 @@ function loadStoredUser(): AuthUser | null {
     return null;
   }
   try {
-    return JSON.parse(raw);
+    return normalizeAuthUser(JSON.parse(raw) as AuthUser);
   } catch {
     return null;
   }
+}
+
+function normalizeAuthUser(user: AuthUser): AuthUser {
+  return {
+    ...user,
+    avatar_url: resolveMediaUrl(user.avatar_url) ?? null,
+  };
 }
 
 function loadPreference<T extends string>(key: string, fallback: T): T {

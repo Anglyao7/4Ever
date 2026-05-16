@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, catalog, chat, health, images, modules
 from app.core.config import get_settings
@@ -7,6 +8,7 @@ from app.db.session import init_db
 
 
 settings = get_settings()
+settings.media_root.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title=settings.app_name,
@@ -29,6 +31,7 @@ app.include_router(catalog.router, prefix=settings.api_prefix)
 app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(images.router, prefix=settings.api_prefix)
 app.include_router(modules.router, prefix=settings.api_prefix)
+app.mount("/api/media", StaticFiles(directory=settings.media_root), name="media")
 
 
 @app.on_event("startup")

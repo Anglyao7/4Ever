@@ -87,8 +87,14 @@
 
             <label v-for="field in activeTemplate.inputs" :key="field.key" class="workflow-field">
               <span>{{ fieldLabel(field) }}<em v-if="field.required">{{ copy.required }}</em></span>
+              <select v-if="field.type === 'noteSelect'" v-model="inputValues[field.key]">
+                <option value="" disabled>{{ fieldPlaceholder(field) }}</option>
+                <option v-for="note in noteOptions" :key="note.id" :value="note.id">
+                  {{ noteOptionLabel(note) }}
+                </option>
+              </select>
               <textarea
-                v-if="field.multiline"
+                v-else-if="field.multiline || field.type === 'textarea'"
                 v-model="inputValues[field.key]"
                 rows="5"
                 :placeholder="fieldPlaceholder(field)"
@@ -238,6 +244,7 @@ const templates = workflowTemplates();
 const activeTemplateId = ref(normalizeTemplateId(localStorage.getItem(workflowStorageKey)));
 const inputValues = reactive<Record<string, string>>({});
 const runs = ref<WorkflowRun[]>(loadRuns());
+const noteOptions = ref<LocalNoteDraft[]>(loadNotes());
 const selectedRunId = ref(runs.value[0]?.id ?? "");
 const running = ref(false);
 const error = ref("");
@@ -345,6 +352,7 @@ watch(activeTemplateId, (value) => {
 resetInputs();
 
 function selectTemplate(templateId: string) {
+  refreshNoteOptions();
   activeTemplateId.value = templateId;
   selectedRunId.value = "";
   error.value = "";
@@ -439,9 +447,35 @@ async function runAiNode(node: WorkflowNode, context: string) {
 }
 
 async function runImageNode(context: string) {
-  const prompt = context.slice(-1800);
+  const prompt = extractImagePrompt(context);
   const response = await generateImage({ ...loadImageConfig(), prompt });
-  return `${copy.value.imageQueued}\n${response.message}`;
+  return formatImageWorkflowOutput(response, prompt);
+}
+
+function extractImagePrompt(context: string) {
+  const match = context.match(/FINAL_PROMPT\s*:?\s*([\s\S]*?)(?:\n\s*(?:NEGATIVE_PROMPT|STYLE_TAGS|COMPOSITION_NOTES|MODEL_HINTS|REVISION_CHECKLIST)\s*:|$)/i);
+  const prompt = match?.[1]?.trim();
+  return truncateText(prompt || context.slice(-1800), 4000);
+}
+
+function formatImageWorkflowOutput(response: Awaited<ReturnType<typeof generateImage>>, prompt: string) {
+  const images = response.images ?? [];
+  const lines = [copy.value.imageQueued, `Status: ${response.status}`, response.message, `Images: ${images.length}`];
+  images.forEach((image, index) => {
+    const label = `${index + 1}.`;
+    if (image.url) {
+      lines.push(`${label} ${image.url}`);
+    } else if (image.b64_json) {
+      lines.push(`${label} Base64 image returned (${image.b64_json.length} chars).`);
+    } else {
+      lines.push(`${label} Image returned without preview data.`);
+    }
+    if (image.revised_prompt) {
+      lines.push(`Revised prompt: ${image.revised_prompt}`);
+    }
+  });
+  lines.push("", "Prompt used:", prompt);
+  return lines.join("\n");
 }
 
 function saveNote(node: WorkflowNode, context: string, input: Record<string, string>) {
@@ -461,6 +495,7 @@ function saveNote(node: WorkflowNode, context: string, input: Record<string, str
 }
 
 function resetInputs() {
+  refreshNoteOptions();
   restoreInputs({});
 }
 
@@ -469,8 +504,19 @@ function restoreInputs(values: Record<string, string>) {
     delete inputValues[key];
   }
   for (const field of activeTemplate.value.inputs) {
-    inputValues[field.key] = values[field.key] ?? "";
+    inputValues[field.key] = values[field.key] ?? defaultInputValue(field);
   }
+}
+
+function defaultInputValue(field: WorkflowInputField) {
+  if (field.type !== "noteSelect") {
+    return "";
+  }
+  const activeNoteId = localStorage.getItem(activeNoteStorageKey) ?? "";
+  if (noteOptions.value.some((note) => note.id === activeNoteId)) {
+    return activeNoteId;
+  }
+  return noteOptions.value[0]?.id ?? "";
 }
 
 function selectRun(runId: string) {
@@ -520,9 +566,21 @@ function nodeStateClass(nodeId: string) {
 }
 
 function buildInputContext(input: Record<string, string>) {
-  return Object.entries(input)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join("\n");
+  return activeTemplate.value.inputs
+    .map((field) => inputContextLine(field, input[field.key] ?? ""))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function inputContextLine(field: WorkflowInputField, value: string) {
+  if (field.type === "noteSelect") {
+    const note = findNote(value);
+    if (!note) {
+      return `${field.key}:`;
+    }
+    return `Selected Note Title: ${noteTitle(note)}\nSelected Note Updated At: ${note.updatedAt}\nSelected Note Content:\n${note.content}`;
+  }
+  return `${field.key}: ${value}`;
 }
 
 function loadRuns(): WorkflowRun[] {
@@ -541,6 +599,23 @@ function loadNotes(): LocalNoteDraft[] {
   } catch {
     return [];
   }
+}
+
+function refreshNoteOptions() {
+  noteOptions.value = loadNotes();
+}
+
+function findNote(noteId: string) {
+  return noteOptions.value.find((note) => note.id === noteId) ?? loadNotes().find((note) => note.id === noteId);
+}
+
+function noteTitle(note: LocalNoteDraft) {
+  return note.title.trim() || note.content.trim().split("\n")[0]?.slice(0, 36) || (props.language === "en-US" ? "Untitled note" : "未命名笔记");
+}
+
+function noteOptionLabel(note: LocalNoteDraft) {
+  const preview = note.content.trim().replace(/\s+/g, " ").slice(0, 42);
+  return preview ? `${noteTitle(note)} — ${preview}` : noteTitle(note);
 }
 
 function loadImageConfig(): ImageGenerationConfig {
@@ -629,6 +704,9 @@ function templateIcon(templateId: string) {
     research: GitBranch,
     note: NotebookPen,
     image: ImagePlus,
+    xiaohongshu: Sparkles,
+    "content-calendar": RefreshCw,
+    "decision-memo": GitBranch,
     compare: Bot,
     review: RefreshCw,
   };
@@ -764,10 +842,10 @@ function workflowTemplates(): WorkflowTemplate[] {
     },
     {
       id: "image",
-      name: "图片创作流",
-      nameEn: "Image creation",
-      description: "把想法扩写成图片 prompt，并提交给图片生成模块。",
-      descriptionEn: "Expand an idea into an image prompt and submit it to image generation.",
+      name: "视觉创意生产线",
+      nameEn: "Visual creative pipeline",
+      description: "把粗略想法变成创意简报、三套视觉方向、最终 Prompt、生成结果和可复用笔记。",
+      descriptionEn: "Turn a rough idea into a creative brief, three visual directions, a final prompt, generated output, and a reusable note.",
       category: "创作",
       categoryEn: "Creation",
       inputs: [
@@ -780,25 +858,277 @@ function workflowTemplates(): WorkflowTemplate[] {
           multiline: true,
           required: true,
         },
+        {
+          key: "usage",
+          label: "用途",
+          labelEn: "Usage",
+          placeholder: "例如：头像、海报、文章封面、小红书首图、产品概念图。",
+          placeholderEn: "Example: avatar, poster, article cover, social post, product concept.",
+        },
+        {
+          key: "style",
+          label: "风格偏好",
+          labelEn: "Style preference",
+          placeholder: "例如：电影感、商业摄影、东方赛博、极简、胶片。",
+          placeholderEn: "Example: cinematic, editorial photo, cyber-oriental, minimal, film look.",
+        },
+        {
+          key: "constraints",
+          label: "限制与禁忌",
+          labelEn: "Constraints",
+          placeholder: "例如：不要文字、避免恐怖元素、必须保留蓝绿色、适合方图。",
+          placeholderEn: "Example: no text, avoid horror, keep teal tones, square format.",
+          multiline: true,
+        },
       ],
       nodes: [
         {
-          id: "prompt",
+          id: "creative-brief",
           type: "ai",
-          title: "扩写 Prompt",
-          titleEn: "Expand prompt",
-          description: "生成可直接用于图片模型的描述。",
-          descriptionEn: "Create a prompt ready for an image model.",
-          prompt: "请把这个画面想法扩写成高质量图片生成 prompt，包含主体、场景、光线、镜头、风格和负面约束。",
-          promptEn: "Expand this image idea into a high-quality image prompt with subject, scene, lighting, camera, style, and negative constraints.",
+          title: "生成创意简报",
+          titleEn: "Build creative brief",
+          description: "明确用途、受众、情绪、必须元素和避坑点。",
+          descriptionEn: "Clarify usage, audience, mood, must-have elements, and constraints.",
+          prompt: "你是资深视觉创意总监。请基于输入生成一份图片创作简报，必须包含：1.核心画面目标；2.目标受众与使用场景；3.情绪和叙事张力；4.必须出现的元素；5.必须避免的元素；6.推荐构图方向；7.最可能节约试错时间的判断。输出要具体，不要泛泛而谈。",
+          promptEn: "Act as a senior visual creative director. Create an image production brief with: 1. core visual goal; 2. audience and usage context; 3. mood and narrative tension; 4. must-have elements; 5. avoid list; 6. recommended composition direction; 7. the judgment most likely to reduce iteration time. Be specific, not generic.",
+        },
+        {
+          id: "visual-directions",
+          type: "ai",
+          title: "提出三套方向",
+          titleEn: "Create three directions",
+          description: "给出商业稳妥、电影叙事和实验吸睛三种方案。",
+          descriptionEn: "Produce commercial-safe, cinematic-storytelling, and bold-experimental options.",
+          prompt: "基于上面的创意简报，提出三套差异明显的视觉方向：A 商业稳妥版、B 电影叙事版、C 实验吸睛版。每套都写清：场景、主体、构图、光线、色彩、镜头/质感、为什么它适合这个用途、潜在风险。最后推荐最值得先生成的一套，并说明原因。",
+          promptEn: "Based on the creative brief, propose three distinct directions: A commercial-safe, B cinematic-storytelling, C bold-experimental. For each, specify scene, subject, composition, lighting, palette, camera/texture, why it fits the usage, and risks. End by recommending the first direction to generate and why.",
+        },
+        {
+          id: "prompt-pack",
+          type: "ai",
+          title: "打包最终 Prompt",
+          titleEn: "Package final prompt",
+          description: "把最佳方向整理为可直接生图的 Prompt 包。",
+          descriptionEn: "Convert the best direction into a generation-ready prompt pack.",
+          prompt: "请把推荐方向整理成图片模型可直接使用的最终 Prompt 包。必须严格使用以下字段名，并让 FINAL_PROMPT 自包含、具体、适合直接提交给图片模型。不要输出额外分析。\nFINAL_PROMPT:\nNEGATIVE_PROMPT:\nSTYLE_TAGS:\nCOMPOSITION_NOTES:\nMODEL_HINTS:\nREVISION_CHECKLIST:",
+          promptEn: "Convert the recommended direction into a generation-ready image prompt pack. Use these exact field names, and make FINAL_PROMPT self-contained, specific, and ready to submit to an image model. Do not include extra analysis.\nFINAL_PROMPT:\nNEGATIVE_PROMPT:\nSTYLE_TAGS:\nCOMPOSITION_NOTES:\nMODEL_HINTS:\nREVISION_CHECKLIST:",
         },
         {
           id: "image",
           type: "image",
-          title: "提交生图",
-          titleEn: "Submit image",
-          description: "调用图片生成接口。",
-          descriptionEn: "Call the image generation endpoint.",
+          title: "生成首版图片",
+          titleEn: "Generate first image",
+          description: "提取 FINAL_PROMPT 并调用图片生成接口。",
+          descriptionEn: "Extract FINAL_PROMPT and call the image generation endpoint.",
+        },
+        {
+          id: "save-note",
+          type: "notes",
+          title: "保存创作包",
+          titleEn: "Save production package",
+          description: "把简报、方向、Prompt 和生成结果保存到笔记。",
+          descriptionEn: "Save the brief, directions, prompt, and generation result to Notes.",
+        },
+      ],
+    },
+    {
+      id: "xiaohongshu",
+      name: "商品笔记种草流",
+      nameEn: "Product note to Xiaohongshu",
+      description: "选择一篇商品/想法笔记，自动提炼卖点、生成标题钩子和小红书成稿，并保存为新笔记。",
+      descriptionEn: "Select a product or idea note, extract selling points, create hooks, write a Xiaohongshu-ready post, and save it as a new note.",
+      category: "内容导出",
+      categoryEn: "Content export",
+      inputs: [
+        {
+          key: "sourceNoteId",
+          type: "noteSelect",
+          label: "选择笔记",
+          labelEn: "Source note",
+          placeholder: "请选择要加工的笔记",
+          placeholderEn: "Select a note to transform",
+          required: true,
+        },
+        {
+          key: "audience",
+          label: "目标人群",
+          labelEn: "Audience",
+          placeholder: "例如：刚工作的一人食女生、露营新手、敏感肌用户。",
+          placeholderEn: "Example: young solo diners, camping beginners, sensitive-skin users.",
+        },
+        {
+          key: "tone",
+          label: "语气",
+          labelEn: "Tone",
+          placeholder: "例如：真实分享、理性测评、朋友安利、轻松吐槽。",
+          placeholderEn: "Example: authentic sharing, rational review, friendly recommendation, playful rant.",
+        },
+        {
+          key: "goal",
+          label: "发布目标",
+          labelEn: "Publishing goal",
+          placeholder: "例如：种草转化、引导收藏、评论互动、品牌心智。",
+          placeholderEn: "Example: conversion, saves, comments, brand recall.",
+        },
+      ],
+      nodes: [
+        {
+          id: "extract-selling-points",
+          type: "ai",
+          title: "提炼卖点与痛点",
+          titleEn: "Extract points",
+          description: "从笔记里找出用户痛点、商品利益点和可信证据。",
+          descriptionEn: "Find user pains, product benefits, and believable proof from the note.",
+          prompt: "你是小红书内容策划。请从选中的笔记中提炼：1.目标用户痛点；2.商品/想法最值得讲的卖点；3.可被相信的证据或使用场景；4.不能夸大的点；5.最适合小红书的内容角度。不要虚构事实，不要使用绝对化承诺。",
+          promptEn: "Act as a Xiaohongshu content strategist. From the selected note, extract: 1. audience pains; 2. strongest product/idea benefits; 3. believable proof or usage scenes; 4. claims that should not be exaggerated; 5. the best Xiaohongshu angle. Do not invent facts or use absolute promises.",
+        },
+        {
+          id: "hooks",
+          type: "ai",
+          title: "生成标题钩子",
+          titleEn: "Create hooks",
+          description: "生成标题、开头和评论引导，方便快速挑选。",
+          descriptionEn: "Create titles, openings, and comment prompts for quick selection.",
+          prompt: "基于上面的卖点与痛点，生成 5 组小红书标题和开头钩子。每组包含：标题、第一句话、适合的人群、为什么会吸引点击。标题要像真实用户分享，不要像广告。",
+          promptEn: "Based on the points above, create 5 Xiaohongshu title/opening hook sets. Each set includes: title, first sentence, target reader, and why it attracts clicks. Make titles feel like real user sharing, not ads.",
+        },
+        {
+          id: "draft-post",
+          type: "ai",
+          title: "生成小红书成稿",
+          titleEn: "Write post",
+          description: "输出可直接发布的正文、标签、互动引导和配图建议。",
+          descriptionEn: "Produce a publish-ready post with tags, CTA, and image suggestions.",
+          prompt: "请生成一篇可直接发布的小红书成稿，结构必须包含：标题、正文、种草亮点、真实使用/思考场景、适合配图、互动引导、标签。要求：段落短、节奏快、有真实体验感；保留笔记事实，不编造数据；不要使用夸张医疗/功效承诺；如果原笔记信息不足，请在文末列出需要补充的信息。",
+          promptEn: "Write a publish-ready Xiaohongshu post with: title, body, recommendation points, real usage/thinking scene, image suggestions, CTA, and hashtags. Keep paragraphs short and concrete; preserve note facts; do not invent data; avoid exaggerated health/performance claims; if information is missing, list what to add at the end.",
+        },
+        {
+          id: "save-note",
+          type: "notes",
+          title: "保存成稿",
+          titleEn: "Save post",
+          description: "把生成的发布稿保存成新笔记。",
+          descriptionEn: "Save the generated post as a new note.",
+        },
+      ],
+    },
+    {
+      id: "content-calendar",
+      name: "笔记内容日历",
+      nameEn: "Note content calendar",
+      description: "把一篇笔记拆成 7 天可发布选题、标题、素材需求和行动计划。",
+      descriptionEn: "Turn one note into a 7-day publishing calendar with topics, titles, assets, and actions.",
+      category: "内容导出",
+      categoryEn: "Content export",
+      inputs: [
+        {
+          key: "sourceNoteId",
+          type: "noteSelect",
+          label: "选择笔记",
+          labelEn: "Source note",
+          placeholder: "请选择要拆解的笔记",
+          placeholderEn: "Select a note to expand",
+          required: true,
+        },
+        {
+          key: "platform",
+          label: "发布平台",
+          labelEn: "Platform",
+          placeholder: "例如：小红书、公众号、B 站、朋友圈、Twitter/X。",
+          placeholderEn: "Example: Xiaohongshu, WeChat, Bilibili, Moments, Twitter/X.",
+        },
+        {
+          key: "audience",
+          label: "目标读者",
+          labelEn: "Audience",
+          placeholder: "例如：创业者、设计师、学生、宝妈、AI 工具用户。",
+          placeholderEn: "Example: founders, designers, students, parents, AI tool users.",
+        },
+      ],
+      nodes: [
+        {
+          id: "mine-angles",
+          type: "ai",
+          title: "挖掘内容角度",
+          titleEn: "Mine angles",
+          description: "从一篇笔记里拆出多个可持续输出的选题方向。",
+          descriptionEn: "Extract multiple sustainable content angles from one note.",
+          prompt: "请从选中的笔记中挖掘可连续发布的内容角度。输出：核心主题、5-10 个可延展角度、每个角度的目标读者、平台适配建议、最值得先发的理由。",
+          promptEn: "Mine the selected note for repeatable content angles. Output: core theme, 5-10 expandable angles, target reader for each, platform fit, and which angle should be published first with rationale.",
+        },
+        {
+          id: "calendar",
+          type: "ai",
+          title: "生成 7 天日历",
+          titleEn: "Create 7-day calendar",
+          description: "生成每天的主题、标题、正文方向、素材和 CTA。",
+          descriptionEn: "Generate daily topics, titles, body direction, assets, and CTA.",
+          prompt: "请基于上面的内容角度生成 7 天内容日历。每一天必须包含：发布主题、标题候选 2 个、正文大纲、需要准备的素材、开头钩子、结尾 CTA、复用原笔记的哪部分。最后给出执行优先级和一次性批量生产建议。",
+          promptEn: "Create a 7-day content calendar from the angles above. Each day must include: topic, 2 title options, body outline, needed assets, opening hook, ending CTA, and which part of the original note it reuses. End with execution priority and batching advice.",
+        },
+        {
+          id: "save-note",
+          type: "notes",
+          title: "保存日历",
+          titleEn: "Save calendar",
+          description: "把内容日历保存为新笔记。",
+          descriptionEn: "Save the calendar as a new note.",
+        },
+      ],
+    },
+    {
+      id: "decision-memo",
+      name: "笔记决策备忘录",
+      nameEn: "Note decision memo",
+      description: "把零散想法整理成背景、事实、选项、取舍、建议和下一步。",
+      descriptionEn: "Turn scattered notes into background, facts, options, tradeoffs, recommendation, and next steps.",
+      category: "思考整理",
+      categoryEn: "Thinking",
+      inputs: [
+        {
+          key: "sourceNoteId",
+          type: "noteSelect",
+          label: "选择笔记",
+          labelEn: "Source note",
+          placeholder: "请选择要整理的笔记",
+          placeholderEn: "Select a note to structure",
+          required: true,
+        },
+        {
+          key: "decision",
+          label: "要解决的问题",
+          labelEn: "Decision question",
+          placeholder: "例如：这个产品方向要不要做？我应该选哪个方案？",
+          placeholderEn: "Example: Should we build this product direction? Which option should I choose?",
+        },
+      ],
+      nodes: [
+        {
+          id: "extract-thinking",
+          type: "ai",
+          title: "提取事实与假设",
+          titleEn: "Extract facts",
+          description: "区分事实、判断、假设、风险和未知信息。",
+          descriptionEn: "Separate facts, judgments, assumptions, risks, and unknowns.",
+          prompt: "请把选中的笔记整理成决策材料。先严格区分：已知事实、主观判断、关键假设、风险、缺失信息、需要验证的问题。不要急着给建议。",
+          promptEn: "Turn the selected note into decision material. First strictly separate: known facts, subjective judgments, key assumptions, risks, missing information, and questions to validate. Do not recommend yet.",
+        },
+        {
+          id: "memo",
+          type: "ai",
+          title: "形成决策备忘录",
+          titleEn: "Write memo",
+          description: "输出结构化备忘录和下一步行动。",
+          descriptionEn: "Produce a structured memo and next actions.",
+          prompt: "基于上面的材料，写一份决策备忘录。结构必须包含：背景、问题定义、可选方案、每个方案的收益/代价/可逆性、推荐选择、推荐理由、最大风险、下一步 3 个行动。如果信息不足，要明确写出还不能判断的部分。",
+          promptEn: "Based on the material above, write a decision memo with: background, problem definition, options, benefit/cost/reversibility of each option, recommendation, rationale, biggest risk, and 3 next actions. If information is insufficient, state what cannot be judged yet.",
+        },
+        {
+          id: "save-note",
+          type: "notes",
+          title: "保存备忘录",
+          titleEn: "Save memo",
+          description: "把决策备忘录保存为新笔记。",
+          descriptionEn: "Save the decision memo as a new note.",
         },
       ],
     },

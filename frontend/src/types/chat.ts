@@ -12,10 +12,17 @@ export interface ChatAttachment {
 }
 
 export interface ChatMessage {
+  id?: string | number;
   role: ChatRole;
   content: string;
   authorName?: string;
   authorTone?: string;
+  source?: "ai" | "human";
+  senderId?: string;
+  avatarText?: string;
+  avatarUrl?: string;
+  renderMarkdown?: boolean;
+  createdAt?: string;
   attachments?: ChatAttachment[];
 }
 
@@ -29,7 +36,10 @@ export interface ChatContact {
   name: string;
   prompt: string;
   tone: "ink" | "green" | "blue" | "clay" | "gold";
+  kind: "ai" | "human";
   description?: string;
+  remark?: string;
+  avatarUrl?: string;
 }
 
 export interface ChatGroup {
@@ -84,4 +94,52 @@ export interface ProviderConnectionResponse {
 
 export interface ProviderModelsResponse {
   models: ProviderModel[];
+}
+
+export interface DirectAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  kind: "image" | "file";
+  data_url?: string;
+}
+
+export interface DirectMessageRecord {
+  id: number;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  attachments: DirectAttachment[];
+  created_at: string;
+}
+
+export interface FriendProfile {
+  id: string;
+  username: string;
+  email: string;
+  display_name: string;
+  status: string;
+  bio: string;
+  avatar_url?: string | null;
+}
+
+export interface FriendRequestRecord {
+  id: number;
+  requester: FriendProfile;
+  addressee: FriendProfile;
+  status: "pending" | "accepted" | "rejected";
+  created_at: string;
+  responded_at?: string | null;
+}
+
+export interface FriendshipRecord {
+  user: FriendProfile;
+  created_at: string;
+}
+
+export interface FriendSummary {
+  friends: FriendshipRecord[];
+  incoming_requests: FriendRequestRecord[];
+  outgoing_requests: FriendRequestRecord[];
 }

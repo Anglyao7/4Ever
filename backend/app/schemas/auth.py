@@ -21,6 +21,12 @@ class AccountUpdateRequest(BaseModel):
     email: Optional[str] = Field(default=None, min_length=5, max_length=160)
 
 
+class AvatarUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str = Field(min_length=1, max_length=120)
+    data_base64: str = Field(min_length=1)
+
+
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
@@ -31,6 +37,7 @@ class AuthUser(BaseModel):
     username: str
     email: str
     display_name: str
+    avatar_url: Optional[str] = None
     role: str
     created_at: datetime
 
@@ -38,3 +45,13 @@ class AuthUser(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: AuthUser
+
+
+class UserSearchResult(BaseModel):
+    id: str
+    username: str
+    email: str
+    display_name: str
+    status: str
+    bio: str
+    avatar_url: Optional[str] = None
