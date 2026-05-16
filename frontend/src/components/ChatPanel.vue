@@ -8,26 +8,65 @@
 
       <article
         v-for="(message, index) in messages"
-        :key="`${message.role}-${index}`"
+        :key="message.id ?? `${message.role}-${index}`"
         class="message"
         :class="[message.role, message.authorTone]"
       >
-        <div class="avatar">
-          <UserRound v-if="message.role === 'user'" :size="16" />
+        <button
+          class="avatar"
+          :class="{ 'custom-avatar': message.avatarText || message.avatarUrl }"
+          type="button"
+          :title="message.authorName || copy.avatar"
+          @click="emit('avatar-click', message)"
+        >
+          <img v-if="message.avatarUrl" :src="message.avatarUrl" :alt="message.authorName || message.avatarText || copy.avatar" />
+          <span v-else-if="message.avatarText">{{ message.avatarText }}</span>
+          <UserRound v-else-if="message.role === 'user' || message.source === 'human'" :size="16" />
           <Bot v-else :size="16" />
-        </div>
+        </button>
         <div class="message-bubble-stack">
           <span v-if="message.authorName" class="message-author">{{ message.authorName }}</span>
-          <p>{{ message.content }}</p>
-          <div v-if="message.attachments?.length" class="message-attachments">
-            <figure v-for="attachment in message.attachments" :key="attachment.id">
-              <img v-if="attachment.kind === 'image' && attachment.dataUrl" :src="attachment.dataUrl" :alt="attachment.name" />
-              <FileImage v-else-if="attachment.kind === 'image'" :size="18" />
-              <FileIcon v-else :size="18" />
+          <div
+            v-if="shouldRenderMarkdown(message)"
+            class="message-markdown markdown-body"
+            v-html="renderMessageMarkdown(message.content)"
+          />
+          <p v-else-if="message.content">{{ message.content }}</p>
+          <div v-if="imageAttachments(message).length" class="message-image-grid">
+            <figure v-for="attachment in imageAttachments(message)" :key="attachment.id" class="message-image-attachment">
+              <button
+                v-if="attachment.dataUrl"
+                class="message-image-open"
+                type="button"
+                :title="copy.openImage"
+                @click="openImagePreview(attachment)"
+              >
+                <img :src="attachment.dataUrl" :alt="attachment.name" />
+              </button>
+              <div v-else class="message-image-missing">
+                <FileImage :size="22" />
+              </div>
               <figcaption>
                 <strong>{{ attachment.name }}</strong>
                 <small>{{ formatAttachmentSize(attachment.size) }}</small>
               </figcaption>
+            </figure>
+          </div>
+          <div v-if="fileAttachments(message).length" class="message-attachments">
+            <figure
+              v-for="attachment in fileAttachments(message)"
+              :key="attachment.id"
+              class="message-file-card"
+              :data-extension="fileLabel(attachment)"
+            >
+              <a v-if="attachment.dataUrl" class="message-file-card-content" :href="attachment.dataUrl" :download="attachment.name">
+                <strong class="message-file-name">{{ attachment.name }}</strong>
+                <small>{{ formatAttachmentSize(attachment.size) }}</small>
+              </a>
+              <div v-else class="message-file-card-content">
+                <strong class="message-file-name">{{ attachment.name }}</strong>
+                <small>{{ formatAttachmentSize(attachment.size) }}</small>
+              </div>
             </figure>
           </div>
         </div>
@@ -72,7 +111,6 @@
         class="visually-hidden"
         type="file"
         multiple
-        accept="image/*,.pdf,.txt,.md,.csv,.json"
         @change="handleAttachmentInput"
       />
       <button class="composer-tool-button" type="button" :title="copy.attach" :disabled="loading" @click="openAttachmentPicker">
@@ -83,10 +121,34 @@
         <span>{{ copy.send }}</span>
       </button>
     </form>
+
+    <Teleport to="body">
+      <div v-if="previewImage" class="image-preview-backdrop" @click.self="closeImagePreview">
+        <section class="image-preview-dialog" :aria-label="previewImage.name">
+          <header class="image-preview-topbar">
+            <div>
+              <strong>{{ previewImage.name }}</strong>
+              <small>{{ formatAttachmentSize(previewImage.size) }}</small>
+            </div>
+            <div class="image-preview-actions">
+              <a v-if="previewImage.dataUrl" :href="previewImage.dataUrl" :download="previewImage.name">
+                {{ copy.downloadImage }}
+              </a>
+              <button type="button" :title="copy.closeImage" @click="closeImagePreview">
+                <X :size="18" />
+              </button>
+            </div>
+          </header>
+          <img v-if="previewImage.dataUrl" :src="previewImage.dataUrl" :alt="previewImage.name" />
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   Bot,
@@ -111,16 +173,18 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [payload: ChatSendPayload];
   clear: [];
+  "avatar-click": [message: ChatMessage];
 }>();
 
 const maxAttachments = 4;
-const maxAttachmentSize = 1024 * 1024;
+const maxAttachmentSize = 8 * 1024 * 1024;
 const draft = ref("");
 const attachments = ref<ChatAttachment[]>([]);
 const attachmentError = ref("");
 const messageListRef = ref<HTMLElement | null>(null);
 const composerInputRef = ref<HTMLTextAreaElement | null>(null);
 const attachmentInputRef = ref<HTMLInputElement | null>(null);
+const previewImage = ref<ChatAttachment | null>(null);
 
 const copy = computed(() =>
   props.language === "en-US"
@@ -130,11 +194,14 @@ const copy = computed(() =>
         responding: "Responding",
         placeholder: "Type a message",
         send: "Send",
+        avatar: "Avatar",
         attach: "Attach files",
         removeAttachment: "Remove attachment",
-        attachmentFallback: "Please review these attachments.",
+        openImage: "Open image",
+        closeImage: "Close image",
+        downloadImage: "Download",
         tooManyAttachments: "Up to 4 attachments per message.",
-        attachmentTooLarge: "Attachments must be 1 MB or smaller.",
+        attachmentTooLarge: "Attachments must be 8 MB or smaller.",
       }
     : {
         panelAria: "Chat 交耳",
@@ -142,11 +209,14 @@ const copy = computed(() =>
         responding: "正在响应",
         placeholder: "输入消息",
         send: "发送",
+        avatar: "头像",
         attach: "添加附件",
         removeAttachment: "移除附件",
-        attachmentFallback: "请先看这些附件。",
+        openImage: "打开图片",
+        closeImage: "关闭图片",
+        downloadImage: "下载",
         tooManyAttachments: "每条消息最多 4 个附件。",
-        attachmentTooLarge: "附件不能超过 1 MB。",
+        attachmentTooLarge: "附件不能超过 8 MB。",
       },
 );
 
@@ -162,7 +232,7 @@ function submit() {
     return;
   }
   const payload: ChatSendPayload = {
-    content: draft.value.trim() || copy.value.attachmentFallback,
+    content: draft.value.trim(),
     attachments: attachments.value,
   };
   emit("send", payload);
@@ -221,7 +291,7 @@ async function handleAttachmentInput(event: Event) {
         type: file.type || "application/octet-stream",
         size: file.size,
         kind,
-        dataUrl: kind === "image" ? await readFileAsDataUrl(file) : undefined,
+        dataUrl: await readFileAsDataUrl(file),
       },
     ];
   }
@@ -229,6 +299,14 @@ async function handleAttachmentInput(event: Event) {
 
 function removeAttachment(attachmentId: string) {
   attachments.value = attachments.value.filter((attachment) => attachment.id !== attachmentId);
+}
+
+function openImagePreview(attachment: ChatAttachment) {
+  previewImage.value = attachment;
+}
+
+function closeImagePreview() {
+  previewImage.value = null;
 }
 
 function readFileAsDataUrl(file: File) {
@@ -248,6 +326,89 @@ function formatAttachmentSize(size: number) {
     return `${Math.round(size / 1024)} KB`;
   }
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function imageAttachments(message: ChatMessage) {
+  return (message.attachments ?? []).filter((attachment) => attachment.kind === "image");
+}
+
+function fileAttachments(message: ChatMessage) {
+  return (message.attachments ?? []).filter((attachment) => attachment.kind !== "image");
+}
+
+function fileLabel(attachment: ChatAttachment) {
+  const extensionLabel = fileExtension(attachment.name);
+  if (extensionLabel !== "FILE") {
+    return extensionLabel;
+  }
+  const mimeLabel = mimeToLabel(attachment.type);
+  if (mimeLabel) {
+    return mimeLabel;
+  }
+  return extensionLabel;
+}
+
+function mimeToLabel(type: string) {
+  const value = type.toLowerCase();
+  if (value.includes("wordprocessingml.document")) {
+    return "DOCX";
+  }
+  if (value.includes("msword")) {
+    return "DOC";
+  }
+  if (value.includes("pdf")) {
+    return "PDF";
+  }
+  if (value.includes("spreadsheetml.sheet")) {
+    return "XLSX";
+  }
+  if (value.includes("ms-excel") || value.includes("spreadsheetml")) {
+    return "XLS";
+  }
+  if (value.includes("presentationml.presentation")) {
+    return "PPTX";
+  }
+  if (value.includes("ms-powerpoint") || value.includes("presentationml")) {
+    return "PPT";
+  }
+  if (value.includes("zip")) {
+    return "ZIP";
+  }
+  if (value.includes("json")) {
+    return "JSON";
+  }
+  if (value.includes("csv")) {
+    return "CSV";
+  }
+  if (value.includes("text/markdown") || value.includes("markdown")) {
+    return "MD";
+  }
+  if (value.startsWith("text/")) {
+    return "TXT";
+  }
+  return "";
+}
+
+function fileExtension(name: string) {
+  const cleanName = name.trim();
+  const dotIndex = cleanName.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === cleanName.length - 1) {
+    return "FILE";
+  }
+  return cleanName.slice(dotIndex + 1).replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 5) || "FILE";
+}
+
+function shouldRenderMarkdown(message: ChatMessage) {
+  return message.renderMarkdown ?? (message.role === "assistant" && message.source !== "human");
+}
+
+function renderMessageMarkdown(content: string) {
+  const parsed = marked.parse(content, {
+    async: false,
+    breaks: true,
+    gfm: true,
+  });
+  return DOMPurify.sanitize(parsed);
 }
 
 watch(

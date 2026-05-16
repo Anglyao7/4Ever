@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -14,6 +14,7 @@ class UserRecord(Base):
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    avatar_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(240), nullable=False)
     role: Mapped[str] = mapped_column(String(40), nullable=False, default="member")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -62,4 +63,41 @@ class ChatMessageRecord(Base):
     thread_id: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DirectMessageRecord(Base):
+    __tablename__ = "direct_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sender_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    recipient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    attachments_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class FriendRequestRecord(Base):
+    __tablename__ = "friend_requests"
+    __table_args__ = (
+        UniqueConstraint("requester_id", "addressee_id", name="uq_friend_request_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    requester_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    addressee_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FriendshipRecord(Base):
+    __tablename__ = "friendships"
+    __table_args__ = (
+        UniqueConstraint("user_a_id", "user_b_id", name="uq_friendship_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_a_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_b_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

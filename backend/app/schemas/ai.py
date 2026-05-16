@@ -1,7 +1,8 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProviderFormat(str, Enum):
@@ -46,6 +47,65 @@ class ChatCompletionResponse(BaseModel):
     content: str
     usage: Optional[Dict[str, Any]] = None
     raw: Optional[Dict[str, Any]] = None
+
+
+class DirectAttachment(BaseModel):
+    id: str
+    name: str
+    type: str
+    size: int = Field(ge=0)
+    kind: str
+    data_url: Optional[str] = None
+
+
+class DirectMessageCreate(BaseModel):
+    content: str = Field(default="", max_length=20000)
+    attachments: List[DirectAttachment] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_content_or_attachment(self) -> "DirectMessageCreate":
+        if not self.content.strip() and not self.attachments:
+            raise ValueError("Message content or attachment is required.")
+        return self
+
+
+class DirectMessageResponse(BaseModel):
+    id: int
+    sender_id: str
+    recipient_id: str
+    content: str
+    attachments: List[DirectAttachment] = Field(default_factory=list)
+    created_at: datetime
+
+
+class FriendProfile(BaseModel):
+    id: str
+    username: str
+    email: str
+    display_name: str
+    status: str = "active"
+    bio: str = ""
+    avatar_url: Optional[str] = None
+
+
+class FriendRequestResponse(BaseModel):
+    id: int
+    requester: FriendProfile
+    addressee: FriendProfile
+    status: str
+    created_at: datetime
+    responded_at: Optional[datetime] = None
+
+
+class FriendshipResponse(BaseModel):
+    user: FriendProfile
+    created_at: datetime
+
+
+class FriendSummaryResponse(BaseModel):
+    friends: List[FriendshipResponse] = Field(default_factory=list)
+    incoming_requests: List[FriendRequestResponse] = Field(default_factory=list)
+    outgoing_requests: List[FriendRequestResponse] = Field(default_factory=list)
 
 
 class ProviderInfo(BaseModel):

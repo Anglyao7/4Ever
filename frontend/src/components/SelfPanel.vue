@@ -42,7 +42,10 @@
 
     <template v-else>
       <section class="self-card self-identity-card">
-        <span class="self-avatar large">{{ initials }}</span>
+        <span class="self-avatar large">
+          <img v-if="avatarPreviewUrl || user?.avatar_url" :src="avatarPreviewUrl || user?.avatar_url || undefined" :alt="user.display_name" />
+          <span v-else>{{ initials }}</span>
+        </span>
         <div class="self-identity-main">
           <p class="eyebrow">Profile</p>
           <h2>{{ user.display_name }}</h2>
@@ -65,6 +68,38 @@
           </div>
 
           <form class="self-form-grid" @submit.prevent="saveProfile">
+            <div class="self-avatar-editor full-field">
+              <span class="self-avatar self-avatar-upload">
+                <img v-if="avatarPreviewUrl || user?.avatar_url" :src="avatarPreviewUrl || user?.avatar_url || undefined" :alt="profileDraft.display_name || user.display_name" />
+                <span v-else>{{ initials }}</span>
+              </span>
+              <div class="self-avatar-editor-body">
+                <strong>{{ copy.avatar }}</strong>
+                <p>{{ copy.avatarHint }}</p>
+                <div class="self-action-row">
+                  <input
+                    ref="avatarInputRef"
+                    class="visually-hidden"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    @change="handleAvatarChange"
+                  />
+                  <button class="secondary-button" type="button" @click="avatarInputRef?.click()">
+                    {{ copy.chooseAvatar }}
+                  </button>
+                  <button
+                    class="primary-action"
+                    type="button"
+                    :disabled="avatarUploading || !pendingAvatarFile"
+                    @click="uploadAvatar"
+                  >
+                    <Upload :size="17" />
+                    <span>{{ avatarUploading ? copy.uploadingAvatar : copy.uploadAvatar }}</span>
+                  </button>
+                </div>
+                <p v-if="avatarMessage" class="self-message" :class="{ error: avatarError }">{{ avatarMessage }}</p>
+              </div>
+            </div>
             <label>
               <span>Display name</span>
               <input v-model="profileDraft.display_name" autocomplete="name" />
@@ -171,9 +206,9 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import { BookOpenText, KeyRound, LogOut, Plus, Save, ShieldCheck, Trash2, UserRound } from "lucide-vue-next";
+import { BookOpenText, KeyRound, LogOut, Plus, Save, ShieldCheck, Trash2, Upload, UserRound } from "lucide-vue-next";
 
-import { changePassword, updateCurrentUser } from "../services/api";
+import { changePassword, updateCurrentUser, uploadCurrentUserAvatar } from "../services/api";
 import type { AuthUser } from "../types/auth";
 
 type DiaryEntry = {
@@ -213,10 +248,16 @@ const passwordDraft = reactive({
 const diaryEntries = ref<DiaryEntry[]>([]);
 const profileSaving = ref(false);
 const passwordSaving = ref(false);
+const avatarUploading = ref(false);
 const profileMessage = ref("");
 const passwordMessage = ref("");
+const avatarMessage = ref("");
 const profileError = ref(false);
 const passwordError = ref(false);
+const avatarError = ref(false);
+const avatarInputRef = ref<HTMLInputElement | null>(null);
+const pendingAvatarFile = ref<File | null>(null);
+const avatarPreviewUrl = ref("");
 const copy = computed(() =>
   props.language === "en-US"
     ? {
@@ -225,8 +266,17 @@ const copy = computed(() =>
         emptyTitle: "Build your identity",
         emptyBody: "Your profile, diary, and account security start here.",
         profile: "Profile",
+        avatar: "Avatar",
         diary: "Private diary",
         accountPassword: "Account & password",
+        avatarHint: "Upload a square or portrait image. It will be stored locally on the server for now.",
+        chooseAvatar: "Choose image",
+        uploadAvatar: "Upload avatar",
+        uploadingAvatar: "Uploading",
+        avatarSaved: "Avatar updated.",
+        avatarFailed: "Failed to upload avatar.",
+        avatarTooLarge: "Avatar must be 3 MB or smaller.",
+        avatarInvalid: "Please choose JPG, PNG, WEBP, or GIF.",
         bioPlaceholder: "Write a long-lived introduction for yourself.",
         diaryTitlePlaceholder: "Today's theme",
         diaryContentPlaceholder: "Write something only for yourself.",
@@ -247,8 +297,17 @@ const copy = computed(() =>
         emptyTitle: "建立你的身份",
         emptyBody: "个人简介、日记和账户安全都会从这里开始沉淀。",
         profile: "个人简介",
+        avatar: "头像",
         diary: "私人日记",
         accountPassword: "账户与密码",
+        avatarHint: "上传一张方形或竖向头像。当前会先保存到本地服务器。",
+        chooseAvatar: "选择图片",
+        uploadAvatar: "上传头像",
+        uploadingAvatar: "上传中",
+        avatarSaved: "头像已更新。",
+        avatarFailed: "头像上传失败。",
+        avatarTooLarge: "头像不能超过 3 MB。",
+        avatarInvalid: "请选择 JPG、PNG、WEBP 或 GIF 图片。",
         bioPlaceholder: "写下你想长期保留的自我介绍。",
         diaryTitlePlaceholder: "今天的主题",
         diaryContentPlaceholder: "写一点只有自己看的内容。",
@@ -274,12 +333,14 @@ watch(
   () => props.user,
   (user) => {
     if (!user) {
+      clearAvatarDraft();
       return;
     }
     profileDraft.display_name = user.display_name;
     profileDraft.email = user.email;
     profileDraft.bio = localStorage.getItem(bioKey(user.id)) ?? "";
     diaryEntries.value = loadDiaryEntries(user.id);
+    clearAvatarDraft();
   },
   { immediate: true },
 );
@@ -303,6 +364,30 @@ async function saveProfile() {
     setProfileMessage(cause instanceof Error ? cause.message : copy.value.saveFailed, true);
   } finally {
     profileSaving.value = false;
+  }
+}
+
+async function uploadAvatar() {
+  if (!props.user || !props.authToken || !pendingAvatarFile.value) {
+    setAvatarMessage(copy.value.signInFirst, true);
+    return;
+  }
+  avatarUploading.value = true;
+  setAvatarMessage("", false);
+  try {
+    const file = pendingAvatarFile.value;
+    const updated = await uploadCurrentUserAvatar(props.authToken, {
+      filename: file.name,
+      content_type: file.type,
+      data_base64: await readFileAsBase64(file),
+    });
+    emit("user-updated", updated);
+    setAvatarMessage(copy.value.avatarSaved, false);
+    clearAvatarDraft();
+  } catch (cause) {
+    setAvatarMessage(cause instanceof Error ? cause.message : copy.value.avatarFailed, true);
+  } finally {
+    avatarUploading.value = false;
   }
 }
 
@@ -385,9 +470,63 @@ function setProfileMessage(message: string, isError: boolean) {
   profileError.value = isError;
 }
 
+function setAvatarMessage(message: string, isError: boolean) {
+  avatarMessage.value = message;
+  avatarError.value = isError;
+}
+
 function setPasswordMessage(message: string, isError: boolean) {
   passwordMessage.value = message;
   passwordError.value = isError;
+}
+
+function handleAvatarChange(event: Event) {
+  const input = event.currentTarget;
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const file = input.files?.[0] ?? null;
+  input.value = "";
+  setAvatarMessage("", false);
+  if (!file) {
+    return;
+  }
+  if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+    clearAvatarDraft();
+    setAvatarMessage(copy.value.avatarInvalid, true);
+    return;
+  }
+  if (file.size > 3 * 1024 * 1024) {
+    clearAvatarDraft();
+    setAvatarMessage(copy.value.avatarTooLarge, true);
+    return;
+  }
+  pendingAvatarFile.value = file;
+  if (avatarPreviewUrl.value) {
+    URL.revokeObjectURL(avatarPreviewUrl.value);
+  }
+  avatarPreviewUrl.value = URL.createObjectURL(file);
+}
+
+function clearAvatarDraft() {
+  pendingAvatarFile.value = null;
+  if (avatarPreviewUrl.value) {
+    URL.revokeObjectURL(avatarPreviewUrl.value);
+  }
+  avatarPreviewUrl.value = "";
+}
+
+function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result ?? "");
+      const [, base64] = result.split(",", 2);
+      resolve(base64 ?? "");
+    });
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
 }
 
 function bioKey(userId: string) {

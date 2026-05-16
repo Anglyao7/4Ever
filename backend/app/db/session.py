@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +25,18 @@ def init_db() -> None:
     from app.db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    ensure_schema_updates()
+
+
+def ensure_schema_updates() -> None:
+    inspector = inspect(engine)
+    try:
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+    except Exception:
+        return
+    if "avatar_path" not in user_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(500)"))
 
 
 def check_database() -> bool:
