@@ -4,11 +4,12 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   plugins: [vue()],
   server: {
-    port: 5173,
+    host: "127.0.0.1",
+    port: 7777,
+    strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/health": "http://127.0.0.1:8000",
+      "/api": "http://127.0.0.1:7778",
+      "/health": "http://127.0.0.1:7778",
     },
   },
 });
-

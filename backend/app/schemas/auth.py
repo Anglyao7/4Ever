@@ -55,3 +55,43 @@ class UserSearchResult(BaseModel):
     status: str
     bio: str
     avatar_url: Optional[str] = None
+
+
+class AdminUser(BaseModel):
+    id: str
+    username: str
+    email: str
+    display_name: str
+    avatar_url: Optional[str] = None
+    role: str
+    login_count: int = 0
+    session_count: int = 0
+    message_count: int = 0
+    friend_count: int = 0
+    last_login_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminUserRoleUpdate(BaseModel):
+    role: str = Field(min_length=1, max_length=40)
+
+
+class AdminOverview(BaseModel):
+    user_count: int
+    admin_count: int
+    active_session_count: int
+    direct_message_count: int
+    enabled_module_count: int
+    disabled_module_count: int
+
+
+class AdminAuditLog(BaseModel):
+    id: int
+    actor_id: str
+    actor_name: str
+    action: str
+    target_type: str
+    target_id: str
+    detail: Optional[str] = None
+    created_at: datetime

@@ -1,9 +1,13 @@
+import json
+from collections.abc import AsyncIterator
+
 import httpx
 
 from app.core.config import get_settings
 from app.schemas.ai import (
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ProviderFormat,
     ProviderConnectionRequest,
     ProviderConnectionResponse,
     ProviderModelsResponse,
@@ -44,6 +48,58 @@ async def complete_chat(request: ChatCompletionRequest) -> ChatCompletionRespons
         raise ProviderError("Provider returned a non-JSON response.") from exc
 
     return parse_provider_response(request, data)
+
+
+async def stream_chat(request: ChatCompletionRequest) -> AsyncIterator[str]:
+    if request.provider != ProviderFormat.openai:
+        response = await complete_chat(request)
+        yield response.content
+        return
+
+    provider_request = build_provider_request(request)
+    provider_request.json["stream"] = True
+    settings = get_settings()
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as client:
+            async with client.stream(
+                "POST",
+                provider_request.url,
+                headers=provider_request.headers,
+                json=provider_request.json,
+            ) as response:
+                if response.status_code >= 400:
+                    detail = (await response.aread()).decode("utf-8", errors="replace")[:1200]
+                    raise ProviderError(
+                        f"Provider returned HTTP {response.status_code}: {detail}",
+                        status_code=502,
+                    )
+
+                async for line in response.aiter_lines():
+                    chunk = _parse_openai_stream_line(line)
+                    if chunk:
+                        yield chunk
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Provider stream request failed: {exc}") from exc
+
+
+def _parse_openai_stream_line(line: str) -> str:
+    if not line.startswith("data:"):
+        return ""
+    data = line.removeprefix("data:").strip()
+    if not data or data == "[DONE]":
+        return ""
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return ""
+    try:
+        content = payload["choices"][0].get("delta", {}).get("content")
+    except (KeyError, IndexError, TypeError):
+        return ""
+    if isinstance(content, str):
+        return content
+    return ""
 
 
 async def fetch_provider_models(request: ProviderConnectionRequest) -> ProviderModelsResponse:

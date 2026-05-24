@@ -5,7 +5,7 @@
         <p class="eyebrow">Notes</p>
         <h1>{{ copy.title }}</h1>
       </div>
-      <span class="status-pill online">{{ copy.savedState }}</span>
+      <span class="status-pill online">{{ noteNotice || copy.savedState }}</span>
     </div>
 
     <div class="notes-workspace" @click="closeNoteMenu">
@@ -29,6 +29,19 @@
           <Search :size="16" />
           <input v-model.trim="searchQuery" type="search" :placeholder="copy.search" autocomplete="off" />
         </label>
+
+        <div class="notes-filter-bar" :aria-label="copy.filters">
+          <button
+            v-for="filter in noteFilters"
+            :key="filter.kind"
+            type="button"
+            :class="{ active: activeNoteFilter === filter.kind }"
+            @click.stop="activeNoteFilter = filter.kind"
+          >
+            <component :is="filter.icon" :size="14" />
+            <span>{{ filter.label }}</span>
+          </button>
+        </div>
 
         <form v-if="creatingGroup" class="note-group-form" @submit.prevent.stop="commitNewGroup">
           <input
@@ -184,6 +197,14 @@
           </div>
 
           <div class="notes-editor-utility">
+            <div class="note-document-actions" :aria-label="copy.documentActions">
+              <button class="icon-button ghost" type="button" :title="copy.copyMarkdown" @click.stop="copyActiveNoteMarkdown">
+                <Copy :size="15" />
+              </button>
+              <button class="icon-button ghost" type="button" :title="copy.exportMarkdown" @click.stop="exportActiveNoteMarkdown">
+                <Download :size="15" />
+              </button>
+            </div>
             <div class="notes-document-stats" :aria-label="copy.documentStats">
               <small>{{ readingTimeLabel }}</small>
               <small v-if="taskSummary.total">{{ taskSummary.completed }}/{{ taskSummary.total }} {{ copy.tasks }}</small>
@@ -255,6 +276,8 @@ import {
   ChevronRight,
   Code,
   CodeXml,
+  Copy,
+  Download,
   FileText,
   Folder,
   FolderPlus,
@@ -276,6 +299,7 @@ import {
   Quote,
   Search,
   SeparatorHorizontal,
+  Tags,
   StickyNote,
   Strikethrough,
   Table,
@@ -307,6 +331,9 @@ const renameNoteDraft = ref("");
 const creatingGroup = ref(false);
 const editingGroupId = ref<string | null>(null);
 const groupNameDraft = ref("");
+const activeNoteFilter = ref<NoteFilterKind>("all");
+const noteNotice = ref("");
+let noteNoticeTimer: number | undefined;
 
 type MarkdownFormatKind =
   | "heading-1"
@@ -328,6 +355,14 @@ type MarkdownFormatKind =
 
 type MarkdownFormatAction = {
   kind: MarkdownFormatKind;
+  icon: Component;
+  label: string;
+};
+
+type NoteFilterKind = "all" | "pinned" | "tasks" | "tagged";
+
+type NoteFilter = {
+  kind: NoteFilterKind;
   icon: Component;
   label: string;
 };
@@ -396,8 +431,18 @@ const copy = computed(() =>
         save: "Save",
         cancel: "Cancel",
         documentStats: "Document stats",
+        documentActions: "Document actions",
+        copyMarkdown: "Copy Markdown",
+        exportMarkdown: "Export Markdown",
+        copied: "Copied",
+        exported: "Exported",
         readingTime: "min read",
         tasks: "tasks",
+        filters: "Note filters",
+        allNotes: "All",
+        pinnedOnly: "Pinned",
+        taskNotes: "Tasks",
+        taggedNotes: "Tags",
         outline: "Outline",
         outlinePlaceholder: "Jump to heading",
         noOutline: "No headings",
@@ -457,8 +502,18 @@ const copy = computed(() =>
         save: "保存",
         cancel: "取消",
         documentStats: "文档状态",
+        documentActions: "文档操作",
+        copyMarkdown: "复制 Markdown",
+        exportMarkdown: "导出 Markdown",
+        copied: "已复制",
+        exported: "已导出",
         readingTime: "分钟阅读",
         tasks: "任务",
+        filters: "笔记筛选",
+        allNotes: "全部",
+        pinnedOnly: "置顶",
+        taskNotes: "任务",
+        taggedNotes: "标签",
         outline: "大纲",
         outlinePlaceholder: "跳转到标题",
         noOutline: "暂无标题",
@@ -476,9 +531,10 @@ const activeNote = computed<NoteDraft>({
 
 const filteredNotes = computed(() => {
   const query = searchQuery.value.toLowerCase();
-  const matches = query
+  const searched = query
     ? notes.value.filter((note) => `${note.title}\n${note.content}`.toLowerCase().includes(query))
     : notes.value;
+  const matches = searched.filter((note) => noteMatchesFilter(note, activeNoteFilter.value));
   return [...matches].sort((first, second) => {
     if (Boolean(first.pinned) !== Boolean(second.pinned)) {
       return first.pinned ? -1 : 1;
@@ -560,6 +616,13 @@ const markdownActions = computed<MarkdownFormatAction[]>(() => [
   { kind: "code-block", icon: CodeXml, label: copy.value.codeBlock },
   { kind: "table", icon: Table, label: copy.value.table },
   { kind: "horizontal-rule", icon: SeparatorHorizontal, label: copy.value.horizontalRule },
+]);
+
+const noteFilters = computed<NoteFilter[]>(() => [
+  { kind: "all", icon: FileText, label: copy.value.allNotes },
+  { kind: "pinned", icon: Pin, label: copy.value.pinnedOnly },
+  { kind: "tasks", icon: ListChecks, label: copy.value.taskNotes },
+  { kind: "tagged", icon: Tags, label: copy.value.taggedNotes },
 ]);
 
 watch(
@@ -1174,6 +1237,49 @@ function handleOutlineSelect() {
   }
 }
 
+async function copyActiveNoteMarkdown() {
+  const content = activeNote.value.content;
+  try {
+    await navigator.clipboard.writeText(content);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+  showNoteNotice(copy.value.copied);
+}
+
+function exportActiveNoteMarkdown() {
+  const note = activeNote.value;
+  const blob = new Blob([note.content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeMarkdownFilename(noteTitle(note))}.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  showNoteNotice(copy.value.exported);
+}
+
+function showNoteNotice(message: string) {
+  if (noteNoticeTimer) {
+    window.clearTimeout(noteNoticeTimer);
+  }
+  noteNotice.value = message;
+  noteNoticeTimer = window.setTimeout(() => {
+    noteNotice.value = "";
+    noteNoticeTimer = undefined;
+  }, 1800);
+}
+
 function outlineOptionLabel(item: NoteOutlineItem) {
   return `${" ".repeat((item.level - 1) * 2)}${item.title}`;
 }
@@ -1204,8 +1310,31 @@ function noteTags(note: NoteDraft) {
   return [...tags];
 }
 
+function noteMatchesFilter(note: NoteDraft, filter: NoteFilterKind) {
+  if (filter === "pinned") {
+    return Boolean(note.pinned);
+  }
+  if (filter === "tasks") {
+    return /^\s*[-+*]\s+\[[ xX]\]\s+/m.test(note.content);
+  }
+  if (filter === "tagged") {
+    return noteTags(note).length > 0;
+  }
+  return true;
+}
+
 function noteTitle(note: NoteDraft) {
   return note.title.trim() || copy.value.untitled;
+}
+
+function safeMarkdownFilename(value: string) {
+  const name = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return name || "note";
 }
 
 function notePreview(note: NoteDraft) {

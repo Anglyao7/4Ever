@@ -9,6 +9,7 @@
       <article
         v-for="(message, index) in messages"
         :key="message.id ?? `${message.role}-${index}`"
+        :id="messageDomId(message, index)"
         class="message"
         :class="[message.role, message.authorTone]"
       >
@@ -25,7 +26,20 @@
           <Bot v-else :size="16" />
         </button>
         <div class="message-bubble-stack">
-          <span v-if="message.authorName" class="message-author">{{ message.authorName }}</span>
+          <div class="message-meta-row">
+            <span v-if="message.authorName" class="message-author">{{ message.authorName }}</span>
+            <time v-if="formatMessageTime(message.createdAt)" class="message-time">{{ formatMessageTime(message.createdAt) }}</time>
+          </div>
+          <button
+            v-if="message.role === 'user' && message.replyTo"
+            type="button"
+            class="message-reply-quote"
+            :title="copy.replyingTo"
+            @click="jumpToReply(message.replyTo)"
+          >
+            <strong>{{ message.replyTo.authorName || copy.replyFallback }}</strong>
+            <span>{{ truncateReply(message.replyTo.content) }}</span>
+          </button>
           <div
             v-if="shouldRenderMarkdown(message)"
             class="message-markdown markdown-body"
@@ -69,6 +83,12 @@
               </div>
             </figure>
           </div>
+          <div v-if="message.role === 'user'" class="message-actions">
+            <button type="button" class="message-action-button" :title="copy.reply" @click="startReply(message)">
+              <Reply :size="14" />
+              <span>{{ copy.reply }}</span>
+            </button>
+          </div>
         </div>
       </article>
 
@@ -84,26 +104,53 @@
       <p v-if="visibleError" class="error-line">{{ visibleError }}</p>
     </Transition>
 
-    <form class="composer" :class="{ 'has-draft': draft.trim() || attachments.length }" @submit.prevent="submit">
+    <form
+      class="composer"
+      :class="{ 'has-draft': props.draft.trim() || props.attachments.length || props.replyTo, 'is-dragging-file': draggingAttachment }"
+      @submit.prevent="submit"
+      @dragenter.prevent="handleComposerDragEnter"
+      @dragover.prevent="handleComposerDragOver"
+      @dragleave="handleComposerDragLeave"
+      @drop.prevent="handleComposerDrop"
+    >
       <div class="composer-input">
-        <div v-if="attachments.length" class="composer-attachments">
-          <span v-for="attachment in attachments" :key="attachment.id">
-            <FileImage v-if="attachment.kind === 'image'" :size="14" />
-            <FileIcon v-else :size="14" />
-            {{ attachment.name }}
+        <div v-if="props.replyTo" class="composer-reply-bar">
+          <div class="composer-reply-copy">
+            <strong>{{ props.replyTo.authorName || copy.replyFallback }}</strong>
+            <span>{{ truncateReply(props.replyTo.content) }}</span>
+          </div>
+          <button type="button" :title="copy.cancelReply" @click="emit('cancel-reply')">
+            <X :size="14" />
+          </button>
+        </div>
+        <div v-if="props.attachments.length" class="composer-attachments">
+          <figure
+            v-for="attachment in props.attachments"
+            :key="attachment.id"
+            class="composer-attachment-card"
+            :class="{ image: attachment.kind === 'image' }"
+            :data-extension="fileLabel(attachment)"
+          >
+            <img v-if="attachment.kind === 'image' && attachment.dataUrl" :src="attachment.dataUrl" :alt="attachment.name" />
+            <span v-else class="composer-file-backdrop">{{ fileLabel(attachment) }}</span>
+            <figcaption>
+              <strong>{{ attachment.name }}</strong>
+              <small>{{ formatAttachmentSize(attachment.size) }}</small>
+            </figcaption>
             <button type="button" :title="copy.removeAttachment" @click="removeAttachment(attachment.id)">
               <X :size="13" />
             </button>
-          </span>
+          </figure>
         </div>
         <textarea
           ref="composerInputRef"
-          v-model="draft"
+          :value="props.draft"
           rows="1"
           :placeholder="copy.placeholder"
           :disabled="loading"
-          @input="resizeComposer"
+          @input="handleDraftInput"
           @keydown.enter.exact="submitFromKeyboard"
+          @paste="handleComposerPaste"
         />
       </div>
       <input
@@ -152,19 +199,22 @@ import { marked } from "marked";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   Bot,
-  File as FileIcon,
   FileImage,
   LoaderCircle,
   Paperclip,
+  Reply,
   SendHorizontal,
   UserRound,
   X,
 } from "lucide-vue-next";
 
-import type { ChatAttachment, ChatMessage, ChatSendPayload } from "../types/chat";
+import type { ChatAttachment, ChatMessage, ChatReplyReference, ChatSendPayload } from "../types/chat";
 
 const props = defineProps<{
   messages: ChatMessage[];
+  draft: string;
+  attachments: ChatAttachment[];
+  replyTo?: ChatReplyReference | null;
   loading: boolean;
   error: string;
   language: "zh-CN" | "en-US";
@@ -174,13 +224,16 @@ const emit = defineEmits<{
   send: [payload: ChatSendPayload];
   clear: [];
   "avatar-click": [message: ChatMessage];
+  "update:draft": [value: string];
+  "update:attachments": [value: ChatAttachment[]];
+  "reply": [message: ChatMessage];
+  "cancel-reply": [];
 }>();
 
 const maxAttachments = 4;
 const maxAttachmentSize = 8 * 1024 * 1024;
-const draft = ref("");
-const attachments = ref<ChatAttachment[]>([]);
 const attachmentError = ref("");
+const draggingAttachment = ref(false);
 const messageListRef = ref<HTMLElement | null>(null);
 const composerInputRef = ref<HTMLTextAreaElement | null>(null);
 const attachmentInputRef = ref<HTMLInputElement | null>(null);
@@ -191,7 +244,7 @@ const copy = computed(() =>
     ? {
         panelAria: "Chat",
         empty: "What would you like to talk about today?",
-        responding: "Responding",
+        responding: "The other side is typing",
         placeholder: "Type a message",
         send: "Send",
         avatar: "Avatar",
@@ -200,13 +253,19 @@ const copy = computed(() =>
         openImage: "Open image",
         closeImage: "Close image",
         downloadImage: "Download",
+        reply: "Reply",
+        cancelReply: "Cancel reply",
+        replyingTo: "Replying to message",
+        replyFallback: "Message",
         tooManyAttachments: "Up to 4 attachments per message.",
         attachmentTooLarge: "Attachments must be 8 MB or smaller.",
+        imageOnlyReply: "[Image]",
+        fileOnlyReply: "[File]",
       }
     : {
         panelAria: "Chat 交耳",
         empty: "今天想聊什么？",
-        responding: "正在响应",
+        responding: "对方正在输入中",
         placeholder: "输入消息",
         send: "发送",
         avatar: "头像",
@@ -215,13 +274,19 @@ const copy = computed(() =>
         openImage: "打开图片",
         closeImage: "关闭图片",
         downloadImage: "下载",
+        reply: "回复",
+        cancelReply: "取消回复",
+        replyingTo: "查看引用消息",
+        replyFallback: "消息",
         tooManyAttachments: "每条消息最多 4 个附件。",
         attachmentTooLarge: "附件不能超过 8 MB。",
+        imageOnlyReply: "[图片]",
+        fileOnlyReply: "[文件]",
       },
 );
 
 const visibleError = computed(() => attachmentError.value || props.error);
-const canSubmit = computed(() => Boolean(draft.value.trim() || attachments.value.length));
+const canSubmit = computed(() => Boolean(props.draft.trim() || props.attachments.length));
 
 onMounted(() => {
   resizeComposer();
@@ -231,13 +296,11 @@ function submit() {
   if (!canSubmit.value || props.loading) {
     return;
   }
-  const payload: ChatSendPayload = {
-    content: draft.value.trim(),
-    attachments: attachments.value,
-  };
-  emit("send", payload);
-  draft.value = "";
-  attachments.value = [];
+  emit("send", {
+    content: props.draft.trim(),
+    attachments: props.attachments,
+    replyTo: props.replyTo ?? null,
+  });
   attachmentError.value = "";
   nextTick(resizeComposer);
 }
@@ -248,6 +311,15 @@ function submitFromKeyboard(event: KeyboardEvent) {
   }
   event.preventDefault();
   submit();
+}
+
+function handleDraftInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  emit("update:draft", target.value);
+  nextTick(resizeComposer);
 }
 
 function resizeComposer() {
@@ -271,34 +343,83 @@ async function handleAttachmentInput(event: Event) {
   }
   const files = Array.from(input.files ?? []);
   input.value = "";
+  await appendAttachments(files);
+}
+
+async function handleComposerDrop(event: DragEvent) {
+  draggingAttachment.value = false;
+  const files = Array.from(event.dataTransfer?.files ?? []);
+  if (!files.length) {
+    return;
+  }
+  await appendAttachments(files);
+}
+
+async function handleComposerPaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files ?? []);
+  if (!files.length) {
+    return;
+  }
+  event.preventDefault();
+  await appendAttachments(files);
+}
+
+function handleComposerDragEnter(event: DragEvent) {
+  if (event.dataTransfer?.types.includes("Files")) {
+    draggingAttachment.value = true;
+  }
+}
+
+function handleComposerDragOver(event: DragEvent) {
+  if (event.dataTransfer?.types.includes("Files")) {
+    event.dataTransfer.dropEffect = "copy";
+    draggingAttachment.value = true;
+  }
+}
+
+function handleComposerDragLeave(event: DragEvent) {
+  const current = event.currentTarget;
+  if (current instanceof HTMLElement && event.relatedTarget instanceof Node && current.contains(event.relatedTarget)) {
+    return;
+  }
+  draggingAttachment.value = false;
+}
+
+async function appendAttachments(files: File[]) {
+  if (!files.length) {
+    return;
+  }
   attachmentError.value = "";
+  const nextAttachments = [...props.attachments];
 
   for (const file of files) {
-    if (attachments.value.length >= maxAttachments) {
+    if (nextAttachments.length >= maxAttachments) {
       attachmentError.value = copy.value.tooManyAttachments;
-      return;
+      break;
     }
     if (file.size > maxAttachmentSize) {
       attachmentError.value = copy.value.attachmentTooLarge;
       continue;
     }
     const kind = file.type.startsWith("image/") ? "image" : "file";
-    attachments.value = [
-      ...attachments.value,
-      {
-        id: crypto.randomUUID(),
-        name: file.name,
-        type: file.type || "application/octet-stream",
-        size: file.size,
-        kind,
-        dataUrl: await readFileAsDataUrl(file),
-      },
-    ];
+    nextAttachments.push({
+      id: crypto.randomUUID(),
+      name: file.name,
+      type: file.type || "application/octet-stream",
+      size: file.size,
+      kind,
+      dataUrl: await readFileAsDataUrl(file),
+    });
   }
+
+  emit("update:attachments", nextAttachments);
 }
 
 function removeAttachment(attachmentId: string) {
-  attachments.value = attachments.value.filter((attachment) => attachment.id !== attachmentId);
+  emit(
+    "update:attachments",
+    props.attachments.filter((attachment) => attachment.id !== attachmentId),
+  );
 }
 
 function openImagePreview(attachment: ChatAttachment) {
@@ -307,6 +428,26 @@ function openImagePreview(attachment: ChatAttachment) {
 
 function closeImagePreview() {
   previewImage.value = null;
+}
+
+function startReply(message: ChatMessage) {
+  emit("reply", message);
+}
+
+function jumpToReply(replyTo: ChatReplyReference) {
+  const targetId = replyTo.id;
+  if (targetId === undefined || targetId === null) {
+    return;
+  }
+  const anchor = document.getElementById(`chat-message-${String(targetId)}`);
+  if (!anchor) {
+    return;
+  }
+  anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function messageDomId(message: ChatMessage, index: number) {
+  return `chat-message-${String(message.id ?? `${message.role}-${index}`)}`;
 }
 
 function readFileAsDataUrl(file: File) {
@@ -326,6 +467,20 @@ function formatAttachmentSize(size: number) {
     return `${Math.round(size / 1024)} KB`;
   }
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatMessageTime(value?: string) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(props.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function imageAttachments(message: ChatMessage) {
@@ -411,6 +566,14 @@ function renderMessageMarkdown(content: string) {
   return DOMPurify.sanitize(parsed);
 }
 
+function truncateReply(content: string) {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return copy.value.fileOnlyReply;
+  }
+  return normalized.length > 52 ? `${normalized.slice(0, 52)}…` : normalized;
+}
+
 watch(
   () => [props.messages.length, props.loading],
   async () => {
@@ -419,6 +582,14 @@ watch(
       top: messageListRef.value.scrollHeight,
       behavior: "smooth",
     });
+  },
+);
+
+watch(
+  () => [props.draft, props.attachments.length, props.replyTo?.id],
+  async () => {
+    await nextTick();
+    resizeComposer();
   },
 );
 </script>

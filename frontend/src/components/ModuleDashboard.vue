@@ -67,6 +67,7 @@ import {
   Image,
   LayoutDashboard,
   Layers3,
+  Globe2,
   MessageSquareText,
   NotebookPen,
   PlugZap,
@@ -151,6 +152,7 @@ function moduleIcon(moduleId: string) {
     "image-generation": Image,
     "provider-hub": PlugZap,
     notes: NotebookPen,
+    "memory-map": Globe2,
     workflow: Workflow,
     admin: Shield,
   };
@@ -164,8 +166,9 @@ function moduleEnglishName(moduleId: string) {
     "image-generation": "Image",
     "provider-hub": "Aggregation",
     notes: "Notes",
+    "memory-map": "Memory Map",
     workflow: "automation",
-    admin: "Self",
+    admin: "Admin",
   };
   return labels[moduleId as keyof typeof labels] ?? moduleId;
 }
@@ -177,8 +180,9 @@ function moduleName(moduleId: string) {
     "image-generation": ["虚实", "Image"],
     "provider-hub": ["聚合", "Aggregation"],
     notes: ["笔记", "Notes"],
+    "memory-map": ["地图纪念", "Memory Map"],
     workflow: ["秩序", "Automation"],
-    admin: ["自我", "Self"],
+    admin: ["管理员端", "Admin"],
   };
   const pair = labels[moduleId as keyof typeof labels];
   return pair ? pair[props.language === "en-US" ? 1 : 0] : moduleId;
@@ -194,8 +198,9 @@ function moduleDescription(moduleId: string, fallback: string) {
     "image-generation": "Text-to-image generation with aggregated model configuration.",
     "provider-hub": "Manage providers, API keys, and default models in one place.",
     notes: "Markdown writing, draft storage, and live rendering.",
+    "memory-map": "Record places, time, and memories on a 3D world map.",
     workflow: "Orchestrate workflows, task nodes, and triggers.",
-    admin: "Profile, private diary, and account security.",
+    admin: "Manage users, roles, and platform operations.",
   };
   return descriptions[moduleId as keyof typeof descriptions] ?? fallback;
 }

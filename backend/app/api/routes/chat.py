@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -15,13 +16,14 @@ from app.schemas.ai import (
     ChatCompletionResponse,
     DirectAttachment,
     DirectMessageCreate,
+    DirectReplyReference,
     DirectMessageResponse,
     FriendProfile,
     FriendRequestResponse,
     FriendSummaryResponse,
     FriendshipResponse,
 )
-from app.services.ai.client import complete_chat
+from app.services.ai.client import complete_chat, stream_chat
 from app.services.ai.adapters import ProviderError
 
 
@@ -34,6 +36,15 @@ async def chat(request: ChatCompletionRequest) -> ChatCompletionResponse:
         return await complete_chat(request)
     except ProviderError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/stream")
+async def chat_stream(request: ChatCompletionRequest) -> StreamingResponse:
+    return StreamingResponse(
+        stream_chat(request),
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/friends", response_model=FriendSummaryResponse)
@@ -188,11 +199,26 @@ async def send_direct_message(
     current_user = resolve_user(authorization, db)
     ensure_direct_peer(user_id, current_user.id, db)
     attachments = request.attachments[:4]
+    reply_target = None
+    reply_preview_json = None
+    if request.reply_to_message_id:
+        reply_target = ensure_direct_reply_target(
+            request.reply_to_message_id,
+            current_user.id,
+            user_id,
+            db,
+        )
+        reply_preview_json = json.dumps(
+            direct_reply_preview(reply_target, current_user.id, user_id),
+            ensure_ascii=False,
+        )
     message = DirectMessageRecord(
         sender_id=current_user.id,
         recipient_id=user_id,
         content=request.content.strip(),
         attachments_json=json.dumps([attachment.model_dump() for attachment in attachments], ensure_ascii=False),
+        reply_to_message_id=reply_target.id if reply_target else None,
+        reply_to_preview_json=reply_preview_json,
     )
     db.add(message)
     db.commit()
@@ -216,6 +242,22 @@ def get_pending_incoming_request(request_id: int, current_user_id: str, db: Sess
     if not request or request.addressee_id != current_user_id or request.status != "pending":
         raise HTTPException(status_code=404, detail="Friend request not found.")
     return request
+
+
+def ensure_direct_reply_target(
+    message_id: int,
+    current_user_id: str,
+    peer_user_id: str,
+    db: Session,
+) -> DirectMessageRecord:
+    message = db.get(DirectMessageRecord, message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Reply target was not found.")
+    participant_ids = {message.sender_id, message.recipient_id}
+    expected_ids = {current_user_id, peer_user_id}
+    if participant_ids != expected_ids:
+        raise HTTPException(status_code=400, detail="Reply target is not in this conversation.")
+    return message
 
 
 def accept_friend_request_record(request: FriendRequestRecord, db: Session) -> FriendRequestResponse:
@@ -276,6 +318,8 @@ def to_direct_message(message: DirectMessageRecord) -> DirectMessageResponse:
         recipient_id=message.recipient_id,
         content=message.content,
         attachments=parse_attachments(message.attachments_json),
+        reply_to_message_id=message.reply_to_message_id,
+        reply_to=parse_reply_reference(message.reply_to_preview_json),
         created_at=message.created_at,
     )
 
@@ -297,3 +341,36 @@ def parse_attachments(raw: Optional[str]) -> list[DirectAttachment]:
             except ValueError:
                 continue
     return attachments
+
+
+def direct_reply_preview(message: DirectMessageRecord, current_user_id: str, peer_user_id: str) -> dict[str, object]:
+    author_name = "You" if message.sender_id == current_user_id else "Contact"
+    return {
+        "id": message.id,
+        "author_name": author_name,
+        "content": message.content.strip() or first_attachment_label(parse_attachments(message.attachments_json)),
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+        "sender_id": message.sender_id,
+    }
+
+
+def parse_reply_reference(raw: Optional[str]) -> Optional[DirectReplyReference]:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    try:
+        return DirectReplyReference(**parsed)
+    except ValueError:
+        return None
+
+
+def first_attachment_label(attachments: list[DirectAttachment]) -> str:
+    if not attachments:
+        return "Attachment"
+    attachment = attachments[0]
+    return attachment.name.strip() or "Attachment"

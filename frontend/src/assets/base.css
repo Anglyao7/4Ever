@@ -57,32 +57,7 @@
   --shadow-soft: rgba(0, 0, 0, 0.26);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root[data-color-mode="system"] {
-    color-scheme: dark;
-    color: #f2eee6;
-    background: #10110f;
-    --paper: #171916;
-    --paper-strong: #272b26;
-    --ink: #f2eee6;
-    --muted: #cad3cc;
-    --line: #4b554d;
-    --accent: #71b8a6;
-    --accent-strong: #8fd5c4;
-    --clay: #d58b72;
-    --blue: #8fb5ed;
-    --gold: #d4bb76;
-    --mist: #242923;
-    --app-bg:
-      linear-gradient(90deg, rgba(143, 181, 237, 0.055) 1px, transparent 1px),
-      linear-gradient(rgba(113, 184, 166, 0.052) 1px, transparent 1px),
-      linear-gradient(135deg, #11130f 0%, #151a16 48%, #111722 100%);
-    --topbar-bg: rgba(22, 24, 21, 0.88);
-    --panel-bg: rgba(28, 31, 27, 0.9);
-    --panel-soft-bg: rgba(255, 255, 255, 0.13);
-    --shadow-soft: rgba(0, 0, 0, 0.26);
-  }
-}
+
 
 * {
   box-sizing: border-box;
@@ -385,13 +360,6 @@ button:disabled {
   color: var(--muted);
 }
 
-:root[data-color-mode="dark"] .status-icon-option.active,
-:root[data-color-mode="dark"] .status-duration-grid button.active,
-:root[data-color-mode="dark"] .segmented-options button.active {
-  color: #111713;
-  background: #e8efe8;
-}
-
 :root[data-color-mode="dark"] .status-box,
 :root[data-color-mode="dark"] .status-open-button {
   color: var(--ink);
@@ -440,287 +408,7 @@ button:disabled {
   background: linear-gradient(90deg, transparent, rgba(202, 211, 204, 0.42), transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root[data-color-mode="system"] .dashboard-panel,
-  :root[data-color-mode="system"] .image-panel,
-  :root[data-color-mode="system"] .placeholder-panel,
-  :root[data-color-mode="system"] .config-panel,
-  :root[data-color-mode="system"] .module-panel,
-  :root[data-color-mode="system"] .chat-panel,
-  :root[data-color-mode="system"] .model-profile-list,
-  :root[data-color-mode="system"] .model-profile-form,
-  :root[data-color-mode="system"] .notes-sidebar,
-  :root[data-color-mode="system"] .notes-editor-card,
-  :root[data-color-mode="system"] .self-card,
-  :root[data-color-mode="system"] .telegram-shell {
-    background: var(--panel-bg);
-    border-color: var(--line);
-    box-shadow: 0 12px 32px var(--shadow-soft);
-  }
 
-  :root[data-color-mode="system"] .home-hero {
-    background:
-      linear-gradient(135deg, rgba(18, 21, 18, 0.92), rgba(24, 28, 25, 0.96)),
-      linear-gradient(90deg, rgba(113, 184, 166, 0.08), transparent 62%);
-    border-color: rgba(202, 211, 204, 0.24);
-    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
-  }
-
-  :root[data-color-mode="system"] .home-hero::before {
-    background:
-      linear-gradient(90deg, rgba(242, 238, 230, 0.055) 1px, transparent 1px),
-      linear-gradient(rgba(242, 238, 230, 0.045) 1px, transparent 1px);
-  }
-
-  :root[data-color-mode="system"] .dashboard-heading h2,
-  :root[data-color-mode="system"] .module-card h3,
-  :root[data-color-mode="system"] .hero-copy h1 {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .eyebrow,
-  :root[data-color-mode="system"] .module-card-body span,
-  :root[data-color-mode="system"] .module-card p,
-  :root[data-color-mode="system"] .module-card small,
-  :root[data-color-mode="system"] .hero-copy p:not(.eyebrow) {
-    color: #d6ded8;
-  }
-
-  :root[data-color-mode="system"] .module-card {
-    color: var(--ink);
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 42%),
-      #191d1a;
-    border-color: rgba(202, 211, 204, 0.18);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
-  }
-
-  :root[data-color-mode="system"] .module-card:hover {
-    border-color: rgba(143, 213, 196, 0.45);
-    background:
-      linear-gradient(145deg, rgba(143, 213, 196, 0.08), transparent 45%),
-      #20251f;
-    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .module-card small {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  :root[data-color-mode="system"] .module-card-icon {
-    color: #f7fbf7;
-    background: #343b35;
-    border: 1px solid rgba(242, 238, 230, 0.12);
-  }
-
-  :root[data-color-mode="system"] .module-card-icon-ai {
-    background: #2f7166;
-  }
-
-  :root[data-color-mode="system"] .module-card-icon-integration {
-    background: #415f8d;
-  }
-
-  :root[data-color-mode="system"] .module-card-icon-automation {
-    background: #8a5749;
-  }
-
-  :root[data-color-mode="system"] .secondary-button,
-  :root[data-color-mode="system"] .user-menu-action {
-    color: #f4f0e8;
-    background: #252a25;
-    border-color: rgba(202, 211, 204, 0.26);
-  }
-
-  :root[data-color-mode="system"] .secondary-button:hover,
-  :root[data-color-mode="system"] .user-menu-action:hover {
-    background: #30362f;
-  }
-
-  :root[data-color-mode="system"] .primary-action,
-  :root[data-color-mode="system"] .send-button {
-    color: #f7fbf7;
-    background: #354039;
-    border-color: rgba(202, 211, 204, 0.34);
-  }
-
-  :root[data-color-mode="system"] .primary-action:hover,
-  :root[data-color-mode="system"] .send-button:hover {
-    background: #425047;
-  }
-
-  :root[data-color-mode="system"] .status-pill {
-    color: #ead9a8;
-    background: rgba(150, 119, 57, 0.16);
-    border-color: rgba(234, 217, 168, 0.28);
-  }
-
-  :root[data-color-mode="system"] .landing-hero::before {
-    border-color: rgba(202, 211, 204, 0.16);
-  }
-
-  :root[data-color-mode="system"] .landing-field span,
-  :root[data-color-mode="system"] .orbit-signal {
-    background: linear-gradient(90deg, transparent, rgba(143, 213, 196, 0.38), transparent);
-  }
-
-  :root[data-color-mode="system"] .orbit-ring {
-    border-color: rgba(202, 211, 204, 0.16);
-  }
-
-  :root[data-color-mode="system"] .ring-four {
-    border-color: rgba(213, 139, 114, 0.24);
-  }
-
-  :root[data-color-mode="system"] .orbit-node {
-    color: var(--ink);
-    background: #20251f;
-    border-color: rgba(202, 211, 204, 0.22);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
-  }
-
-  :root[data-color-mode="system"] .landing-copy p:not(.eyebrow) {
-    color: #d6ded8;
-  }
-
-  :root[data-color-mode="system"] .landing-cta {
-    color: #f7fbf7;
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 34%),
-      #354039;
-    border-color: rgba(202, 211, 204, 0.34);
-    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.32);
-  }
-
-  :root[data-color-mode="system"] .landing-cta:hover {
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 34%),
-      #425047;
-    box-shadow: 0 24px 52px rgba(0, 0, 0, 0.38);
-  }
-
-  :root[data-color-mode="system"] .user-avatar,
-  :root[data-color-mode="system"] .thread-avatar,
-  :root[data-color-mode="system"] .phone-avatar,
-  :root[data-color-mode="system"] .self-avatar,
-  :root[data-color-mode="system"] .avatar {
-    color: #f7fbf7;
-    background: #2a332d;
-    border: 1px solid rgba(202, 211, 204, 0.26);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  }
-
-  :root[data-color-mode="system"] .thread-avatar-green,
-  :root[data-color-mode="system"] .message.assistant .avatar {
-    background: #275f55;
-  }
-
-  :root[data-color-mode="system"] .thread-avatar-blue,
-  :root[data-color-mode="system"] .avatar {
-    background: #344c73;
-  }
-
-  :root[data-color-mode="system"] .thread-avatar-clay {
-    background: #70483e;
-  }
-
-  :root[data-color-mode="system"] .thread-avatar-gold {
-    background: #7b6834;
-  }
-
-  :root[data-color-mode="system"] input,
-  :root[data-color-mode="system"] textarea,
-  :root[data-color-mode="system"] select,
-  :root[data-color-mode="system"] .model-profile-card,
-  :root[data-color-mode="system"] .model-option,
-  :root[data-color-mode="system"] .note-draft-card,
-  :root[data-color-mode="system"] .notes-search input,
-  :root[data-color-mode="system"] .markdown-preview-card,
-  :root[data-color-mode="system"] .self-feature-row,
-  :root[data-color-mode="system"] .account-facts,
-  :root[data-color-mode="system"] .diary-entry,
-  :root[data-color-mode="system"] .telegram-thread,
-  :root[data-color-mode="system"] .composer-input {
-    color: var(--ink);
-    background: var(--panel-soft-bg);
-    border-color: var(--line);
-  }
-
-  :root[data-color-mode="system"] .home-hero,
-  :root[data-color-mode="system"] .hero-system,
-  :root[data-color-mode="system"] .message-list,
-  :root[data-color-mode="system"] .composer {
-    background: rgba(255, 255, 255, 0.075);
-    border-color: var(--line);
-  }
-
-  :root[data-color-mode="system"] .user-dropdown-head small,
-  :root[data-color-mode="system"] .user-menu-label,
-  :root[data-color-mode="system"] .user-toggle-row span,
-  :root[data-color-mode="system"] .status-open-button small,
-  :root[data-color-mode="system"] .status-text-field > span,
-  :root[data-color-mode="system"] .status-icon-option,
-  :root[data-color-mode="system"] .status-duration-grid button,
-  :root[data-color-mode="system"] .system-topline small,
-  :root[data-color-mode="system"] .module-counts span {
-    color: var(--muted);
-  }
-
-  :root[data-color-mode="system"] .status-icon-option.active,
-  :root[data-color-mode="system"] .status-duration-grid button.active,
-  :root[data-color-mode="system"] .segmented-options button.active {
-    color: #111713;
-    background: #e8efe8;
-  }
-
-  :root[data-color-mode="system"] .status-box,
-  :root[data-color-mode="system"] .status-open-button {
-    color: var(--ink);
-    background: var(--panel-bg);
-    border-color: var(--line);
-  }
-
-  :root[data-color-mode="system"] .status-text-input {
-    color: var(--ink);
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(202, 211, 204, 0.36);
-  }
-
-  :root[data-color-mode="system"] .hero-system {
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(113, 184, 166, 0.08)),
-      rgba(255, 255, 255, 0.06);
-    box-shadow:
-      inset 0 0 0 1px rgba(242, 238, 230, 0.08),
-      0 16px 42px rgba(0, 0, 0, 0.22);
-  }
-
-  :root[data-color-mode="system"] .hero-system .status-pill.online {
-    color: #10221d;
-    background: #9ee4d3;
-    border-color: rgba(158, 228, 211, 0.72);
-  }
-
-  :root[data-color-mode="system"] .system-map::before {
-    border-color: rgba(242, 238, 230, 0.16);
-  }
-
-  :root[data-color-mode="system"] .system-node {
-    color: var(--ink);
-    background: rgba(39, 43, 38, 0.94);
-    border-color: rgba(202, 211, 204, 0.28);
-    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28);
-  }
-
-  :root[data-color-mode="system"] .main-node {
-    color: #111713;
-    background: #f2eee6;
-  }
-
-  :root[data-color-mode="system"] .system-line {
-    background: linear-gradient(90deg, transparent, rgba(202, 211, 204, 0.42), transparent);
-  }
-}
 
 .intro-stage {
   position: fixed;
@@ -1028,73 +716,7 @@ button:disabled {
   background: linear-gradient(90deg, transparent, rgba(202, 211, 204, 0.28), transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root[data-color-mode="system"] .intro-stage {
-    color: var(--ink);
-    background:
-      linear-gradient(118deg, rgba(113, 184, 166, 0.12), transparent 34%),
-      linear-gradient(242deg, rgba(143, 181, 237, 0.1), transparent 38%),
-      linear-gradient(180deg, #10130f, #171b16);
-  }
 
-  :root[data-color-mode="system"] .intro-noise {
-    opacity: 0.44;
-    background:
-      repeating-linear-gradient(0deg, rgba(242, 238, 230, 0.028) 0 1px, transparent 1px 5px),
-      repeating-linear-gradient(90deg, rgba(242, 238, 230, 0.024) 0 1px, transparent 1px 7px);
-    mix-blend-mode: screen;
-  }
-
-  :root[data-color-mode="system"] .intro-grid {
-    border-color: rgba(202, 211, 204, 0.14);
-  }
-
-  :root[data-color-mode="system"] .intro-grid span {
-    border-right-color: rgba(202, 211, 204, 0.07);
-    border-bottom-color: rgba(202, 211, 204, 0.055);
-  }
-
-  :root[data-color-mode="system"] .intro-thread span {
-    background: linear-gradient(180deg, transparent, rgba(143, 213, 196, 0.34), transparent);
-  }
-
-  :root[data-color-mode="system"] .intro-mark {
-    color: #f7fbf7;
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 42%),
-      #263029;
-    border-color: rgba(202, 211, 204, 0.24);
-    box-shadow:
-      0 26px 70px rgba(0, 0, 0, 0.36),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
-  :root[data-color-mode="system"] .intro-mark-ring {
-    border-color: rgba(143, 213, 196, 0.3);
-  }
-
-  :root[data-color-mode="system"] .intro-title span {
-    color: #cad3cc;
-  }
-
-  :root[data-color-mode="system"] .intro-chips span {
-    color: #f2eee6;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(202, 211, 204, 0.22);
-  }
-
-  :root[data-color-mode="system"] .intro-meter {
-    background: rgba(242, 238, 230, 0.12);
-  }
-
-  :root[data-color-mode="system"] .intro-meter i {
-    background: linear-gradient(90deg, #71b8a6, #8fb5ed, #d58b72);
-  }
-
-  :root[data-color-mode="system"] .intro-lines i {
-    background: linear-gradient(90deg, transparent, rgba(202, 211, 204, 0.28), transparent);
-  }
-}
 
 .intro-fade-leave-active {
   transition:
@@ -1407,11 +1029,6 @@ button:disabled {
   border-radius: 7px;
 }
 
-.segmented-options button.active {
-  color: #fffdf8;
-  background: var(--ink);
-}
-
 .temperature-control {
   display: grid;
   gap: 7px;
@@ -1553,12 +1170,6 @@ button:disabled {
   border-radius: 8px;
 }
 
-.status-duration-grid button.active {
-  color: #fffdf8;
-  background: var(--ink);
-  border-color: var(--ink);
-}
-
 .status-box-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1595,13 +1206,6 @@ button:disabled {
 .status-icon-option:hover {
   color: var(--ink);
   background: var(--paper-strong);
-}
-
-.status-icon-option.active {
-  color: var(--ink);
-  background: #fffdf8;
-  border-color: rgba(36, 43, 39, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(36, 43, 39, 0.08);
 }
 
 .status-text-input {
@@ -1894,6 +1498,13 @@ h1 {
   left: 4%;
   color: var(--gold);
   animation-delay: 820ms;
+}
+
+.node-memory-map {
+  right: 24%;
+  bottom: 7%;
+  color: var(--accent);
+  animation-delay: 900ms;
 }
 
 .node-workflow {
@@ -2259,12 +1870,6 @@ h1 {
   line-height: 1;
 }
 
-.chat-setup-tabs button.active {
-  color: var(--ink);
-  background: rgba(45, 111, 99, 0.1);
-  border-color: rgba(45, 111, 99, 0.28);
-}
-
 .chat-setup-form {
   min-height: 0;
   display: grid;
@@ -2320,7 +1925,6 @@ h1 {
   font-size: 13px;
 }
 
-.chat-suggestion-list button.active,
 .chat-suggestion-list button:hover {
   background: rgba(45, 111, 99, 0.09);
   border-color: rgba(45, 111, 99, 0.28);
@@ -2644,12 +2248,6 @@ h1 {
   border-radius: 7px;
 }
 
-.chat-tone-picker button.active {
-  box-shadow:
-    0 0 0 2px var(--paper),
-    0 0 0 4px var(--ink);
-}
-
 .tone-ink,
 .thread-avatar-ink {
   background: var(--ink);
@@ -2816,6 +2414,16 @@ h1 {
 .thread-main small {
   color: var(--muted);
   font-size: 12px;
+}
+
+.thread-preview {
+  display: block;
+}
+
+.thread-draft {
+  display: block;
+  color: var(--accent-strong);
+  font-weight: 800;
 }
 
 .thread-meta {
@@ -3367,6 +2975,15 @@ h1 {
   padding: 36px 24px 72px;
 }
 
+.landing-waves {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .landing-hero::before {
   content: "";
   position: absolute;
@@ -3380,6 +2997,7 @@ h1 {
 .landing-field {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -3423,6 +3041,7 @@ h1 {
   left: 50%;
   width: min(720px, 78vw);
   aspect-ratio: 1;
+  z-index: 2;
   opacity: 0.92;
   transform: translate(-50%, -53%);
   pointer-events: none;
@@ -3528,7 +3147,7 @@ h1 {
 
 .landing-copy {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   width: min(760px, 100%);
   display: grid;
   justify-items: center;
@@ -3881,11 +3500,1930 @@ h1 {
   padding: 16px;
 }
 
+.api-life-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+.api-life-layout.is-create-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.api-config-column {
+  min-width: 0;
+}
+
+.api-panel-switch {
+  margin-bottom: 14px;
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(246, 243, 236, 0.82);
+  border: 1px solid rgba(222, 215, 203, 0.82);
+  border-radius: 8px;
+}
+
+.api-panel-switch button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.api-pet-page {
+  display: grid;
+  gap: 16px;
+}
+
+.api-pet-hero {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(47, 111, 103, 0.08), rgba(179, 139, 60, 0.08)),
+    rgba(255, 255, 255, 0.52);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.api-pet-scene {
+  position: relative;
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(247, 252, 255, 0.82), rgba(239, 246, 233, 0.9)),
+    rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+}
+
+.api-pet-ground {
+  position: absolute;
+  bottom: 32px;
+  z-index: 1;
+  width: 210px;
+  height: 34px;
+  background: radial-gradient(ellipse at center, rgba(36, 29, 24, 0.23), rgba(36, 29, 24, 0));
+  border-radius: 999px;
+  animation: petShadow 2.8s ease-in-out infinite;
+}
+
+.api-pet-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.34) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.3) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(180deg, black, transparent 82%);
+  opacity: 0.55;
+}
+
+.api-pet-landscape {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.landscape-back {
+  inset: auto 0 58px;
+  z-index: 0;
+  height: 92px;
+  opacity: 0.36;
+}
+
+.landscape-mid {
+  right: 0;
+  bottom: 42px;
+  left: 0;
+  z-index: 1;
+  height: 70px;
+  opacity: 0.48;
+}
+
+.landscape-front {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  height: 56px;
+  opacity: 0.68;
+}
+
+.api-pet-scene-spark {
+  background:
+    linear-gradient(180deg, rgba(255, 245, 229, 0.96), rgba(239, 247, 236, 0.95)),
+    #fff8ec;
+}
+
+.api-pet-scene-leaf {
+  background:
+    linear-gradient(180deg, rgba(241, 252, 238, 0.96), rgba(250, 245, 236, 0.96)),
+    #f3fbef;
+}
+
+.api-pet-scene-stone {
+  background:
+    linear-gradient(180deg, rgba(238, 244, 241, 0.96), rgba(235, 240, 224, 0.96)),
+    #edf2ee;
+}
+
+.api-pet-scene-cloud {
+  background:
+    linear-gradient(180deg, rgba(234, 247, 255, 0.96), rgba(242, 245, 236, 0.96)),
+    #edf8ff;
+}
+
+.api-pet-quest-glacier {
+  background:
+    radial-gradient(circle at 78% 20%, rgba(255, 255, 255, 0.86), transparent 16%),
+    linear-gradient(180deg, #dff6ff 0%, #edf9ff 46%, #e8f1f4 100%);
+}
+
+.api-pet-quest-glacier .landscape-back {
+  background:
+    linear-gradient(138deg, transparent 0 14%, rgba(122, 185, 214, 0.48) 14% 28%, transparent 28% 100%),
+    linear-gradient(218deg, transparent 0 18%, rgba(255, 255, 255, 0.86) 18% 32%, transparent 32% 100%);
+  clip-path: polygon(0 100%, 12% 46%, 22% 100%, 38% 22%, 55% 100%, 72% 36%, 88% 100%, 100% 58%, 100% 100%);
+}
+
+.api-pet-quest-glacier .landscape-mid {
+  background: linear-gradient(90deg, rgba(111, 177, 206, 0.28), rgba(255, 255, 255, 0.74), rgba(111, 177, 206, 0.24));
+  clip-path: polygon(0 72%, 16% 42%, 32% 68%, 50% 28%, 66% 72%, 82% 44%, 100% 70%, 100% 100%, 0 100%);
+}
+
+.api-pet-quest-glacier .landscape-front {
+  background:
+    linear-gradient(90deg, rgba(124, 193, 222, 0.24), rgba(255, 255, 255, 0.88), rgba(134, 196, 220, 0.26));
+}
+
+.api-pet-quest-forest {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 235, 172, 0.36), transparent 20%),
+    linear-gradient(180deg, #dcefd3 0%, #d9ebd2 42%, #eef4dd 100%);
+}
+
+.api-pet-quest-forest .landscape-back {
+  background:
+    radial-gradient(circle at 16% 50%, rgba(32, 96, 64, 0.46) 0 22px, transparent 23px),
+    radial-gradient(circle at 34% 38%, rgba(45, 123, 80, 0.52) 0 28px, transparent 29px),
+    radial-gradient(circle at 58% 48%, rgba(37, 105, 72, 0.5) 0 26px, transparent 27px),
+    radial-gradient(circle at 80% 42%, rgba(48, 126, 79, 0.48) 0 30px, transparent 31px);
+}
+
+.api-pet-quest-forest .landscape-mid {
+  background:
+    linear-gradient(90deg, transparent 8%, rgba(46, 94, 63, 0.5) 9% 12%, transparent 13% 28%, rgba(59, 111, 72, 0.5) 29% 32%, transparent 33% 56%, rgba(38, 89, 61, 0.5) 57% 60%, transparent 61% 76%, rgba(57, 110, 72, 0.5) 77% 80%, transparent 81%),
+    linear-gradient(180deg, transparent, rgba(47, 111, 75, 0.24));
+}
+
+.api-pet-quest-forest .landscape-front {
+  background:
+    radial-gradient(ellipse at 18% 100%, rgba(54, 126, 82, 0.42), transparent 42%),
+    radial-gradient(ellipse at 68% 100%, rgba(69, 141, 87, 0.38), transparent 46%),
+    linear-gradient(180deg, transparent, rgba(39, 95, 62, 0.18));
+}
+
+.api-pet-quest-desert {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(255, 229, 153, 0.78), transparent 15%),
+    linear-gradient(180deg, #fae8bd 0%, #f3d79b 48%, #f6e7c4 100%);
+}
+
+.api-pet-quest-desert .landscape-back {
+  background: linear-gradient(90deg, rgba(167, 103, 56, 0.34), rgba(201, 145, 79, 0.18), rgba(157, 98, 59, 0.28));
+  clip-path: polygon(0 78%, 16% 46%, 32% 76%, 48% 36%, 66% 74%, 82% 52%, 100% 82%, 100% 100%, 0 100%);
+}
+
+.api-pet-quest-desert .landscape-mid {
+  background:
+    radial-gradient(ellipse at 26% 68%, rgba(177, 121, 66, 0.28), transparent 36%),
+    radial-gradient(ellipse at 72% 72%, rgba(197, 143, 77, 0.3), transparent 42%);
+}
+
+.api-pet-quest-desert .landscape-front {
+  background: linear-gradient(180deg, rgba(223, 170, 92, 0.16), rgba(204, 144, 72, 0.38));
+}
+
+.api-pet-quest-ocean {
+  background:
+    radial-gradient(circle at 24% 22%, rgba(159, 223, 231, 0.36), transparent 18%),
+    linear-gradient(180deg, #d7f7f7 0%, #b5dfe7 44%, #9fc6d7 100%);
+}
+
+.api-pet-quest-ocean .landscape-back {
+  background:
+    radial-gradient(ellipse at 18% 74%, rgba(34, 110, 130, 0.28), transparent 28%),
+    radial-gradient(ellipse at 76% 80%, rgba(28, 95, 123, 0.24), transparent 34%);
+}
+
+.api-pet-quest-ocean .landscape-mid {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px 13px),
+    linear-gradient(90deg, rgba(40, 120, 150, 0.22), rgba(143, 214, 220, 0.32), rgba(40, 120, 150, 0.18));
+}
+
+.api-pet-quest-ocean .landscape-front {
+  background:
+    radial-gradient(ellipse at 36% 96%, rgba(23, 99, 128, 0.26), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(42, 111, 142, 0.28));
+}
+
+.api-pet-quest-canyon {
+  background:
+    radial-gradient(circle at 68% 18%, rgba(255, 210, 150, 0.6), transparent 16%),
+    linear-gradient(180deg, #f5d5ad 0%, #e7b082 52%, #f4e2ca 100%);
+}
+
+.api-pet-quest-canyon .landscape-back {
+  background: linear-gradient(90deg, rgba(134, 76, 58, 0.44), rgba(176, 93, 64, 0.36), rgba(112, 72, 60, 0.44));
+  clip-path: polygon(0 100%, 0 26%, 18% 34%, 22% 100%, 40% 100%, 46% 18%, 62% 30%, 66% 100%, 80% 100%, 84% 24%, 100% 36%, 100% 100%);
+}
+
+.api-pet-quest-canyon .landscape-mid {
+  background: linear-gradient(90deg, rgba(120, 68, 56, 0.24), rgba(202, 119, 78, 0.3), rgba(124, 78, 61, 0.24));
+  clip-path: polygon(0 80%, 22% 52%, 42% 82%, 58% 46%, 76% 82%, 100% 58%, 100% 100%, 0 100%);
+}
+
+.api-pet-quest-canyon .landscape-front {
+  background: linear-gradient(180deg, rgba(199, 121, 78, 0.12), rgba(151, 91, 62, 0.34));
+}
+
+.api-pet-quest-aurora {
+  background:
+    radial-gradient(circle at 76% 18%, rgba(255, 255, 255, 0.68), transparent 12%),
+    linear-gradient(180deg, #dce6f6 0%, #edf6f2 45%, #f3f6ee 100%);
+}
+
+.api-pet-quest-aurora .api-pet-sky {
+  background:
+    linear-gradient(115deg, transparent 4%, rgba(70, 185, 132, 0.34) 16%, transparent 28%),
+    linear-gradient(75deg, transparent 20%, rgba(94, 155, 218, 0.28) 38%, transparent 55%);
+}
+
+.api-pet-quest-aurora .landscape-back {
+  background: linear-gradient(90deg, rgba(92, 122, 154, 0.24), rgba(255, 255, 255, 0.68), rgba(98, 134, 161, 0.22));
+  clip-path: polygon(0 100%, 18% 68%, 32% 100%, 50% 54%, 68% 100%, 84% 64%, 100% 100%);
+}
+
+.api-pet-quest-aurora .landscape-mid,
+.api-pet-quest-aurora .landscape-front {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(186, 214, 222, 0.36));
+}
+
+.api-pet-sparkle {
+  position: absolute;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  background: rgba(255, 253, 248, 0.9);
+  border: 1px solid rgba(36, 29, 24, 0.12);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+  opacity: 0.7;
+  animation: petSparkle 3.6s ease-in-out infinite;
+}
+
+.sparkle-one {
+  top: 24%;
+  left: 22%;
+}
+
+.sparkle-two {
+  top: 18%;
+  right: 26%;
+  animation-delay: 0.8s;
+}
+
+.sparkle-three {
+  right: 18%;
+  bottom: 32%;
+  animation-delay: 1.6s;
+}
+
+.api-pet-controls {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.api-pet-adoption-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.api-pet-adoption-head {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: rgba(246, 243, 236, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+}
+
+.api-pet-adoption-head .api-pet-orb.api-pet-character {
+  width: 70px;
+  height: 70px;
+  padding: 8px;
+  border-radius: 18px;
+}
+
+.api-pet-adoption-head strong,
+.api-pet-adoption-head span,
+.api-pet-adoption-head small {
+  display: block;
+}
+
+.api-pet-adoption-head strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.api-pet-adoption-head span {
+  margin-top: 4px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.api-pet-adoption-head small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.api-pet-panel {
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-label.required::after {
+  content: "*";
+  color: #d94b4b;
+  font-weight: 900;
+}
+
+.field-label.optional::after {
+  content: "*";
+  color: var(--muted);
+  font-weight: 900;
+  opacity: 0.62;
+}
+
+.persona-trait-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.persona-trait-button {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  text-align: left;
+  transition:
+    color 0.22s ease,
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s ease;
+}
+
+.persona-trait-button span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  transition:
+    color 0.22s ease,
+    background 0.22s ease,
+    transform 0.22s ease;
+}
+
+.persona-trait-button strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.22s ease;
+}
+
+.persona-trait-button.active {
+  color: #fffdf8;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 42%),
+    #2f8d68;
+  border-color: rgba(40, 126, 89, 0.72);
+  box-shadow:
+    0 12px 26px rgba(47, 141, 104, 0.24),
+    0 0 0 3px rgba(47, 141, 104, 0.12);
+  transform: translateY(-1px);
+  animation: traitSelectPop 0.28s ease both;
+}
+
+.persona-trait-button.active span {
+  color: #24714f;
+  background: #f5fff7;
+  transform: scale(1.06);
+}
+
+.persona-trait-button.active strong {
+  color: #fffdf8;
+}
+
+.api-pet-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.api-pet-stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.delete-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 18, 16, 0.48);
+  backdrop-filter: blur(12px);
+}
+
+.delete-confirm-dialog {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  color: var(--ink);
+  background: rgba(251, 250, 247, 0.97);
+  border: 1px solid rgba(214, 221, 214, 0.92);
+  border-radius: 8px;
+  box-shadow: 0 28px 80px rgba(32, 38, 36, 0.24);
+}
+
+.delete-confirm-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delete-confirm-head strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.delete-confirm-body {
+  display: grid;
+  gap: 12px;
+}
+
+.delete-confirm-pet {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.delete-confirm-pet .api-pet-orb.api-pet-character {
+  width: 82px;
+  height: 82px;
+  padding: 10px;
+  border-radius: 22px;
+}
+
+.delete-confirm-bubble {
+  position: relative;
+  padding: 12px 14px;
+  color: var(--ink);
+  background: rgba(243, 238, 227, 0.92);
+  border: 1px solid rgba(222, 215, 203, 0.82);
+  border-radius: 14px 14px 14px 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.delete-confirm-bubble::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 18px;
+  width: 14px;
+  height: 14px;
+  background: inherit;
+  border-left: 1px solid rgba(222, 215, 203, 0.82);
+  border-bottom: 1px solid rgba(222, 215, 203, 0.82);
+  transform: rotate(45deg);
+}
+
+.delete-confirm-bubble p,
+.delete-confirm-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-panel {
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.admin-floating-nav {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  box-shadow: 0 20px 45px rgba(31, 27, 20, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.admin-nav-brand {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
+.admin-nav-brand > svg {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  color: #fffdf8;
+  background: var(--ink);
+  border-radius: 8px;
+}
+
+.admin-nav-brand strong,
+.admin-nav-brand span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-nav-brand strong {
+  font-size: 14px;
+}
+
+.admin-nav-brand span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-nav-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 900;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-nav-item:hover,
+.admin-nav-item.active {
+  color: var(--ink);
+  background: rgba(246, 243, 236, 0.9);
+}
+
+.admin-console {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.admin-console-header {
+  margin-bottom: 0;
+}
+
+.admin-users-card,
+.admin-empty-state,
+.admin-detail-panel,
+.admin-metric-card,
+.admin-insight-panel,
+.admin-module-card {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-metric-card {
+  min-height: 128px;
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+}
+
+.admin-metric-card svg {
+  color: var(--muted);
+}
+
+.admin-metric-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-metric-card strong {
+  color: var(--ink);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.admin-insight-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-insight-panel h2,
+.admin-insight-panel p {
+  margin: 0;
+}
+
+.admin-insight-panel ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.admin-insight-panel li {
+  padding: 10px 12px;
+  color: var(--muted);
+  background: rgba(246, 243, 236, 0.68);
+  border: 1px solid rgba(222, 215, 203, 0.64);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.admin-users-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.admin-users-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.admin-search-field {
+  position: relative;
+  margin: 0;
+}
+
+.admin-search-field svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.admin-search-field input {
+  padding-left: 38px;
+}
+
+.admin-user-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+}
+
+.admin-user-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 120px 120px 120px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 0;
+  border-bottom: 1px solid rgba(222, 215, 203, 0.64);
+  text-align: left;
+}
+
+.admin-user-row:last-child {
+  border-bottom: 0;
+}
+
+.admin-user-row:not(.admin-user-head) {
+  cursor: pointer;
+}
+
+.admin-user-row:not(.admin-user-head):hover,
+.admin-user-row.active {
+  background: rgba(246, 243, 236, 0.88);
+}
+
+.admin-user-head {
+  min-height: 42px;
+  color: var(--muted);
+  background: rgba(246, 243, 236, 0.78);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-user-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-user-main strong,
+.admin-user-main small,
+.admin-user-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-main strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.admin-user-main small,
+.admin-user-row > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-user-avatar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #fffdf8;
+  background: var(--ink);
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.admin-user-avatar.large {
+  width: 58px;
+  height: 58px;
+  font-size: 22px;
+}
+
+.admin-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-user-row select {
+  height: 34px;
+}
+
+.admin-empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.admin-empty-state strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.admin-empty-state.compact {
+  min-height: 150px;
+  margin-top: 12px;
+}
+
+.admin-detail-panel {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.admin-detail-hero {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-detail-hero h2,
+.admin-detail-hero span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-detail-hero h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.admin-detail-hero span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-field {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.admin-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-detail-grid span,
+.admin-detail-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-detail-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-detail-grid strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.admin-module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-audit-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-audit-list {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.admin-audit-list li {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: rgba(246, 243, 236, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.64);
+  border-radius: 8px;
+}
+
+.admin-audit-list strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.admin-audit-list span,
+.admin-audit-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-module-card {
+  min-height: 210px;
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+}
+
+.admin-module-card.disabled {
+  opacity: 0.72;
+}
+
+.admin-module-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-module-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--ink);
+  border-radius: 8px;
+}
+
+.admin-module-card h2,
+.admin-module-card p {
+  margin: 0;
+}
+
+.admin-module-card h2 {
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.admin-module-card p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.admin-switch {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px 0 14px;
+  color: var(--muted);
+  background: rgba(246, 243, 236, 0.86);
+  border: 1px solid rgba(222, 215, 203, 0.82);
+  border-radius: 8px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.admin-switch i {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  background: rgba(127, 116, 96, 0.28);
+  border-radius: 999px;
+}
+
+.admin-switch i::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fffdf8;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(31, 27, 20, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.admin-switch.active {
+  color: var(--ink);
+}
+
+.admin-switch.active i {
+  background: #516b4f;
+}
+
+.admin-switch.active i::after {
+  transform: translateX(18px);
+}
+
+.api-pet-stage h2,
+.api-pet-stage p {
+  margin: 0;
+}
+
+.api-pet-stage strong,
+.api-pet-stage span {
+  display: block;
+}
+
+.api-pet-stage strong {
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.api-pet-stage span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pet-name-field {
+  margin: 0;
+}
+
+.pet-species-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pet-species-button {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.pet-species-button span {
+  font-family: var(--display-font);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.pet-species-button small {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@keyframes traitSelectPop {
+  0% {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 0 0 0 rgba(47, 141, 104, 0);
+  }
+  65% {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 24px rgba(47, 141, 104, 0.18), 0 0 0 8px rgba(47, 141, 104, 0.06);
+  }
+  100% {
+    transform: translateY(-1px) scale(1);
+    box-shadow:
+      0 12px 26px rgba(47, 141, 104, 0.24),
+      0 0 0 3px rgba(47, 141, 104, 0.12);
+  }
+}
+
+.segmented-options button,
+.status-duration-grid button,
+.status-icon-option,
+.chat-setup-tabs button,
+.chat-suggestion-list button,
+.chat-tone-picker button,
+.api-panel-switch button,
+.pet-species-button,
+.pet-quest-card,
+.chat-persona-strip button,
+.chat-mode-toggle button,
+.provider-tab,
+.weather-switcher button,
+.workflow-template-card {
+  transition:
+    color 0.22s ease,
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s ease;
+}
+
+.segmented-options button.active,
+.status-duration-grid button.active,
+.status-icon-option.active,
+.chat-setup-tabs button.active,
+.api-panel-switch button.active,
+.pet-species-button.active,
+.chat-persona-strip button.active,
+.chat-mode-toggle button.active,
+.provider-tab.active,
+.weather-switcher button.active {
+  color: #fffdf8;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 42%),
+    #2f8d68;
+  border-color: rgba(40, 126, 89, 0.72);
+  box-shadow:
+    0 12px 26px rgba(47, 141, 104, 0.24),
+    0 0 0 3px rgba(47, 141, 104, 0.12);
+  transform: translateY(-1px);
+  animation: traitSelectPop 0.28s ease both;
+}
+
+.status-icon-option.active small,
+.chat-setup-tabs button.active i,
+.pet-species-button.active small {
+  color: #fffdf8;
+}
+
+.chat-setup-tabs button.active i {
+  color: #24714f;
+  background: #f5fff7;
+  transform: scale(1.06);
+}
+
+.chat-suggestion-list button.active,
+.pet-quest-card.active,
+.workflow-template-card.active {
+  color: var(--accent-strong);
+  background:
+    linear-gradient(135deg, rgba(47, 141, 104, 0.12), rgba(255, 255, 255, 0.64)),
+    rgba(255, 255, 255, 0.68);
+  border-color: rgba(40, 126, 89, 0.62);
+  box-shadow:
+    0 12px 26px rgba(47, 141, 104, 0.18),
+    0 0 0 3px rgba(47, 141, 104, 0.1);
+  transform: translateY(-1px);
+  animation: traitSelectPop 0.28s ease both;
+}
+
+.pixel-pet-creator {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.74), rgba(246, 243, 236, 0.62)),
+    repeating-linear-gradient(0deg, rgba(47, 111, 103, 0.05) 0 1px, transparent 1px 8px);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.pixel-pet-preview.api-pet-character {
+  min-height: 132px;
+  padding: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.8), rgba(134, 179, 153, 0.22));
+  background-size: 12px 12px, 12px 12px, auto;
+}
+
+.pixel-pet-preview .pet-sprite {
+  width: min(96px, 100%);
+  height: min(96px, 100%);
+  image-rendering: pixelated;
+  filter: drop-shadow(0 12px 0 rgba(36, 29, 24, 0.08)) drop-shadow(0 16px 18px rgba(36, 29, 24, 0.18));
+}
+
+.pixel-pet-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pixel-pet-fields label {
+  min-width: 0;
+  margin: 0;
+}
+
+.pixel-pet-fields label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pixel-pet-fields input[type="color"] {
+  min-height: 40px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.pixel-pet-fields .secondary-button {
+  align-self: end;
+  min-height: 40px;
+  justify-content: center;
+}
+
+.pet-stat-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pet-stat-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pet-stat-row div {
+  height: 8px;
+  overflow: hidden;
+  background: rgba(214, 221, 214, 0.62);
+  border-radius: 999px;
+}
+
+.pet-stat-row i {
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #2f6f67, #b38b3c);
+  border-radius: inherit;
+}
+
+.pet-stat-row strong {
+  color: var(--ink);
+  font-size: 12px;
+  text-align: right;
+}
+
+.pet-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pet-actions button {
+  min-width: 0;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--accent-strong);
+  background: rgba(47, 111, 103, 0.08);
+  border: 1px solid rgba(47, 111, 103, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pet-actions button:disabled {
+  color: rgba(101, 112, 107, 0.62);
+  background: rgba(235, 239, 235, 0.64);
+  border-color: rgba(214, 221, 214, 0.76);
+  cursor: not-allowed;
+}
+
+.pet-quest-planner {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+  background: rgba(246, 243, 236, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.82);
+  border-radius: 8px;
+  animation: questPanelReveal 0.22s ease both;
+}
+
+.pet-quest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pet-quest-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.pet-quest-head .secondary-button.complete:disabled {
+  color: #fffdf8;
+  background: var(--accent);
+  border-color: rgba(47, 111, 103, 0.46);
+  opacity: 1;
+}
+
+.pet-quest-content {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 0.9fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.pet-quest-destinations {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pet-quest-card {
+  position: relative;
+  min-width: 0;
+  min-height: 92px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 10px;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.pet-quest-card::before,
+.pet-quest-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.pet-quest-card::before {
+  top: 0;
+  background:
+    radial-gradient(circle at 80% 18%, rgba(255, 255, 255, 0.72), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent);
+}
+
+.pet-quest-card::after {
+  height: 38%;
+  opacity: 0.72;
+}
+
+.pet-quest-card:hover {
+  transform: translateY(-2px);
+}
+
+.pet-weather-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--accent);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pet-quest-card.api-pet-quest-glacier {
+  background:
+    linear-gradient(180deg, rgba(223, 246, 255, 0.92), rgba(255, 255, 255, 0.66)),
+    #e8f7fb;
+}
+
+.pet-quest-card.api-pet-quest-glacier::after {
+  background:
+    linear-gradient(135deg, transparent 0 18%, rgba(112, 182, 214, 0.42) 18% 35%, transparent 35%),
+    linear-gradient(225deg, transparent 0 16%, rgba(255, 255, 255, 0.86) 16% 32%, transparent 32%);
+  clip-path: polygon(0 100%, 14% 34%, 28% 100%, 46% 18%, 62% 100%, 78% 36%, 100% 100%);
+}
+
+.pet-quest-card.api-pet-quest-forest {
+  background:
+    linear-gradient(180deg, rgba(221, 240, 207, 0.96), rgba(255, 255, 255, 0.68)),
+    #e6f1dc;
+}
+
+.pet-quest-card.api-pet-quest-forest::after {
+  background:
+    radial-gradient(circle at 18% 48%, rgba(31, 99, 64, 0.5) 0 16px, transparent 17px),
+    radial-gradient(circle at 42% 28%, rgba(47, 125, 78, 0.52) 0 22px, transparent 23px),
+    radial-gradient(circle at 72% 44%, rgba(42, 111, 72, 0.48) 0 20px, transparent 21px);
+}
+
+.pet-quest-card.api-pet-quest-desert {
+  background:
+    linear-gradient(180deg, rgba(250, 229, 185, 0.96), rgba(255, 255, 255, 0.64)),
+    #f5dfb4;
+}
+
+.pet-quest-card.api-pet-quest-desert::after {
+  height: 32%;
+  background:
+    radial-gradient(ellipse at 24% 100%, rgba(190, 126, 58, 0.32), transparent 48%),
+    radial-gradient(ellipse at 82% 88%, rgba(211, 158, 82, 0.42), transparent 48%);
+}
+
+.pet-quest-card.api-pet-quest-ocean {
+  background:
+    linear-gradient(180deg, rgba(206, 244, 245, 0.95), rgba(255, 255, 255, 0.62)),
+    #d7f3f5;
+}
+
+.pet-quest-card.api-pet-quest-ocean::after {
+  height: 34%;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.42) 0 2px, transparent 2px 10px),
+    linear-gradient(90deg, rgba(39, 120, 150, 0.34), rgba(113, 196, 205, 0.48));
+}
+
+.pet-quest-card.api-pet-quest-canyon {
+  background:
+    linear-gradient(180deg, rgba(245, 213, 173, 0.96), rgba(255, 255, 255, 0.64)),
+    #efc69f;
+}
+
+.pet-quest-card.api-pet-quest-canyon::after {
+  background: linear-gradient(90deg, rgba(128, 71, 58, 0.48), rgba(196, 102, 66, 0.42), rgba(119, 77, 62, 0.48));
+  clip-path: polygon(0 100%, 0 30%, 18% 42%, 26% 100%, 42% 100%, 48% 20%, 62% 34%, 70% 100%, 86% 100%, 92% 28%, 100% 42%, 100% 100%);
+}
+
+.pet-quest-card.api-pet-quest-aurora {
+  background:
+    linear-gradient(180deg, rgba(223, 234, 248, 0.96), rgba(255, 255, 255, 0.66)),
+    #e9f2f7;
+}
+
+.pet-quest-card.api-pet-quest-aurora::before {
+  background:
+    linear-gradient(112deg, transparent 8%, rgba(79, 190, 139, 0.38) 24%, transparent 42%),
+    linear-gradient(72deg, transparent 32%, rgba(91, 151, 221, 0.3) 50%, transparent 68%);
+}
+
+.pet-quest-card.api-pet-quest-aurora::after {
+  background: linear-gradient(90deg, rgba(112, 148, 176, 0.22), rgba(255, 255, 255, 0.7), rgba(102, 142, 171, 0.24));
+  clip-path: polygon(0 100%, 18% 66%, 32% 100%, 50% 48%, 70% 100%, 86% 62%, 100% 100%);
+}
+
+.pet-quest-card strong,
+.pet-quest-card small,
+.pet-quest-card em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-quest-card strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.pet-quest-card small,
+.pet-quest-card em {
+  font-size: 11px;
+}
+
+.pet-quest-card em {
+  font-style: normal;
+  font-weight: 800;
+}
+
+.pet-quest-map {
+  position: relative;
+  min-height: 212px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #edf2ee;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    inset 0 -42px 74px rgba(36, 29, 24, 0.08);
+}
+
+.pet-quest-map .api-pet-sky,
+.pet-quest-map .api-pet-landscape {
+  position: absolute;
+}
+
+.pet-quest-map .api-pet-sky {
+  animation: questSkyDrift 14s linear infinite;
+}
+
+.pet-quest-map.api-pet-quest-desert .api-pet-sky,
+.pet-quest-map.api-pet-quest-canyon .api-pet-sky {
+  opacity: 0.22;
+  animation: none;
+}
+
+.quest-map-weather-layer,
+.quest-map-feature,
+.quest-map-node {
+  position: absolute;
+  pointer-events: none;
+}
+
+.quest-map-weather-layer {
+  inset: -24px;
+  z-index: 2;
+  opacity: 0.72;
+}
+
+.quest-map-feature {
+  z-index: 2;
+  opacity: 0.82;
+}
+
+.quest-map-route {
+  position: absolute;
+  z-index: 2;
+  height: 2px;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.92), transparent),
+    linear-gradient(90deg, transparent, rgba(47, 111, 103, 0.62), transparent);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.62);
+  transform-origin: left center;
+  animation: questRoutePulse 2.4s ease-in-out infinite;
+}
+
+.route-one {
+  left: 12%;
+  top: 58%;
+  width: 46%;
+  transform: rotate(-18deg);
+}
+
+.route-two {
+  right: 15%;
+  top: 46%;
+  width: 34%;
+  transform: rotate(22deg);
+  animation-delay: 0.42s;
+}
+
+.quest-map-node {
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 253, 248, 0.94);
+  border: 2px solid rgba(47, 111, 103, 0.56);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.24);
+}
+
+.node-start {
+  left: 12%;
+  top: 56%;
+}
+
+.node-end {
+  right: 21%;
+  top: 34%;
+}
+
+.quest-map-pin {
+  position: absolute;
+  right: 20%;
+  top: 32%;
+  z-index: 3;
+  width: 14px;
+  height: 14px;
+  background: var(--clay);
+  border: 2px solid #fffdf8;
+  border-radius: 999px 999px 999px 2px;
+  box-shadow: 0 8px 18px rgba(36, 29, 24, 0.22);
+  transform: rotate(-45deg);
+  animation: questPinPulse 1.6s ease-in-out infinite;
+}
+
+.quest-map-weather-card {
+  position: absolute;
+  right: 16px;
+  top: 14px;
+  z-index: 3;
+  max-width: calc(100% - 32px);
+  min-width: 134px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 8px 10px;
+  overflow: hidden;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.76);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: 0 14px 28px rgba(36, 29, 24, 0.1);
+  backdrop-filter: blur(16px);
+}
+
+.quest-map-weather-card > span {
+  grid-row: span 2;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: rgba(36, 29, 24, 0.72);
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.quest-map-weather-card strong,
+.quest-map-weather-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quest-map-weather-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.quest-map-pet.api-pet-character {
+  position: absolute;
+  right: 22%;
+  bottom: 25%;
+  z-index: 4;
+  width: 62px;
+  height: 62px;
+  padding: 8px;
+  border-radius: 18px;
+  animation: questPetArrive 0.72s ease both;
+}
+
+.pet-quest-map.is-arrived .quest-map-pin {
+  background: var(--accent);
+}
+
+.pet-quest-map.is-arrived .node-end {
+  border-color: rgba(179, 139, 60, 0.78);
+  box-shadow: 0 0 0 7px rgba(179, 139, 60, 0.18);
+}
+
+.pet-quest-map.api-pet-quest-glacier .quest-map-weather-layer {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.88) 0 2px, transparent 3px) 0 0 / 32px 28px,
+    linear-gradient(120deg, transparent 0 44%, rgba(255, 255, 255, 0.42) 46% 48%, transparent 50%);
+  animation: questSnow 4.8s linear infinite;
+}
+
+.pet-quest-map.api-pet-quest-glacier .feature-one,
+.pet-quest-map.api-pet-quest-aurora .feature-one {
+  left: 9%;
+  bottom: 23%;
+  width: 58px;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.78);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.pet-quest-map.api-pet-quest-glacier .feature-two {
+  left: 25%;
+  bottom: 17%;
+  width: 42px;
+  height: 28px;
+  background: rgba(102, 181, 213, 0.34);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.pet-quest-map.api-pet-quest-forest .quest-map-weather-layer {
+  background:
+    linear-gradient(105deg, transparent 0 48%, rgba(255, 255, 255, 0.4) 49% 50%, transparent 51%) 0 0 / 28px 42px;
+  animation: questRain 1.2s linear infinite;
+}
+
+.pet-quest-map.api-pet-quest-forest .feature-one,
+.pet-quest-map.api-pet-quest-forest .feature-two,
+.pet-quest-map.api-pet-quest-forest .feature-three {
+  bottom: 24%;
+  width: 34px;
+  height: 66px;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(30, 93, 59, 0.86) 0 18px, transparent 19px),
+    linear-gradient(90deg, transparent 44%, rgba(91, 78, 47, 0.72) 45% 56%, transparent 57%);
+}
+
+.pet-quest-map.api-pet-quest-forest .feature-one {
+  left: 9%;
+}
+
+.pet-quest-map.api-pet-quest-forest .feature-two {
+  left: 22%;
+  bottom: 18%;
+  transform: scale(0.82);
+}
+
+.pet-quest-map.api-pet-quest-forest .feature-three {
+  left: 36%;
+  transform: scale(1.08);
+}
+
+.pet-quest-map.api-pet-quest-desert .quest-map-weather-layer {
+  background:
+    linear-gradient(104deg, transparent 0 34%, rgba(161, 105, 50, 0.22) 38% 40%, transparent 44%) 0 0 / 76px 30px,
+    radial-gradient(ellipse at 24% 70%, rgba(173, 112, 48, 0.22), transparent 34%),
+    linear-gradient(0deg, transparent, rgba(255, 238, 186, 0.22));
+  animation: questSand 1.9s linear infinite;
+}
+
+.pet-quest-map.api-pet-quest-desert .feature-one,
+.pet-quest-map.api-pet-quest-desert .feature-two {
+  bottom: 18%;
+  width: 82px;
+  height: 34px;
+  background: rgba(185, 119, 54, 0.28);
+  border-radius: 80% 20% 80% 22%;
+}
+
+.pet-quest-map.api-pet-quest-desert .feature-one {
+  left: 7%;
+}
+
+.pet-quest-map.api-pet-quest-desert .feature-two {
+  left: 33%;
+  bottom: 13%;
+  width: 120px;
+  opacity: 0.52;
+}
+
+.pet-quest-map.api-pet-quest-ocean .quest-map-weather-layer {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.34) 0 2px, transparent 2px 15px);
+  animation: questWave 2.2s ease-in-out infinite;
+}
+
+.pet-quest-map.api-pet-quest-ocean .feature-one,
+.pet-quest-map.api-pet-quest-ocean .feature-two {
+  left: 8%;
+  right: 10%;
+  height: 16px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.62), transparent);
+  border-radius: 999px;
+}
+
+.pet-quest-map.api-pet-quest-ocean .feature-one {
+  bottom: 31%;
+}
+
+.pet-quest-map.api-pet-quest-ocean .feature-two {
+  bottom: 20%;
+  opacity: 0.72;
+  transform: translateX(28px);
+}
+
+.pet-quest-map.api-pet-quest-canyon .quest-map-weather-layer {
+  background: linear-gradient(90deg, rgba(255, 224, 174, 0.18), transparent 38%, rgba(123, 75, 61, 0.12));
+  animation: questHeat 2.1s ease-in-out infinite;
+}
+
+.pet-quest-map.api-pet-quest-canyon .feature-one,
+.pet-quest-map.api-pet-quest-canyon .feature-two,
+.pet-quest-map.api-pet-quest-canyon .feature-three {
+  bottom: 18%;
+  width: 28px;
+  height: 84px;
+  background: linear-gradient(180deg, rgba(126, 72, 58, 0.72), rgba(191, 98, 64, 0.5));
+  clip-path: polygon(22% 0, 80% 0, 100% 100%, 0 100%);
+}
+
+.pet-quest-map.api-pet-quest-canyon .feature-one {
+  left: 10%;
+}
+
+.pet-quest-map.api-pet-quest-canyon .feature-two {
+  left: 24%;
+  height: 62px;
+  opacity: 0.66;
+}
+
+.pet-quest-map.api-pet-quest-canyon .feature-three {
+  right: 8%;
+  height: 72px;
+}
+
+.pet-quest-map.api-pet-quest-aurora .quest-map-weather-layer {
+  background:
+    linear-gradient(116deg, transparent 12%, rgba(77, 210, 146, 0.38) 28%, transparent 44%),
+    linear-gradient(74deg, transparent 34%, rgba(103, 150, 232, 0.3) 50%, transparent 66%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.78) 0 1px, transparent 2px) 0 0 / 30px 22px;
+  animation: questAurora 4.6s ease-in-out infinite;
+}
+
+.pet-quest-map.api-pet-quest-aurora .feature-two {
+  left: 24%;
+  bottom: 18%;
+  width: 50px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.72);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.pet-status-line {
+  min-height: 38px;
+  margin: 0;
+  padding: 10px;
+  color: var(--muted);
+  background: rgba(246, 243, 236, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .model-profile-card {
   width: 100%;
   min-height: 78px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px;
@@ -3913,9 +5451,418 @@ h1 {
   font-size: 13px;
 }
 
-.model-profile-card small {
+.model-profile-card small,
+.model-profile-card em {
   color: var(--accent-strong);
   font-size: 12px;
+}
+
+.model-profile-card em {
+  font-style: normal;
+  font-weight: 800;
+}
+
+.api-pet-avatar,
+.api-pet-orb {
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 8px;
+  font-family: var(--display-font);
+  font-weight: 900;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 12px 24px rgba(36, 29, 24, 0.12);
+}
+
+.api-pet-avatar {
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+}
+
+.api-pet-orb {
+  width: 74px;
+  height: 74px;
+  font-size: 32px;
+}
+
+.api-pet-spark {
+  background: linear-gradient(145deg, #232826, #f5efe4);
+}
+
+.api-pet-leaf {
+  background: linear-gradient(145deg, #3c8d6d, #9abf6b);
+}
+
+.api-pet-stone {
+  background: linear-gradient(145deg, #5f6975, #a2aab3);
+}
+
+.api-pet-cloud {
+  background: linear-gradient(145deg, #4a83b8, #8bc4d7);
+}
+
+.api-pet-character {
+  --pet-main: #e46b55;
+  --pet-light: #f0b45c;
+  --pet-dark: #7d3d35;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.52) 38%, rgba(255, 255, 255, 0.16) 72%),
+    linear-gradient(145deg, color-mix(in srgb, var(--pet-light) 40%, white), color-mix(in srgb, var(--pet-main) 36%, white));
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 16px 32px rgba(36, 29, 24, 0.16);
+}
+
+.api-pet-character span {
+  margin: 0;
+  color: inherit;
+}
+
+.model-profile-card .api-pet-character span {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.api-pet-character.api-pet-spark {
+  --pet-main: #2a302d;
+  --pet-light: #f3eee4;
+  --pet-dark: #101513;
+}
+
+.api-pet-character.api-pet-leaf {
+  --pet-main: #3c8d6d;
+  --pet-light: #a7c96d;
+  --pet-dark: #215744;
+}
+
+.api-pet-character.api-pet-stone {
+  --pet-main: #65717d;
+  --pet-light: #b0b8c0;
+  --pet-dark: #3e4852;
+}
+
+.api-pet-character.api-pet-cloud {
+  --pet-main: #4a83b8;
+  --pet-light: #9ed3e0;
+  --pet-dark: #2e577f;
+}
+
+.api-pet-avatar.api-pet-character {
+  width: 42px;
+  height: 42px;
+  padding: 5px;
+  animation: petFloatSmall 2.8s ease-in-out infinite;
+}
+
+.api-pet-orb.api-pet-character {
+  z-index: 2;
+  width: 172px;
+  height: 172px;
+  padding: 18px;
+  border-radius: 34px;
+  animation: petFloat 2.8s ease-in-out infinite;
+}
+
+.api-pet-orb.api-pet-spark {
+  animation: pandaSway 3.2s ease-in-out infinite;
+}
+
+.pet-species-preview.api-pet-character {
+  width: 34px;
+  height: 34px;
+  padding: 4px;
+  animation: petFloatSmall 2.8s ease-in-out infinite;
+}
+
+.pet-species-preview.api-pet-spark,
+.api-pet-avatar.api-pet-spark {
+  animation: pandaNod 3.2s ease-in-out infinite;
+}
+
+.pet-sprite {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 14px rgba(36, 29, 24, 0.18));
+  transform-origin: center bottom;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.api-pet-avatar .pet-sprite,
+.pet-species-preview .pet-sprite {
+  filter: drop-shadow(0 5px 7px rgba(36, 29, 24, 0.16));
+}
+
+.api-pet-avatar.api-pet-leaf .pet-sprite,
+.pet-species-preview.api-pet-leaf .pet-sprite {
+  filter:
+    drop-shadow(0 5px 7px rgba(36, 29, 24, 0.2))
+    brightness(0.92)
+    contrast(1.26)
+    saturate(1.18);
+}
+
+.api-pet-spark .pet-sprite {
+  transform: translateY(3px) scale(1.08);
+  filter:
+    drop-shadow(0 12px 15px rgba(36, 29, 24, 0.25))
+    contrast(1.08)
+    saturate(0.96);
+}
+
+.api-pet-leaf .pet-sprite {
+  transform: translateY(-2px) scale(1.08);
+  filter:
+    drop-shadow(0 10px 14px rgba(36, 29, 24, 0.24))
+    brightness(0.92)
+    contrast(1.26)
+    saturate(1.18);
+}
+
+.api-pet-stone .pet-sprite {
+  transform: translateY(5px) scale(1.06);
+}
+
+.api-pet-cloud .pet-sprite {
+  transform: rotate(2deg) scale(1.08);
+}
+
+.api-pet-scene.is-feed .api-pet-orb {
+  animation: petTreat 0.9s ease both;
+}
+
+.api-pet-scene.is-pet .api-pet-orb {
+  animation: petNuzzle 0.9s ease both;
+}
+
+.api-pet-scene.is-quest .api-pet-orb {
+  animation: petQuest 0.9s ease both;
+}
+
+.pet-body,
+.pet-ear,
+.pet-eye,
+.pet-mouth,
+.pet-tail {
+  position: absolute;
+  display: block;
+}
+
+.pet-body {
+  inset: 21% 15% 13%;
+  z-index: 2;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.52), transparent 28%),
+    linear-gradient(145deg, var(--pet-light), var(--pet-main) 58%, var(--pet-dark));
+  border: 2px solid rgba(255, 255, 255, 0.66);
+  border-radius: 46% 46% 40% 40%;
+  box-shadow: 0 14px 28px rgba(36, 29, 24, 0.16);
+}
+
+.pet-ear {
+  top: 12%;
+  z-index: 1;
+  width: 28%;
+  height: 30%;
+  background: linear-gradient(145deg, var(--pet-light), var(--pet-main));
+  border: 2px solid rgba(255, 255, 255, 0.62);
+  border-radius: 65% 65% 20% 20%;
+}
+
+.pet-ear-left {
+  left: 22%;
+  transform: rotate(-24deg);
+}
+
+.pet-ear-right {
+  right: 22%;
+  transform: rotate(24deg);
+}
+
+.pet-eye {
+  top: 43%;
+  z-index: 3;
+  width: 9%;
+  height: 13%;
+  background: #fffdf8;
+  border-radius: 999px;
+  box-shadow: inset 0 -2px 0 rgba(36, 29, 24, 0.28);
+  animation: petBlink 4.4s infinite;
+}
+
+.pet-eye-left {
+  left: 38%;
+}
+
+.pet-eye-right {
+  right: 38%;
+}
+
+.pet-mouth {
+  left: 45%;
+  bottom: 31%;
+  z-index: 3;
+  width: 10%;
+  height: 5%;
+  border-bottom: 2px solid rgba(36, 29, 24, 0.58);
+  border-radius: 0 0 999px 999px;
+}
+
+.pet-tail {
+  right: 4%;
+  bottom: 29%;
+  z-index: 1;
+  width: 30%;
+  height: 14%;
+  background: linear-gradient(90deg, var(--pet-main), var(--pet-light));
+  border-radius: 999px;
+  transform-origin: left center;
+  animation: petTail 1.8s ease-in-out infinite;
+}
+
+.api-pet-spark .pet-body {
+  inset: 27% 15% 10%;
+  border-radius: 54% 54% 42% 42%;
+}
+
+.api-pet-spark .pet-ear {
+  top: 10%;
+  width: 26%;
+  height: 26%;
+  border-radius: 999px;
+  clip-path: none;
+}
+
+.api-pet-spark .pet-tail {
+  right: 8%;
+  bottom: 19%;
+  width: 14%;
+  height: 14%;
+  border-radius: 999px;
+  animation-duration: 2.4s;
+}
+
+.api-pet-leaf .pet-body {
+  inset: 28% 18% 9%;
+  border-radius: 52% 52% 44% 44%;
+}
+
+.api-pet-leaf .pet-ear {
+  top: -3%;
+  width: 18%;
+  height: 48%;
+  border-radius: 999px 999px 42% 42%;
+}
+
+.api-pet-leaf .pet-ear-left {
+  left: 31%;
+  transform: rotate(-8deg);
+}
+
+.api-pet-leaf .pet-ear-right {
+  right: 31%;
+  transform: rotate(8deg);
+}
+
+.api-pet-leaf .pet-tail {
+  right: 12%;
+  bottom: 23%;
+  width: 16%;
+  height: 16%;
+  border-radius: 999px;
+}
+
+.api-pet-stone .pet-body {
+  inset: 36% 8% 18%;
+  background:
+    radial-gradient(circle at 34% 34%, rgba(255, 255, 255, 0.42), transparent 24%),
+    linear-gradient(90deg, transparent 48%, rgba(255, 255, 255, 0.24) 49% 51%, transparent 52%),
+    linear-gradient(145deg, var(--pet-light), var(--pet-main) 58%, var(--pet-dark));
+  border-radius: 58% 58% 34% 34%;
+}
+
+.api-pet-stone .pet-ear {
+  display: none;
+}
+
+.api-pet-stone .pet-eye {
+  top: 48%;
+  width: 7%;
+  height: 10%;
+}
+
+.api-pet-stone .pet-eye-left {
+  left: 39%;
+}
+
+.api-pet-stone .pet-eye-right {
+  right: 39%;
+}
+
+.api-pet-stone .pet-mouth {
+  bottom: 29%;
+}
+
+.api-pet-stone .pet-tail {
+  right: 3%;
+  bottom: 30%;
+  width: 14%;
+  height: 8%;
+  border-radius: 12px 999px 999px 12px;
+}
+
+.api-pet-cloud .pet-body {
+  inset: 21% 21% 16%;
+  border-radius: 52% 52% 58% 58%;
+}
+
+.api-pet-cloud .pet-ear {
+  top: 42%;
+  z-index: 1;
+  width: 26%;
+  height: 25%;
+  border-radius: 75% 20% 75% 20%;
+}
+
+.api-pet-cloud .pet-ear-left {
+  left: 4%;
+  transform: rotate(-24deg);
+}
+
+.api-pet-cloud .pet-ear-right {
+  right: 4%;
+  transform: rotate(24deg) scaleX(-1);
+}
+
+.api-pet-cloud .pet-mouth {
+  left: 47%;
+  bottom: 39%;
+  width: 0;
+  height: 0;
+  border: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 11px solid #f2b85f;
+  border-radius: 0;
+}
+
+.api-pet-cloud .pet-tail {
+  right: 12%;
+  bottom: 18%;
+  width: 19%;
+  height: 18%;
+  border-radius: 20% 90% 20% 90%;
+  transform-origin: center top;
 }
 
 .profile-empty {
@@ -4026,6 +5973,43 @@ h1 {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.66);
   border-color: rgba(222, 215, 203, 0.86);
+}
+
+.notes-filter-bar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.notes-filter-bar button {
+  min-width: 0;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(222, 215, 203, 0.74);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notes-filter-bar button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-filter-bar button.active,
+.notes-filter-bar button:hover {
+  color: var(--ink);
+  background: rgba(45, 111, 99, 0.1);
+  border-color: rgba(45, 111, 99, 0.24);
 }
 
 .note-group-form,
@@ -4387,6 +6371,17 @@ h1 {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.note-document-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-document-actions .icon-button {
+  width: 32px;
+  height: 32px;
 }
 
 .notes-live-grid {
@@ -4756,8 +6751,7 @@ h1 {
   text-align: left;
 }
 
-.workflow-template-card:hover,
-.workflow-template-card.active {
+.workflow-template-card:hover {
   border-color: rgba(180, 91, 66, 0.36);
   box-shadow: 0 12px 28px rgba(36, 29, 24, 0.07);
 }
@@ -5393,13 +7387,6 @@ h1 {
   font-weight: 800;
 }
 
-.chat-persona-strip button.active,
-.chat-mode-toggle button.active {
-  color: #fffdf8;
-  background: var(--ink);
-  border-color: var(--ink);
-}
-
 .panel-heading.compact {
   margin-bottom: 14px;
 }
@@ -5450,12 +7437,6 @@ h2 {
   color: #40516a;
   background: #f4f7fb;
   border: 1px solid #dce4ee;
-}
-
-.provider-tab.active {
-  color: #ffffff;
-  background: #1f6feb;
-  border-color: #1f6feb;
 }
 
 .form-grid {
@@ -5711,10 +7692,59 @@ select:focus {
   gap: 5px;
 }
 
+.message-meta-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .message-author {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.message-time {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.message-reply-quote {
+  width: fit-content;
+  max-width: min(420px, calc(100vw - 200px));
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: rgba(45, 111, 99, 0.07);
+  border: 1px solid rgba(45, 111, 99, 0.14);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.message.user .message-reply-quote {
+  justify-self: end;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.message-reply-quote strong,
+.message-reply-quote span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-reply-quote strong {
+  font-size: 12px;
+}
+
+.message-reply-quote span {
+  font-size: 12px;
+  opacity: 0.84;
 }
 
 .message p,
@@ -5759,6 +7789,34 @@ select:focus {
   background: #1f6feb;
   border-color: #1f6feb;
   justify-self: end;
+}
+
+.message-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.message.user .message-actions {
+  justify-content: flex-end;
+}
+
+.message-action-button {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.message-action-button:hover {
+  color: var(--ink);
+  background: rgba(32, 38, 36, 0.06);
 }
 
 .message-image-grid {
@@ -6155,40 +8213,165 @@ select:focus {
 }
 
 .composer-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
   margin-bottom: 8px;
 }
 
-.composer-attachments span {
+.composer-reply-bar {
   min-width: 0;
-  max-width: 180px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 6px;
-  overflow: hidden;
-  color: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
   background: rgba(45, 111, 99, 0.08);
-  border: 1px solid rgba(45, 111, 99, 0.18);
+  border: 1px solid rgba(45, 111, 99, 0.14);
   border-radius: 8px;
-  font-size: 12px;
-  font-weight: 800;
+}
+
+.composer-reply-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.composer-reply-copy strong,
+.composer-reply-copy span {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-attachments button {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+.composer-reply-copy strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.composer-reply-copy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-reply-bar button {
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   padding: 0;
   color: var(--muted);
   background: transparent;
+  border: 0;
+  border-radius: 999px;
+}
+
+.composer-reply-bar button:hover {
+  color: var(--ink);
+  background: rgba(32, 38, 36, 0.06);
+}
+
+.composer-attachment-card {
+  position: relative;
+  min-width: 0;
+  height: 72px;
+  margin: 0;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(240, 246, 242, 0.96));
+  border: 1px solid rgba(45, 111, 99, 0.18);
+  border-radius: 8px;
+}
+
+.composer-attachment-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.72) 58%, rgba(255, 255, 255, 0.3) 100%);
+  pointer-events: none;
+}
+
+.composer-attachment-card.image::after {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.38));
+}
+
+.composer-attachment-card img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-file-backdrop {
+  position: absolute;
+  right: 8px;
+  bottom: -2px;
+  z-index: 0;
+  color: rgba(31, 111, 235, 0.18);
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1;
+  filter: blur(0.35px);
+}
+
+.composer-attachment-card figcaption {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  align-content: end;
+  gap: 2px;
+  padding: 10px 30px 10px 10px;
+}
+
+.composer-attachment-card strong,
+.composer-attachment-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment-card strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.composer-attachment-card.image strong {
+  color: #ffffff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.36);
+}
+
+.composer-attachment-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.composer-attachment-card.image small {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.composer-attachments button {
+  width: 18px;
+  height: 18px;
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
   border: 0;
   border-radius: 999px;
 }
@@ -6200,6 +8383,17 @@ select:focus {
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 0 0 3px rgba(45, 111, 99, 0.1),
     0 10px 26px rgba(32, 38, 36, 0.07);
+}
+
+.composer.is-dragging-file .composer-input {
+  background:
+    linear-gradient(135deg, rgba(45, 111, 99, 0.12), rgba(31, 111, 235, 0.08)),
+    #ffffff;
+  border-color: rgba(45, 111, 99, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(45, 111, 99, 0.08),
+    0 0 0 3px rgba(45, 111, 99, 0.1),
+    0 10px 26px rgba(32, 38, 36, 0.08);
 }
 
 .composer textarea {
@@ -6304,7 +8498,6 @@ select:focus {
 }
 
 :root[data-color-mode="dark"] .active-persona-card strong,
-:root[data-color-mode="dark"] .chat-setup-tabs button.active,
 :root[data-color-mode="dark"] .chat-suggestion-list button,
 :root[data-color-mode="dark"] .chat-detail-heading strong {
   color: var(--ink);
@@ -6367,8 +8560,6 @@ select:focus {
   background: rgba(255, 255, 255, 0.08);
 }
 
-:root[data-color-mode="dark"] .chat-setup-tabs button.active,
-:root[data-color-mode="dark"] .chat-suggestion-list button.active,
 :root[data-color-mode="dark"] .chat-suggestion-list button:hover {
   background: rgba(113, 184, 166, 0.13);
   border-color: rgba(143, 213, 196, 0.28);
@@ -6385,14 +8576,100 @@ select:focus {
   background: rgba(255, 255, 255, 0.08);
 }
 
-:root[data-color-mode="dark"] .chat-tone-picker button {
-  border-color: rgba(202, 211, 204, 0.24);
+:root[data-color-mode="dark"] .api-pet-adoption-box,
+:root[data-color-mode="dark"] .api-pet-adoption-head,
+:root[data-color-mode="dark"] .pixel-pet-creator,
+:root[data-color-mode="dark"] .api-pet-panel,
+:root[data-color-mode="dark"] .api-pet-page,
+:root[data-color-mode="dark"] .api-pet-hero,
+:root[data-color-mode="dark"] .api-pet-controls,
+:root[data-color-mode="dark"] .api-pet-scene,
+:root[data-color-mode="dark"] .api-panel-switch,
+:root[data-color-mode="dark"] .pet-species-button,
+:root[data-color-mode="dark"] .pet-status-line {
+  background: #1b211b;
+  border-color: rgba(202, 211, 204, 0.18);
 }
 
-:root[data-color-mode="dark"] .chat-tone-picker button.active {
-  box-shadow:
-    0 0 0 2px #1b211b,
-    0 0 0 4px #e8efe8;
+:root[data-color-mode="dark"] .delete-confirm-dialog,
+:root[data-color-mode="dark"] .delete-confirm-bubble {
+  background: #1b211b;
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .admin-users-card,
+:root[data-color-mode="dark"] .admin-empty-state,
+:root[data-color-mode="dark"] .admin-user-row,
+:root[data-color-mode="dark"] .admin-floating-nav,
+:root[data-color-mode="dark"] .admin-detail-panel,
+:root[data-color-mode="dark"] .admin-metric-card,
+:root[data-color-mode="dark"] .admin-insight-panel,
+:root[data-color-mode="dark"] .admin-module-card {
+  background: #1b211b;
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .admin-user-table,
+:root[data-color-mode="dark"] .admin-user-head,
+:root[data-color-mode="dark"] .admin-nav-item:hover,
+:root[data-color-mode="dark"] .admin-nav-item.active,
+:root[data-color-mode="dark"] .admin-user-row:not(.admin-user-head):hover,
+:root[data-color-mode="dark"] .admin-user-row.active,
+:root[data-color-mode="dark"] .admin-insight-panel li,
+:root[data-color-mode="dark"] .admin-switch {
+  background: #222922;
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .api-panel-switch {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(202, 211, 204, 0.22);
+}
+
+:root[data-color-mode="dark"] .api-panel-switch button {
+  color: #cbd6ce;
+}
+
+:root[data-color-mode="dark"] .api-panel-switch button:hover {
+  color: #fffdf8;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-color-mode="dark"] .api-pet-scene-spark,
+:root[data-color-mode="dark"] .api-pet-scene-leaf,
+:root[data-color-mode="dark"] .api-pet-scene-stone,
+:root[data-color-mode="dark"] .api-pet-scene-cloud {
+  background:
+    linear-gradient(180deg, rgba(29, 36, 29, 0.96), rgba(18, 22, 20, 0.96)),
+    #151a16;
+}
+
+:root[data-color-mode="dark"] .api-pet-character {
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08) 38%, rgba(255, 255, 255, 0.02) 72%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(113, 184, 166, 0.08));
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .pixel-pet-preview.api-pet-character {
+  background:
+    linear-gradient(90deg, rgba(202, 211, 204, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(202, 211, 204, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.12), rgba(113, 184, 166, 0.08));
+  background-size: 12px 12px, 12px 12px, auto;
+}
+
+:root[data-color-mode="dark"] .api-pet-sparkle {
+  background: rgba(143, 213, 196, 0.68);
+  border-color: rgba(202, 211, 204, 0.14);
+}
+
+:root[data-color-mode="dark"] .pet-stat-row div {
+  background: rgba(202, 211, 204, 0.16);
+}
+
+:root[data-color-mode="dark"] .chat-tone-picker button {
+  border-color: rgba(202, 211, 204, 0.24);
 }
 
 :root[data-color-mode="dark"] .telegram-thread {
@@ -6415,6 +8692,53 @@ select:focus {
 :root[data-color-mode="dark"] .message-author,
 :root[data-color-mode="dark"] .message-attachments small {
   color: #cbd6ce;
+}
+
+:root[data-color-mode="dark"] .message-time,
+:root[data-color-mode="dark"] .thread-draft,
+:root[data-color-mode="dark"] .message-action-button,
+:root[data-color-mode="dark"] .composer-attachment-card small,
+:root[data-color-mode="dark"] .composer-reply-copy span,
+:root[data-color-mode="dark"] .composer-reply-bar button {
+  color: #cbd6ce;
+}
+
+:root[data-color-mode="dark"] .composer-attachment-card {
+  background:
+    linear-gradient(180deg, rgba(30, 37, 31, 0.96), rgba(18, 22, 19, 0.98));
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .composer-attachment-card::after {
+  background:
+    linear-gradient(90deg, rgba(18, 22, 19, 0.86) 0%, rgba(18, 22, 19, 0.7) 58%, rgba(18, 22, 19, 0.28) 100%);
+}
+
+:root[data-color-mode="dark"] .composer-file-backdrop {
+  color: rgba(143, 213, 196, 0.14);
+}
+
+:root[data-color-mode="dark"] .composer-attachments button {
+  color: #f7fbf7;
+  background: rgba(18, 22, 19, 0.72);
+}
+
+:root[data-color-mode="dark"] .message-reply-quote {
+  color: var(--ink);
+  background: rgba(113, 184, 166, 0.12);
+  border-color: rgba(143, 213, 196, 0.2);
+}
+
+:root[data-color-mode="dark"] .message.user .message-reply-quote {
+  color: #f7fbf7;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-color-mode="dark"] .message-action-button:hover,
+:root[data-color-mode="dark"] .composer-reply-bar button:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-color-mode="dark"] .telegram-chat-surface,
@@ -6451,12 +8775,6 @@ select:focus {
 :root[data-color-mode="dark"] .message-image-attachment img,
 :root[data-color-mode="dark"] .message-image-missing {
   background: #1a211b;
-}
-
-:root[data-color-mode="dark"] .chat-persona-strip button.active,
-:root[data-color-mode="dark"] .chat-mode-toggle button.active {
-  background: #315f55;
-  border-color: rgba(143, 213, 196, 0.28);
 }
 
 :root[data-color-mode="dark"] .phone-person p,
@@ -6500,6 +8818,13 @@ select:focus {
     0 16px 38px rgba(0, 0, 0, 0.3);
 }
 
+:root[data-color-mode="dark"] .composer.is-dragging-file .composer-input {
+  background:
+    linear-gradient(135deg, rgba(113, 184, 166, 0.16), rgba(143, 181, 237, 0.1)),
+    #242c24;
+  border-color: rgba(143, 213, 196, 0.48);
+}
+
 :root[data-color-mode="dark"] .composer textarea,
 :root[data-color-mode="dark"] .composer textarea::placeholder {
   color: var(--ink);
@@ -6507,6 +8832,11 @@ select:focus {
 
 :root[data-color-mode="dark"] .composer textarea::placeholder {
   opacity: 0.62;
+}
+
+:root[data-color-mode="dark"] .composer-reply-bar {
+  background: rgba(113, 184, 166, 0.1);
+  border-color: rgba(143, 213, 196, 0.18);
 }
 
 :root[data-color-mode="dark"] .message p,
@@ -6666,9 +8996,22 @@ select:focus {
 
 :root[data-color-mode="dark"] .note-group-header,
 :root[data-color-mode="dark"] .note-more-menu,
+:root[data-color-mode="dark"] .notes-filter-bar button,
 :root[data-color-mode="dark"] .notes-document-stats small,
 :root[data-color-mode="dark"] .outline-select-field {
   background: rgba(255, 255, 255, 0.075);
+}
+
+:root[data-color-mode="dark"] .notes-filter-bar button {
+  color: #cbd6ce;
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .notes-filter-bar button.active,
+:root[data-color-mode="dark"] .notes-filter-bar button:hover {
+  color: var(--ink);
+  background: rgba(113, 184, 166, 0.14);
+  border-color: rgba(143, 213, 196, 0.28);
 }
 
 :root[data-color-mode="dark"] .note-group-toggle em {
@@ -6740,8 +9083,7 @@ select:focus {
   color: #cbd6ce;
 }
 
-:root[data-color-mode="dark"] .workflow-template-card:hover,
-:root[data-color-mode="dark"] .workflow-template-card.active {
+:root[data-color-mode="dark"] .workflow-template-card:hover {
   border-color: rgba(213, 139, 114, 0.48);
   background:
     linear-gradient(145deg, rgba(213, 139, 114, 0.09), transparent 46%),
@@ -6798,536 +9140,7 @@ select:focus {
   border: 1px solid rgba(202, 211, 204, 0.16);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root[data-color-mode="system"] .workflow-sidebar,
-  :root[data-color-mode="system"] .workflow-hero-card,
-  :root[data-color-mode="system"] .workflow-input-card,
-  :root[data-color-mode="system"] .workflow-step-card,
-  :root[data-color-mode="system"] .workflow-history-card {
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.04), transparent 42%),
-      #171c17;
-    border-color: rgba(202, 211, 204, 0.18);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
-  }
 
-  :root[data-color-mode="system"] .workflow-template-card,
-  :root[data-color-mode="system"] .workflow-step,
-  :root[data-color-mode="system"] .workflow-run-card {
-    color: var(--ink);
-    background: rgba(255, 255, 255, 0.075);
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .workflow-template-main small,
-  :root[data-color-mode="system"] .workflow-template-card em,
-  :root[data-color-mode="system"] .workflow-hero-card p,
-  :root[data-color-mode="system"] .workflow-step p,
-  :root[data-color-mode="system"] .workflow-run-card small,
-  :root[data-color-mode="system"] .workflow-run-card time,
-  :root[data-color-mode="system"] .workflow-empty {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .workflow-template-card:hover,
-  :root[data-color-mode="system"] .workflow-template-card.active {
-    border-color: rgba(213, 139, 114, 0.48);
-    background:
-      linear-gradient(145deg, rgba(213, 139, 114, 0.09), transparent 46%),
-      rgba(255, 255, 255, 0.11);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .workflow-template-icon,
-  :root[data-color-mode="system"] .workflow-step-index {
-    color: #f7fbf7;
-    background: #70483e;
-    border: 1px solid rgba(213, 139, 114, 0.32);
-  }
-
-  :root[data-color-mode="system"] .workflow-config-note,
-  :root[data-color-mode="system"] .workflow-stats span,
-  :root[data-color-mode="system"] .workflow-run-status {
-    color: #9ee4d3;
-    background: rgba(113, 184, 166, 0.12);
-    border-color: rgba(143, 213, 196, 0.24);
-  }
-
-  :root[data-color-mode="system"] .workflow-step.finished,
-  :root[data-color-mode="system"] .workflow-run-card.success {
-    border-color: rgba(143, 213, 196, 0.34);
-    background: rgba(113, 184, 166, 0.1);
-  }
-
-  :root[data-color-mode="system"] .workflow-step.running {
-    border-color: rgba(213, 139, 114, 0.42);
-    background: rgba(213, 139, 114, 0.12);
-  }
-
-  :root[data-color-mode="system"] .workflow-run-card.failed {
-    border-color: rgba(255, 151, 151, 0.3);
-    background: rgba(131, 24, 24, 0.18);
-  }
-
-  :root[data-color-mode="system"] .workflow-run-card.failed .workflow-run-status {
-    color: #ffb8b8;
-    background: rgba(131, 24, 24, 0.26);
-    border-color: rgba(255, 151, 151, 0.28);
-  }
-
-  :root[data-color-mode="system"] .workflow-step-icon {
-    color: #cbd6ce;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(202, 211, 204, 0.2);
-  }
-
-  :root[data-color-mode="system"] .workflow-step pre {
-    color: #f7fbf7;
-    background: #111713;
-    border: 1px solid rgba(202, 211, 204, 0.16);
-  }
-
-  :root[data-color-mode="system"] .telegram-shell {
-    color: var(--ink);
-    background: #141813;
-    border-color: rgba(202, 211, 204, 0.18);
-    box-shadow: 0 22px 58px rgba(0, 0, 0, 0.34);
-  }
-
-  :root[data-color-mode="system"] .telegram-sidebar {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)),
-      #171c17;
-    border-right-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .telegram-search input {
-    color: var(--ink);
-    background: #222822;
-    border-color: rgba(202, 211, 204, 0.22);
-  }
-
-  :root[data-color-mode="system"] .telegram-search input::placeholder {
-    color: rgba(202, 211, 204, 0.62);
-  }
-
-  :root[data-color-mode="system"] .chat-persona-editor,
-  :root[data-color-mode="system"] .chat-setup-box,
-  :root[data-color-mode="system"] .active-persona-card {
-    color: var(--ink);
-    background: #1b211b;
-    border-color: rgba(202, 211, 204, 0.2);
-    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-  }
-
-  :root[data-color-mode="system"] .active-persona-card span,
-  :root[data-color-mode="system"] .active-persona-card p,
-  :root[data-color-mode="system"] .chat-detail-heading span,
-  :root[data-color-mode="system"] .telegram-thread-section {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .active-persona-card strong,
-  :root[data-color-mode="system"] .chat-setup-tabs button.active,
-  :root[data-color-mode="system"] .chat-suggestion-list button,
-  :root[data-color-mode="system"] .chat-detail-heading strong {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .chat-setup-backdrop {
-    background: rgba(0, 0, 0, 0.34);
-  }
-
-  :root[data-color-mode="system"] .contact-profile-popover-backdrop {
-    background: rgba(0, 0, 0, 0.28);
-  }
-
-  :root[data-color-mode="system"] .chat-setup-head,
-  :root[data-color-mode="system"] .chat-setup-tabs {
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .chat-setup-head span,
-  :root[data-color-mode="system"] .chat-suggestion-list small,
-  :root[data-color-mode="system"] .chat-setup-empty,
-  :root[data-color-mode="system"] .friend-request-card small {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .chat-setup-tabs button,
-  :root[data-color-mode="system"] .chat-suggestion-list button,
-  :root[data-color-mode="system"] .friend-request-card,
-  :root[data-color-mode="system"] .contact-profile-card,
-  :root[data-color-mode="system"] .contact-settings-summary {
-    background: #222922;
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .contact-profile-main strong {
-    color: #fffdf8;
-  }
-
-  :root[data-color-mode="system"] .contact-profile-main span,
-  :root[data-color-mode="system"] .contact-profile-card p,
-  :root[data-color-mode="system"] .contact-profile-meta span,
-  :root[data-color-mode="system"] .contact-settings-summary span {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .contact-profile-section small {
-    color: #aebdb3;
-  }
-
-  :root[data-color-mode="system"] .contact-settings-summary strong {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .friend-request-section > strong,
-  :root[data-color-mode="system"] .friend-request-card b {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .contact-profile-meta span {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  :root[data-color-mode="system"] .chat-setup-tabs button.active,
-  :root[data-color-mode="system"] .chat-suggestion-list button.active,
-  :root[data-color-mode="system"] .chat-suggestion-list button:hover {
-    background: rgba(113, 184, 166, 0.13);
-    border-color: rgba(143, 213, 196, 0.28);
-  }
-
-  :root[data-color-mode="system"] .chat-member-picker label {
-    color: var(--ink);
-    background: #222922;
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .chat-member-picker em {
-    color: #cbd6ce;
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  :root[data-color-mode="system"] .chat-tone-picker button {
-    border-color: rgba(202, 211, 204, 0.24);
-  }
-
-  :root[data-color-mode="system"] .chat-tone-picker button.active {
-    box-shadow:
-      0 0 0 2px #1b211b,
-      0 0 0 4px #e8efe8;
-  }
-
-  :root[data-color-mode="system"] .telegram-thread {
-    color: var(--ink);
-    border-color: transparent;
-  }
-
-  :root[data-color-mode="system"] .telegram-thread:hover,
-  :root[data-color-mode="system"] .telegram-thread.active {
-    background: #222922;
-    border-color: rgba(202, 211, 204, 0.2);
-  }
-
-  :root[data-color-mode="system"] .telegram-thread.active {
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .thread-main small,
-  :root[data-color-mode="system"] .thread-meta,
-  :root[data-color-mode="system"] .message-author,
-  :root[data-color-mode="system"] .message-attachments small {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .telegram-chat-surface,
-  :root[data-color-mode="system"] .phone-chat-panel .message-list,
-  :root[data-color-mode="system"] .message-list {
-    background:
-      linear-gradient(90deg, rgba(202, 211, 204, 0.055) 1px, transparent 1px),
-      linear-gradient(rgba(202, 211, 204, 0.045) 1px, transparent 1px),
-      #101410;
-    background-size: 30px 30px;
-  }
-
-  :root[data-color-mode="system"] .telegram-conversation-topbar,
-  :root[data-color-mode="system"] .phone-topbar {
-    background: rgba(21, 26, 21, 0.96);
-    border-bottom-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .chat-control-rail {
-    background: #171c17;
-    border-bottom-color: rgba(202, 211, 204, 0.16);
-  }
-
-  :root[data-color-mode="system"] .chat-persona-strip button,
-  :root[data-color-mode="system"] .chat-mode-toggle button,
-  :root[data-color-mode="system"] .composer-tool-button,
-  :root[data-color-mode="system"] .message-attachments figure {
-    color: var(--ink);
-    background: rgba(255, 255, 255, 0.075);
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .chat-persona-strip button.active,
-  :root[data-color-mode="system"] .chat-mode-toggle button.active {
-    background: #315f55;
-    border-color: rgba(143, 213, 196, 0.28);
-  }
-
-  :root[data-color-mode="system"] .phone-person p,
-  :root[data-color-mode="system"] .chat-heading h2,
-  :root[data-color-mode="system"] .empty-state {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .phone-person span,
-  :root[data-color-mode="system"] .empty-state p,
-  :root[data-color-mode="system"] .pending p {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .telegram-chat-surface .telegram-chat-panel .composer,
-  :root[data-color-mode="system"] .phone-chat-panel .composer,
-  :root[data-color-mode="system"] .composer {
-    background: transparent;
-    border-top-color: rgba(202, 211, 204, 0.16);
-  }
-
-  :root[data-color-mode="system"] .telegram-chat-surface .telegram-chat-panel .composer-input,
-  :root[data-color-mode="system"] .phone-chat-panel .composer-input,
-  :root[data-color-mode="system"] .composer-input {
-    color: var(--ink);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.045)),
-      #202720;
-    border-color: rgba(202, 211, 204, 0.24);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 16px 38px rgba(0, 0, 0, 0.28);
-  }
-
-  :root[data-color-mode="system"] .composer:focus-within .composer-input {
-    background: #242c24;
-    border-color: rgba(143, 213, 196, 0.42);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.07),
-      0 0 0 3px rgba(113, 184, 166, 0.12),
-      0 16px 38px rgba(0, 0, 0, 0.3);
-  }
-
-  :root[data-color-mode="system"] .composer textarea,
-  :root[data-color-mode="system"] .composer textarea::placeholder {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .composer textarea::placeholder {
-    opacity: 0.62;
-  }
-
-  :root[data-color-mode="system"] .message p,
-  :root[data-color-mode="system"] .message-markdown {
-    color: #f2eee6;
-    background: #222822;
-    border-color: rgba(202, 211, 204, 0.16);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  }
-
-  :root[data-color-mode="system"] .message.user p {
-    color: #f7fbf7;
-    background: #315f55;
-    border-color: rgba(143, 213, 196, 0.28);
-  }
-
-  :root[data-color-mode="system"] .telegram-chat-surface .telegram-chat-panel .error-line,
-  :root[data-color-mode="system"] .error-line {
-    color: #ffd5d5;
-    background: rgba(111, 28, 28, 0.92);
-    border-color: rgba(255, 157, 157, 0.26);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .image-form,
-  :root[data-color-mode="system"] .image-preview {
-    color: var(--ink);
-    background: #171c17;
-    border-color: rgba(202, 211, 204, 0.18);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .image-preview {
-    background:
-      linear-gradient(90deg, rgba(202, 211, 204, 0.055) 1px, transparent 1px),
-      linear-gradient(rgba(202, 211, 204, 0.045) 1px, transparent 1px),
-      #101410;
-    background-size: 28px 28px;
-  }
-
-  :root[data-color-mode="system"] .preview-empty {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .preview-empty strong {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .generated-image-card {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .generated-image-missing {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] label,
-  :root[data-color-mode="system"] .range-row label,
-  :root[data-color-mode="system"] .range-row output {
-    color: #d6ded8;
-  }
-
-  :root[data-color-mode="system"] input,
-  :root[data-color-mode="system"] textarea,
-  :root[data-color-mode="system"] select {
-    color: var(--ink);
-    background: #202720;
-    border-color: rgba(202, 211, 204, 0.22);
-  }
-
-  :root[data-color-mode="system"] input:focus,
-  :root[data-color-mode="system"] textarea:focus,
-  :root[data-color-mode="system"] select:focus {
-    border-color: rgba(143, 213, 196, 0.46);
-    box-shadow: 0 0 0 3px rgba(113, 184, 166, 0.13);
-  }
-
-  :root[data-color-mode="system"] .input-with-icon svg,
-  :root[data-color-mode="system"] .visibility-toggle,
-  :root[data-color-mode="system"] .icon-button {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .icon-button {
-    background: #222922;
-  }
-
-  :root[data-color-mode="system"] .icon-button.ghost {
-    background: transparent;
-  }
-
-  :root[data-color-mode="system"] .visibility-toggle:hover,
-  :root[data-color-mode="system"] .icon-button:hover {
-    color: var(--ink);
-    background: #2b332b;
-  }
-
-  :root[data-color-mode="system"] .notice-line {
-    color: #c9f4df;
-    background: rgba(39, 95, 85, 0.22);
-    border-color: rgba(143, 213, 196, 0.26);
-  }
-
-  :root[data-color-mode="system"] .error-line.inline {
-    border-color: rgba(255, 157, 157, 0.26);
-  }
-
-  :root[data-color-mode="system"] .module-view-header,
-  :root[data-color-mode="system"] .placeholder-panel {
-    color: var(--ink);
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 42%),
-      #171c17;
-    border-color: rgba(202, 211, 204, 0.18);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
-  }
-
-  :root[data-color-mode="system"] .module-view-header h1,
-  :root[data-color-mode="system"] .placeholder-body h2 {
-    color: var(--ink);
-  }
-
-  :root[data-color-mode="system"] .module-view-header .eyebrow,
-  :root[data-color-mode="system"] .placeholder-body {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .note-draft-card:hover,
-  :root[data-color-mode="system"] .note-draft-card.active {
-    border-color: rgba(143, 213, 196, 0.42);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
-  }
-
-  :root[data-color-mode="system"] .note-draft-icon {
-    background: #275f55;
-  }
-
-  :root[data-color-mode="system"] .note-draft-main small,
-  :root[data-color-mode="system"] .note-draft-card time,
-  :root[data-color-mode="system"] .notes-empty,
-  :root[data-color-mode="system"] .note-group-empty,
-  :root[data-color-mode="system"] .markdown-preview-head small,
-  :root[data-color-mode="system"] .markdown-empty,
-  :root[data-color-mode="system"] .markdown-body blockquote {
-    color: #cbd6ce;
-  }
-
-  :root[data-color-mode="system"] .note-group-header,
-  :root[data-color-mode="system"] .note-group-empty,
-  :root[data-color-mode="system"] .notes-editor-toolbar,
-  :root[data-color-mode="system"] .markdown-editor,
-  :root[data-color-mode="system"] .markdown-preview-head {
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .note-group-header,
-  :root[data-color-mode="system"] .note-more-menu,
-  :root[data-color-mode="system"] .notes-document-stats small,
-  :root[data-color-mode="system"] .outline-select-field {
-    background: rgba(255, 255, 255, 0.075);
-  }
-
-  :root[data-color-mode="system"] .note-group-toggle em {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(202, 211, 204, 0.18);
-  }
-
-  :root[data-color-mode="system"] .markdown-editor-head span {
-    color: #d6ded8;
-  }
-
-  :root[data-color-mode="system"] .markdown-editor textarea {
-    background:
-      linear-gradient(90deg, rgba(202, 211, 204, 0.055) 1px, transparent 1px),
-      linear-gradient(rgba(202, 211, 204, 0.045) 1px, transparent 1px),
-      #171c17;
-    background-size: 28px 28px;
-    border-color: rgba(202, 211, 204, 0.22);
-  }
-
-  :root[data-color-mode="system"] .markdown-format-button {
-    color: var(--ink);
-    background: rgba(255, 255, 255, 0.075);
-    border-color: rgba(202, 211, 204, 0.2);
-  }
-
-  :root[data-color-mode="system"] .markdown-format-button:hover {
-    background: rgba(113, 184, 166, 0.14);
-    border-color: rgba(143, 213, 196, 0.38);
-  }
-
-  :root[data-color-mode="system"] .markdown-body code {
-    color: #9ee4d3;
-    background: rgba(113, 184, 166, 0.14);
-  }
-
-  :root[data-color-mode="system"] .markdown-body pre {
-    background: #101410;
-    border: 1px solid rgba(202, 211, 204, 0.14);
-  }
-}
 
 @keyframes spin {
   to {
@@ -7629,6 +9442,242 @@ select:focus {
   }
 }
 
+@keyframes petFloat {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(1deg);
+  }
+}
+
+@keyframes petFloatSmall {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes pandaSway {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  35% {
+    transform: translateY(-7px) rotate(3deg);
+  }
+  70% {
+    transform: translateY(-3px) rotate(-3deg);
+  }
+}
+
+@keyframes pandaNod {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-2px) rotate(4deg);
+  }
+  72% {
+    transform: translateY(1px) rotate(-3deg);
+  }
+}
+
+@keyframes petBlink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes petTail {
+  0%,
+  100% {
+    transform: rotate(12deg);
+  }
+  50% {
+    transform: rotate(-14deg);
+  }
+}
+
+@keyframes petShadow {
+  0%,
+  100% {
+    opacity: 0.36;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 0.22;
+    transform: scaleX(0.78);
+  }
+}
+
+@keyframes petSparkle {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.86);
+  }
+  45% {
+    opacity: 0.95;
+    transform: translateY(-8px) scale(1.12);
+  }
+}
+
+@keyframes petTreat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-8px) scale(1.08);
+  }
+  68% {
+    transform: translateY(2px) scale(0.98);
+  }
+}
+
+@keyframes petNuzzle {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  28% {
+    transform: translateX(-8px) rotate(-4deg);
+  }
+  58% {
+    transform: translateX(8px) rotate(4deg);
+  }
+}
+
+@keyframes petQuest {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  32% {
+    transform: translate(14px, -12px) rotate(7deg);
+  }
+  68% {
+    transform: translate(-10px, -4px) rotate(-5deg);
+  }
+}
+
+@keyframes questPanelReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scaleY(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes questPetArrive {
+  from {
+    opacity: 0;
+    transform: translate(-150px, 34px) scale(0.72) rotate(-10deg);
+  }
+  62% {
+    opacity: 1;
+    transform: translate(10px, -10px) scale(1.06) rotate(5deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes questSkyDrift {
+  to {
+    background-position: 68px 34px, 34px 68px;
+  }
+}
+
+@keyframes questRoutePulse {
+  0%,
+  100% {
+    opacity: 0.44;
+    filter: saturate(0.8);
+  }
+  50% {
+    opacity: 0.95;
+    filter: saturate(1.2);
+  }
+}
+
+@keyframes questPinPulse {
+  0%,
+  100% {
+    box-shadow: 0 8px 18px rgba(36, 29, 24, 0.22), 0 0 0 0 rgba(179, 139, 60, 0.28);
+  }
+  50% {
+    box-shadow: 0 8px 18px rgba(36, 29, 24, 0.22), 0 0 0 8px rgba(179, 139, 60, 0);
+  }
+}
+
+@keyframes questSnow {
+  to {
+    transform: translate(-20px, 28px);
+  }
+}
+
+@keyframes questRain {
+  to {
+    transform: translate(-18px, 28px);
+  }
+}
+
+@keyframes questSand {
+  to {
+    transform: translate(42px, -8px);
+  }
+}
+
+@keyframes questWave {
+  0%,
+  100% {
+    transform: translateX(-10px);
+  }
+  50% {
+    transform: translateX(12px);
+  }
+}
+
+@keyframes questHeat {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: skewX(-4deg);
+  }
+  50% {
+    opacity: 0.78;
+    transform: skewX(5deg);
+  }
+}
+
+@keyframes questAurora {
+  0%,
+  100% {
+    opacity: 0.54;
+    transform: translateX(-10px) skewX(-6deg);
+  }
+  50% {
+    opacity: 0.92;
+    transform: translateX(14px) skewX(5deg);
+  }
+}
+
 @media (max-width: 980px) {
   .topbar,
   .workspace,
@@ -7676,6 +9725,11 @@ select:focus {
 
   .image-workspace,
   .model-hub-grid,
+  .api-life-layout,
+  .admin-panel,
+  .admin-users-layout,
+  .admin-module-grid,
+  .admin-user-row,
   .notes-workspace,
   .workflow-workspace,
   .workflow-grid,
@@ -7686,6 +9740,23 @@ select:focus {
 
   .workflow-sidebar {
     position: static;
+  }
+
+  .admin-floating-nav,
+  .admin-detail-panel {
+    position: static;
+  }
+
+  .admin-floating-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-nav-brand {
+    grid-column: 1 / -1;
+  }
+
+  .admin-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .notes-sidebar,
@@ -7844,8 +9915,26 @@ select:focus {
   .form-grid,
   .format-strip,
   .composer,
-  .module-grid {
+  .module-grid,
+  .admin-overview-grid,
+  .pixel-pet-creator {
     grid-template-columns: 1fr;
+  }
+
+  .admin-floating-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-console-header {
+    align-items: stretch;
+  }
+
+  .admin-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pixel-pet-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .topbar-actions {

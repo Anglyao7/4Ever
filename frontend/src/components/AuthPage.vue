@@ -1,7 +1,7 @@
 <template>
   <section class="auth-page" :aria-label="mode === 'sign-in' ? 'Sign in' : 'Sign up'">
     <section class="auth-brand" aria-label="ForEver">
-      <a class="auth-brand-link" href="#/" @click.prevent="$emit('home')">ForEver</a>
+      <a class="auth-brand-link" href="/" @click.prevent="$emit('home')">ForEver</a>
       <p>「知其不可为而为之。」</p>
     </section>
 
