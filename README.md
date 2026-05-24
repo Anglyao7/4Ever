@@ -61,7 +61,7 @@ cd backend
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python run.py
 ```
 
 Run the frontend:
@@ -75,10 +75,10 @@ npm run dev
 Open the app at:
 
 ```text
-http://127.0.0.1:5173
+http://127.0.0.1:7777
 ```
 
-The Vite dev server proxies `/api` and `/health` to `http://127.0.0.1:8000`.
+The Vite dev server proxies `/api` and `/health` to `http://127.0.0.1:7778`.
 
 ## Environment
 
@@ -103,8 +103,8 @@ python3 -m compileall app
 ```
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/api/database/health
+curl http://127.0.0.1:7778/health
+curl http://127.0.0.1:7778/api/database/health
 ```
 
 ## Git Notes

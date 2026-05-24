@@ -11,6 +11,22 @@ export interface ChatAttachment {
   dataUrl?: string;
 }
 
+export interface ChatReplyReference {
+  id?: string | number;
+  authorName?: string;
+  content: string;
+  createdAt?: string;
+  senderId?: string;
+}
+
+export interface DirectReplyReference {
+  id?: number;
+  author_name?: string;
+  content: string;
+  created_at?: string;
+  sender_id?: string;
+}
+
 export interface ChatMessage {
   id?: string | number;
   role: ChatRole;
@@ -24,11 +40,13 @@ export interface ChatMessage {
   renderMarkdown?: boolean;
   createdAt?: string;
   attachments?: ChatAttachment[];
+  replyTo?: ChatReplyReference | null;
 }
 
 export interface ChatSendPayload {
   content: string;
   attachments: ChatAttachment[];
+  replyTo?: ChatReplyReference | null;
 }
 
 export interface ChatContact {
@@ -59,9 +77,45 @@ export interface ChatConfig {
   maxTokens: number;
 }
 
-export interface ModelProfile extends ChatConfig {
+export interface ApiPersona {
+  alias: string;
+  role: string;
+  temperament: string;
+  notes: string;
+}
+
+export interface ApiPet {
+  name: string;
+  species: "spark" | "leaf" | "stone" | "cloud" | "cat" | "dog" | "rabbit" | "panda" | "fox" | "bird" | "penguin" | "hamster" | "turtle";
+  appearance?: PixelPetAppearance;
+  level: number;
+  experience: number;
+  mood: number;
+  satiety: number;
+  energy: number;
+  lastAction: string;
+  lastActionAt?: string;
+  dailyInteractionDate: string;
+  dailyFeedCount: number;
+  dailyPetCount: number;
+  dailyQuestCount: number;
+}
+
+export interface PixelPetAppearance {
+  animal: "cat" | "dog" | "rabbit" | "panda" | "fox" | "bird" | "penguin" | "hamster" | "turtle";
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  pattern: "solid" | "spots" | "mask" | "socks" | "split";
+  expression: "bright" | "sleepy" | "cool" | "happy";
+  accessory: "none" | "scarf" | "bell" | "leaf" | "satchel";
+}
+
+export interface ModelProfile extends Omit<ChatConfig, "systemPrompt"> {
   id: string;
   name: string;
+  persona: ApiPersona;
+  pet: ApiPet;
 }
 
 export interface ProviderInfo {
@@ -111,6 +165,8 @@ export interface DirectMessageRecord {
   recipient_id: string;
   content: string;
   attachments: DirectAttachment[];
+  reply_to_message_id?: number | null;
+  reply_to?: DirectReplyReference | null;
   created_at: string;
 }
 

@@ -1,5 +1,6 @@
 import base64
 import imghdr
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -85,6 +86,8 @@ async def sign_in(request: SignInRequest, db: Session = Depends(get_db)) -> Auth
         raise HTTPException(status_code=401, detail="Invalid username/email or password.")
 
     token, session = new_session(user)
+    user.login_count = (user.login_count or 0) + 1
+    user.last_login_at = datetime.utcnow()
     db.add(session)
     db.commit()
     return AuthResponse(token=token, user=to_auth_user(user))

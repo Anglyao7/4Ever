@@ -58,9 +58,18 @@ class DirectAttachment(BaseModel):
     data_url: Optional[str] = None
 
 
+class DirectReplyReference(BaseModel):
+    id: Optional[int] = None
+    author_name: Optional[str] = None
+    content: str = Field(min_length=1, max_length=500)
+    created_at: Optional[datetime] = None
+    sender_id: Optional[str] = None
+
+
 class DirectMessageCreate(BaseModel):
     content: str = Field(default="", max_length=20000)
     attachments: List[DirectAttachment] = Field(default_factory=list)
+    reply_to_message_id: Optional[int] = None
 
     @model_validator(mode="after")
     def require_content_or_attachment(self) -> "DirectMessageCreate":
@@ -75,6 +84,8 @@ class DirectMessageResponse(BaseModel):
     recipient_id: str
     content: str
     attachments: List[DirectAttachment] = Field(default_factory=list)
+    reply_to_message_id: Optional[int] = None
+    reply_to: Optional[DirectReplyReference] = None
     created_at: datetime
 
 

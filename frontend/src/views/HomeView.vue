@@ -60,7 +60,6 @@
           <span />
           <span />
         </div>
-
         <div class="landing-orbit" aria-hidden="true">
           <span class="orbit-ring ring-one" />
           <span class="orbit-ring ring-two" />
@@ -177,10 +176,9 @@
                   <Sun :size="15" />
                   <span>{{ uiText.displayMode }}</span>
                 </div>
-                <div class="segmented-options three">
+                <div class="segmented-options">
                   <button type="button" :class="{ active: colorMode === 'light' }" @click="setColorMode('light')">{{ uiText.light }}</button>
                   <button type="button" :class="{ active: colorMode === 'dark' }" @click="setColorMode('dark')">{{ uiText.dark }}</button>
-                  <button type="button" :class="{ active: colorMode === 'system' }" @click="setColorMode('system')">{{ uiText.system }}</button>
                 </div>
                 <label class="temperature-control">
                   <span>
@@ -337,7 +335,8 @@
                   </span>
                   <span class="thread-main">
                     <strong>{{ thread.name }}</strong>
-                    <small>{{ thread.subtitle }}</small>
+                    <small class="thread-preview">{{ thread.subtitle }}</small>
+                    <small v-if="thread.draft" class="thread-draft">{{ thread.draft }}</small>
                   </span>
                   <span class="thread-meta">
                     <time>{{ thread.time }}</time>
@@ -742,14 +741,22 @@
               </div>
 
               <ChatPanel
+                :key="activeChatThread.id"
                 class="phone-chat-panel telegram-chat-panel"
                 :messages="activeChatMessages"
-                :loading="loading"
+                :draft="activeThreadDraft.content"
+                :attachments="activeThreadAttachments"
+                :reply-to="activeThreadDraft.replyTo"
+                :loading="loading && !activeChatMessages.some((message) => message.id !== undefined && activeAiReplyIds.has(message.id))"
                 :error="error"
                 :language="uiLanguage"
                 @send="handleThreadSend"
                 @clear="clearActiveThreadMessages"
                 @avatar-click="handleMessageAvatarClick"
+                @update:draft="updateActiveThreadDraft"
+                @update:attachments="updateActiveThreadAttachments"
+                @reply="startThreadReply"
+                @cancel-reply="cancelThreadReply"
               />
             </section>
           </div>
@@ -779,6 +786,11 @@
           :language="uiLanguage"
         />
 
+        <MemoryMapPanel
+          v-else-if="activeModuleId === 'memory-map'"
+          :language="uiLanguage"
+        />
+
         <WorkflowPanel
           v-else-if="activeModuleId === 'workflow'"
           :backend-online="backendOnline"
@@ -786,14 +798,11 @@
           :language="uiLanguage"
         />
 
-        <SelfPanel
+        <AdminPanel
           v-else-if="activeModuleId === 'admin'"
-          :user="currentUser"
           :auth-token="authToken"
+          :current-user-id="currentUser?.id"
           :language="uiLanguage"
-          @open-auth="openAuth"
-          @sign-out="signOut"
-          @user-updated="handleUserUpdated"
         />
 
         <section v-else class="placeholder-panel module-page-placeholder" :aria-label="displayModuleName(activeModuleId)">
@@ -814,6 +823,13 @@
         </section>
       </main>
     </template>
+
+    <FloatingApiPet
+      v-if="introFinished"
+      :pet="activeModelProfile?.pet"
+      :profile-name="activeModelProfile?.name"
+      :language="uiLanguage"
+    />
   </div>
 </template>
 
@@ -830,6 +846,7 @@ import {
   LayoutDashboard,
   Layers3,
   LogOut,
+  Globe2,
   MessageSquareText,
   MoreHorizontal,
   NotebookPen,
@@ -850,12 +867,14 @@ import {
 } from "lucide-vue-next";
 
 import ChatPanel from "../components/ChatPanel.vue";
+import AdminPanel from "../components/AdminPanel.vue";
 import AuthPage from "../components/AuthPage.vue";
+import FloatingApiPet from "../components/FloatingApiPet.vue";
 import ImageGenerationPanel from "../components/ImageGenerationPanel.vue";
 import ModelHubPanel from "../components/ModelHubPanel.vue";
 import ModuleDashboard from "../components/ModuleDashboard.vue";
+import MemoryMapPanel from "../components/MemoryMapPanel.vue";
 import NotesPanel from "../components/NotesPanel.vue";
-import SelfPanel from "../components/SelfPanel.vue";
 import WorkflowPanel from "../components/WorkflowPanel.vue";
 import {
   acceptFriendRequest,
@@ -874,6 +893,7 @@ import {
   sendDirectMessage,
   signIn,
   signUp,
+  streamChat,
 } from "../services/api";
 import type { AuthUser, SignInPayload, SignUpPayload, UserSearchResult } from "../types/auth";
 import type {
@@ -882,8 +902,10 @@ import type {
   ChatContact,
   ChatGroup,
   ChatMessage,
+  ChatReplyReference,
   ChatSendPayload,
   ChatThreadType,
+  ApiPet,
   DirectAttachment,
   DirectMessageRecord,
   FriendProfile,
@@ -896,6 +918,8 @@ import type { PlatformModule } from "../types/platform";
 
 const storageKey = "4ever.chat.config";
 const threadMessagesKey = "4ever.chat.threadMessages";
+const threadDraftsKey = "4ever.chat.threadDrafts";
+const threadUnreadKey = "4ever.chat.threadUnread";
 const chatContactsKey = "4ever.chat.contacts";
 const chatGroupsKey = "4ever.chat.groups";
 const modelProfilesKey = "4ever.model.profiles";
@@ -911,7 +935,7 @@ const userStatusExpireAtKey = "4ever.user.status.expireAt";
 const userOnlineKey = "4ever.user.online";
 
 type UiLanguage = "zh-CN" | "en-US";
-type ColorMode = "light" | "dark" | "system";
+type ColorMode = "light" | "dark";
 type StatusOption = {
   icon: string;
   label: string;
@@ -940,6 +964,12 @@ type ChatThread = {
   tone: ChatContact["tone"];
   memberIds?: string[];
   unread?: number;
+  draft?: string;
+};
+type ChatDraftState = {
+  content: string;
+  attachments: ChatAttachment[];
+  replyTo?: ChatMessage["replyTo"];
 };
 type ChatSetupMode = "contact" | "requests" | "character" | "group";
 type FriendRelationState = "none" | "friend" | "outgoing" | "incoming";
@@ -956,8 +986,9 @@ const moduleRoutes = {
   "image-generation": "image",
   "provider-hub": "aggregation",
   notes: "notes",
+  "memory-map": "map",
   workflow: "automation",
-  admin: "self",
+  admin: "admin",
 } as const;
 
 const routeModules = Object.fromEntries(
@@ -998,7 +1029,6 @@ const uiCopies = {
     displayMode: "显示模式",
     light: "白天",
     dark: "黑夜",
-    system: "系统",
     temperature: "冷暖色",
     cool: "冷",
     warm: "暖",
@@ -1085,7 +1115,6 @@ const uiCopies = {
     displayMode: "Display mode",
     light: "Light",
     dark: "Dark",
-    system: "System",
     temperature: "Temperature",
     cool: "Cool",
     warm: "Warm",
@@ -1181,13 +1210,17 @@ const localizedModules: Record<string, { zh: [string, string]; en: [string, stri
     zh: ["笔记", "Markdown 写作、笔记暂存和实时渲染。"],
     en: ["Notes", "Markdown writing, draft storage, and live rendering."],
   },
+  "memory-map": {
+    zh: ["地图纪念", "以 3D 世界地图记录地点、时间和纪念点。"],
+    en: ["Memory Map", "Record places, time, and memories on a 3D world map."],
+  },
   workflow: {
     zh: ["秩序", "自动化流程、任务节点和触发器。"],
     en: ["Automation", "Orchestrate workflows, task nodes, and triggers."],
   },
   admin: {
-    zh: ["自我", "个人简介、日记和账户安全。"],
-    en: ["Self", "Profile, private diary, and account security."],
+    zh: ["管理员端", "用户管理、权限角色和平台运维入口。"],
+    en: ["Admin", "Manage users, roles, and platform operations."],
   },
 };
 
@@ -1218,7 +1251,7 @@ const authError = ref("");
 const userMenuOpen = ref(false);
 const statusBoxOpen = ref(false);
 const uiLanguage = ref<UiLanguage>(loadPreference<UiLanguage>(uiLanguageKey, "zh-CN"));
-const colorMode = ref<ColorMode>(loadPreference<ColorMode>(colorModeKey, "system"));
+const colorMode = ref<ColorMode>(loadColorModePreference());
 const colorTemperature = ref(clampNumber(loadNumberPreference(colorTemperatureKey, 0), -100, 100));
 const userStatusIcon = ref(loadPreference(userStatusIconKey, statusOptions[1].icon));
 const userStatusText = ref(loadPreference(userStatusTextKey, statusOptions[1].text));
@@ -1263,9 +1296,14 @@ const groupEditName = ref("");
 const groupEditMemberIds = ref<string[]>([]);
 const mobileChatView = ref<"list" | "conversation">("list");
 const threadMessages = ref<Record<string, ChatMessage[]>>(loadThreadMessages());
+const threadDrafts = ref<Record<string, ChatDraftState>>(loadThreadDrafts());
+const threadUnread = ref<Record<string, number>>(loadThreadUnread());
+let directThreadPoller: number | undefined;
+const activeAiReplyIds = new Set<string | number>();
 
 const activeModuleId = computed(() => (routeId.value === "home" ? "dashboard" : routeId.value));
 const activeModule = computed(() => modules.value.find((module) => module.id === activeModuleId.value));
+const activeModelProfile = computed(() => modelProfiles.value.find((profile) => profile.id === activeModelProfileId.value));
 const modulePageClass = computed(() => `module-page-${activeModuleId.value}`);
 const isAuthRoute = computed(() => routeId.value === "sign-in" || routeId.value === "sign-up");
 const dashboardDisplayName = computed(() => currentUser.value?.display_name || currentUser.value?.username || "访客");
@@ -1305,6 +1343,7 @@ const contactThreads = computed<ChatThread[]>(() => {
     .filter((contact) => !query || `${contact.name}\n${contact.description ?? ""}\n${contact.kind}`.toLowerCase().includes(query))
     .map((contact) => {
       const fallback = contact.description || (uiLanguage.value === "en-US" ? "Tap to start a chat" : "点击开始对话");
+      const timestamp = contact.kind === "human" ? latestDirectMessageTime(contact.id) : latestThreadTime(contact.id);
       return {
         id: contact.id,
         type: "contact",
@@ -1313,14 +1352,12 @@ const contactThreads = computed<ChatThread[]>(() => {
         avatarText: contactAvatarText(contact),
         avatarUrl: contact.avatarUrl,
         subtitle: contact.kind === "human" ? directThreadPreview(contact.id, fallback) : threadPreview(contact.id, fallback),
-        detail: contact.kind === "human"
-          ? uiText.value.personContact
-          : (uiLanguage.value === "en-US" ? "AI contact" : "AI 联系人"),
-        time: contact.kind === "human"
-          ? uiText.value.personContact
-          : uiText.value.aiContact,
-        sortTime: contact.kind === "human" ? latestDirectMessageTime(contact.id) : latestThreadTime(contact.id),
+        detail: contact.kind === "human" ? humanThreadDetail(contact) : aiThreadDetail(contact),
+        time: formatThreadTime(timestamp) || (contact.kind === "human" ? uiText.value.personContact : uiText.value.aiContact),
+        sortTime: timestamp,
         tone: contact.tone,
+        unread: threadUnread.value[contact.id] ?? 0,
+        draft: threadDraftPreview(contact.id),
       };
     });
 });
@@ -1330,17 +1367,20 @@ const groupThreads = computed<ChatThread[]>(() => {
     .filter((group) => !query || group.name.toLowerCase().includes(query))
     .map((group) => {
       const members = groupMembers(group);
+      const timestamp = latestThreadTime(group.id);
       return {
         id: group.id,
         type: "group",
         name: group.name,
         avatarText: firstAvatarLetter(group.name),
         subtitle: threadPreview(group.id, members.map((member) => member.name).join("、") || (uiLanguage.value === "en-US" ? "No members yet" : "还没有成员")),
-        detail: uiLanguage.value === "en-US" ? `${members.length} members` : `${members.length} 位成员`,
-        time: uiLanguage.value === "en-US" ? "Group" : "群聊",
-        sortTime: latestThreadTime(group.id),
+        detail: groupThreadDetail(group),
+        time: formatThreadTime(timestamp) || (uiLanguage.value === "en-US" ? "Group" : "群聊"),
+        sortTime: timestamp,
         tone: "blue",
         memberIds: group.memberIds,
+        unread: threadUnread.value[group.id] ?? 0,
+        draft: threadDraftPreview(group.id),
       };
     });
 });
@@ -1435,6 +1475,7 @@ const activeThreadSettingsTitle = computed(() => {
 const activeChatThread = computed(
   () => chatThreads.value.find((thread) => thread.id === activeChatThreadId.value) ?? chatThreads.value[0],
 );
+const activeThreadId = computed(() => activeChatThread.value?.id ?? activeChatThreadId.value);
 const activeContact = computed(() =>
   activeChatThread.value?.type === "contact"
     ? chatContacts.value.find((contact) => contact.id === activeChatThread.value.id) ?? null
@@ -1449,11 +1490,14 @@ const activeChatMessages = computed(() => {
   if (activeContact.value?.kind === "human") {
     return directMessagesForContact(activeContact.value);
   }
-  return threadMessages.value[activeChatThreadId.value] ?? [];
+  return threadMessages.value[activeThreadId.value] ?? [];
 });
+const activeThreadDraft = computed<ChatDraftState>(() => threadDrafts.value[activeThreadId.value] ?? emptyThreadDraft());
+const activeThreadAttachments = computed(() => activeThreadDraft.value.attachments);
 
 onMounted(() => {
-  window.addEventListener("hashchange", syncRoute);
+  migrateHashRoute();
+  window.addEventListener("popstate", syncRoute);
   window.addEventListener("click", closeUserMenu);
   syncRoute();
   statusExpiryTimer = window.setInterval(() => {
@@ -1466,6 +1510,12 @@ onMounted(() => {
   }
   refreshCurrentUser();
   refresh();
+  directThreadPoller = window.setInterval(() => {
+    if (routeId.value !== "chat" || !authToken.value) {
+      return;
+    }
+    void pollHumanDirectThreads();
+  }, 12_000);
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   window.setTimeout(() => {
     showIntro.value = false;
@@ -1474,11 +1524,14 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("hashchange", syncRoute);
+  window.removeEventListener("popstate", syncRoute);
   window.removeEventListener("click", closeUserMenu);
   clearErrorTimer();
   if (statusExpiryTimer) {
     window.clearInterval(statusExpiryTimer);
+  }
+  if (directThreadPoller) {
+    window.clearInterval(directThreadPoller);
   }
 });
 
@@ -1494,6 +1547,22 @@ watch(
   threadMessages,
   (value) => {
     localStorage.setItem(scopedStorageKey(threadMessagesKey), JSON.stringify(value));
+  },
+  { deep: true },
+);
+
+watch(
+  threadDrafts,
+  (value) => {
+    localStorage.setItem(scopedStorageKey(threadDraftsKey), JSON.stringify(value));
+  },
+  { deep: true },
+);
+
+watch(
+  threadUnread,
+  (value) => {
+    localStorage.setItem(scopedStorageKey(threadUnreadKey), JSON.stringify(value));
   },
   { deep: true },
 );
@@ -1521,6 +1590,8 @@ watch(
     chatContacts.value = loadChatContacts();
     chatGroups.value = loadChatGroups();
     threadMessages.value = loadThreadMessages();
+    threadDrafts.value = loadThreadDrafts();
+    threadUnread.value = loadThreadUnread();
     directMessages.value = {};
   },
 );
@@ -1588,7 +1659,7 @@ async function refresh() {
   backendOnline.value = await fetchHealth();
 
   try {
-    modules.value = await fetchModules();
+    modules.value = await fetchModules(authToken.value);
   } catch {
     modules.value = fallbackModules();
   }
@@ -1601,7 +1672,8 @@ async function refresh() {
 }
 
 function readRoute() {
-  const slug = window.location.hash.replace(/^#\/?/, "").replace(/\/$/, "");
+  const hashSlug = window.location.hash.replace(/^#\/?/, "").replace(/\/$/, "");
+  const slug = (hashSlug || window.location.pathname.replace(/^\/?/, "").replace(/\/$/, "")).trim();
   if (!slug) {
     return "home";
   }
@@ -1611,14 +1683,22 @@ function readRoute() {
   return routeModules[slug] ?? "home";
 }
 
+function migrateHashRoute() {
+  const hashSlug = window.location.hash.replace(/^#\/?/, "").replace(/\/$/, "");
+  if (!hashSlug) {
+    return;
+  }
+  window.history.replaceState({}, "", `/${hashSlug}`);
+}
+
 function syncRoute() {
   const nextRoute = readRoute();
   userMenuOpen.value = false;
   statusBoxOpen.value = false;
   if (!authToken.value && isProtectedRoute(nextRoute)) {
     routeId.value = "home";
-    if (window.location.hash !== "#/" && window.location.hash !== "") {
-      window.location.hash = "/";
+    if (window.location.pathname !== "/") {
+      window.history.replaceState({}, "", "/");
     }
     return;
   }
@@ -1642,12 +1722,13 @@ function openModule(moduleId: string) {
     return;
   }
   const route = moduleRoutes[moduleId as keyof typeof moduleRoutes] ?? moduleId;
-  const nextHash = `#/${route}`;
-  if (window.location.hash === nextHash) {
+  const nextPath = `/${route}`;
+  if (window.location.pathname === nextPath) {
     syncRoute();
     return;
   }
-  window.location.hash = `/${route}`;
+  window.history.pushState({}, "", nextPath);
+  syncRoute();
 }
 
 function enterWorkspace() {
@@ -1661,20 +1742,22 @@ function enterWorkspace() {
 function openAuth(mode: "sign-in" | "sign-up") {
   authMode.value = mode;
   authError.value = "";
-  const nextHash = `#/${mode}`;
-  if (window.location.hash === nextHash) {
+  const nextPath = `/${mode}`;
+  if (window.location.pathname === nextPath) {
     syncRoute();
     return;
   }
-  window.location.hash = `/${mode}`;
+  window.history.pushState({}, "", nextPath);
+  syncRoute();
 }
 
 function goHome() {
-  if (window.location.hash === "#/" || window.location.hash === "") {
+  if (window.location.pathname === "/") {
     syncRoute();
     return;
   }
-  window.location.hash = "/";
+  window.history.pushState({}, "", "/");
+  syncRoute();
 }
 
 function toggleUserMenu() {
@@ -1869,24 +1952,37 @@ async function handleThreadSend(payload: ChatSendPayload) {
     await sendHumanDirectMessage(contact, payload);
     return;
   }
-  const threadId = activeChatThreadId.value;
+  const threadId = activeThreadId.value;
   const existing = threadMessages.value[threadId] ?? [];
   const userMessage: ChatMessage = {
+    id: `local-${crypto.randomUUID()}`,
     role: "user",
     content: payload.content,
+    createdAt: new Date().toISOString(),
     avatarText: userInitials.value,
     avatarUrl: currentUserAvatarUrl.value,
     attachments: payload.attachments,
+    replyTo: payload.replyTo ?? null,
   };
   const nextMessages = [...existing, userMessage];
   threadMessages.value = {
     ...threadMessages.value,
     [threadId]: nextMessages,
   };
+  clearThreadDraft(threadId);
+  markThreadRead(threadId);
+
+  if (!payload.content.trim() && payload.attachments.length) {
+    return;
+  }
 
   loading.value = true;
   try {
-    const replies = contact ? [await createContactReply(contact, nextMessages)] : await createGroupReplies(nextMessages);
+    if (contact) {
+      await streamContactReply(contact, threadId, nextMessages);
+      return;
+    }
+    const replies = await createGroupReplies(nextMessages);
     threadMessages.value = {
       ...threadMessages.value,
       [threadId]: [...nextMessages, ...replies],
@@ -1908,6 +2004,8 @@ async function sendHumanDirectMessage(contact: ChatContact, payload: ChatSendPay
       ...directMessages.value,
       [contact.id]: [...(directMessages.value[contact.id] ?? []), message],
     };
+    clearThreadDraft(contact.id);
+    markThreadRead(contact.id);
   } catch (cause) {
     showTransientError(cause instanceof Error ? cause.message : "私信发送失败");
   } finally {
@@ -1915,19 +2013,37 @@ async function sendHumanDirectMessage(contact: ChatContact, payload: ChatSendPay
   }
 }
 
-async function refreshDirectThread(contact: ChatContact) {
+async function refreshDirectThread(contact: ChatContact, options: { silent?: boolean } = {}) {
   if (contact.kind !== "human" || !authToken.value || !currentUser.value) {
     return;
   }
   try {
+    const hadSnapshot = Object.prototype.hasOwnProperty.call(directMessages.value, contact.id);
+    const previousCount = directMessages.value[contact.id]?.length ?? 0;
     const messages = await fetchDirectMessages(authToken.value, contact.id);
     directMessages.value = {
       ...directMessages.value,
       [contact.id]: messages,
     };
+    if (hadSnapshot && contact.id !== activeThreadId.value && messages.length > previousCount) {
+      incrementThreadUnread(contact.id, messages.length - previousCount);
+    }
   } catch (cause) {
-    showTransientError(cause instanceof Error ? cause.message : "私信加载失败");
+    if (!options.silent) {
+      showTransientError(cause instanceof Error ? cause.message : "私信加载失败");
+    }
   }
+}
+
+async function pollHumanDirectThreads() {
+  if (!authToken.value || !currentUser.value) {
+    return;
+  }
+  await Promise.all(
+    chatContacts.value
+      .filter((contact) => contact.kind === "human")
+      .map((contact) => refreshDirectThread(contact, { silent: true })),
+  );
 }
 
 function clearActiveThreadMessages() {
@@ -1938,7 +2054,7 @@ function clearActiveThreadMessages() {
   }
   threadMessages.value = {
     ...threadMessages.value,
-    [activeChatThreadId.value]: [],
+    [activeThreadId.value]: [],
   };
 }
 
@@ -1949,6 +2065,7 @@ function selectChatThread(threadId: string) {
   chatProfileContact.value = null;
   chatSetupOpen.value = false;
   mobileChatView.value = "conversation";
+  markThreadRead(threadId);
 }
 
 function toggleChatCreateMenu() {
@@ -2387,15 +2504,83 @@ async function createContactReply(contact: ChatContact, history: ChatMessage[]):
   try {
     const response = await sendChat(contactChatConfig(contact), modelHistory(history));
     return {
+      id: `local-${crypto.randomUUID()}`,
       role: "assistant",
       authorName: contact.name,
       authorTone: contact.tone,
       content: response.content,
+      createdAt: new Date().toISOString(),
     };
   } catch (cause) {
     showTransientError(cause instanceof Error ? cause.message : "请求失败");
     return offlineContactReply(contact);
   }
+}
+
+async function streamContactReply(contact: ChatContact, threadId: string, history: ChatMessage[]) {
+  const reply: ChatMessage = {
+    id: `local-${crypto.randomUUID()}`,
+    role: "assistant",
+    authorName: contact.name,
+    authorTone: contact.tone,
+    content: uiLanguage.value === "en-US" ? "The other side is typing" : "对方正在输入中",
+    createdAt: new Date().toISOString(),
+  };
+  activeAiReplyIds.add(reply.id as string);
+  threadMessages.value = {
+    ...threadMessages.value,
+    [threadId]: [...history, reply],
+  };
+
+  try {
+    let receivedFirstChunk = false;
+    const content = await streamChat(contactChatConfig(contact), modelHistory(history), (chunk) => {
+      if (!receivedFirstChunk) {
+        replaceMessage(threadId, reply.id, { ...reply, content: "" });
+        receivedFirstChunk = true;
+      }
+      appendMessageContent(threadId, reply.id, chunk);
+    });
+    if (!content.trim()) {
+      replaceMessage(threadId, reply.id, offlineContactReply(contact));
+    }
+  } catch (cause) {
+    showTransientError(cause instanceof Error ? cause.message : "请求失败");
+    replaceMessage(threadId, reply.id, offlineContactReply(contact));
+  } finally {
+    if (reply.id !== undefined) {
+      activeAiReplyIds.delete(reply.id);
+    }
+  }
+}
+
+function appendMessageContent(threadId: string, messageId: string | number | undefined, chunk: string) {
+  if (messageId === undefined) {
+    return;
+  }
+  const messages = threadMessages.value[threadId] ?? [];
+  threadMessages.value = {
+    ...threadMessages.value,
+    [threadId]: messages.map((message) =>
+      message.id === messageId
+        ? {
+            ...message,
+            content: `${message.content}${chunk}`,
+          }
+        : message,
+    ),
+  };
+}
+
+function replaceMessage(threadId: string, messageId: string | number | undefined, nextMessage: ChatMessage) {
+  if (messageId === undefined) {
+    return;
+  }
+  const messages = threadMessages.value[threadId] ?? [];
+  threadMessages.value = {
+    ...threadMessages.value,
+    [threadId]: messages.map((message) => (message.id === messageId ? nextMessage : message)),
+  };
 }
 
 async function createGroupReplies(history: ChatMessage[]) {
@@ -2408,12 +2593,14 @@ async function createGroupReplies(history: ChatMessage[]) {
   if (aiMembers.length === 0) {
     return [
       {
+        id: `local-${crypto.randomUUID()}`,
         role: "assistant",
         authorName: group.name,
         authorTone: "blue",
         content: uiLanguage.value === "en-US"
           ? "This group has no AI characters yet. The message is saved for the people in the group."
           : "这个群里暂时没有 AI 角色，消息已经留给群里的联系人。",
+        createdAt: new Date().toISOString(),
       } satisfies ChatMessage,
     ];
   }
@@ -2424,10 +2611,12 @@ async function createGroupMemberReply(contact: ChatContact, group: ChatGroup, hi
   try {
     const response = await sendChat(contactChatConfig(contact, group), modelHistory(history));
     return {
+      id: `local-${crypto.randomUUID()}`,
       role: "assistant",
       authorName: contact.name,
       authorTone: contact.tone,
       content: response.content,
+      createdAt: new Date().toISOString(),
     };
   } catch {
     return offlineContactReply(contact, group);
@@ -2453,19 +2642,27 @@ function contactChatConfig(contact: ChatContact, group?: ChatGroup): ChatConfig 
 function modelHistory(history: ChatMessage[]): ChatMessage[] {
   return history.map((message) => ({
     ...message,
-    content: message.authorName ? `${message.authorName}: ${message.content}` : message.content,
+    content: [
+      message.authorName ? `${message.authorName}:` : "",
+      message.replyTo
+        ? `${uiLanguage.value === "en-US" ? "Replying to" : "回复"} ${message.replyTo.authorName ?? (uiLanguage.value === "en-US" ? "message" : "消息")}：${message.replyTo.content}`
+        : "",
+      message.content,
+    ].filter(Boolean).join("\n"),
   }));
 }
 
 function offlineContactReply(contact: ChatContact, group?: ChatGroup): ChatMessage {
   const target = group ? `「${group.name}」` : "这个会话";
   return {
+    id: `local-${crypto.randomUUID()}`,
     role: "assistant",
     authorName: contact.name,
     authorTone: contact.tone,
     content: uiLanguage.value === "en-US"
       ? `I have saved this in ${target}. Connect a model provider and I will answer using my current character prompt.`
       : `我已经把这句话留在${target}里了。接入模型后，我会按当前性格提示词继续回复。`,
+    createdAt: new Date().toISOString(),
   };
 }
 
@@ -2497,16 +2694,25 @@ function clearErrorTimer() {
 }
 
 function threadPreview(threadId: string, fallback: string) {
-  const latest = [...(threadMessages.value[threadId] ?? [])].reverse().find((message) => message.content.trim());
+  const draft = threadDraftPreview(threadId);
+  if (draft) {
+    return draft;
+  }
+  const latest = [...(threadMessages.value[threadId] ?? [])].reverse().find((message) => message.content.trim() || message.attachments?.length);
   if (!latest) {
     return fallback;
   }
-  return truncatePreview(latest.content);
+  return messagePreview(latest);
 }
 
 function latestThreadTime(threadId: string) {
   const messages = threadMessages.value[threadId] ?? [];
-  return messages.length ? messages.length : 0;
+  const latest = messages[messages.length - 1];
+  if (!latest?.createdAt) {
+    return 0;
+  }
+  const timestamp = new Date(latest.createdAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function directMessagesForContact(contact: ChatContact): ChatMessage[] {
@@ -2514,7 +2720,7 @@ function directMessagesForContact(contact: ChatContact): ChatMessage[] {
   return (directMessages.value[contact.id] ?? []).map((message) => {
     const isOwn = message.sender_id === currentUserId;
     return {
-      id: `direct-${message.id}`,
+      id: message.id,
       role: isOwn ? "user" : "assistant",
       source: "human",
       senderId: message.sender_id,
@@ -2524,13 +2730,29 @@ function directMessagesForContact(contact: ChatContact): ChatMessage[] {
       renderMarkdown: false,
       createdAt: message.created_at,
       attachments: directAttachmentsToChat(message.attachments),
+      replyTo: message.reply_to
+        ? {
+            id: message.reply_to.id,
+            authorName: normalizeDirectReplyAuthorName(message.reply_to.author_name, message.reply_to.sender_id),
+            content: message.reply_to.content,
+            createdAt: message.reply_to.created_at,
+            senderId: message.reply_to.sender_id,
+          }
+        : null,
     } satisfies ChatMessage;
   });
 }
 
 function directThreadPreview(contactId: string, fallback: string) {
-  const latest = [...(directMessages.value[contactId] ?? [])].reverse().find((message) => message.content.trim());
-  return latest ? truncatePreview(latest.content) : fallback;
+  const draft = threadDraftPreview(contactId);
+  if (draft) {
+    return draft;
+  }
+  const latest = [...(directMessages.value[contactId] ?? [])].reverse().find((message) => message.content.trim() || message.attachments.length);
+  if (!latest) {
+    return fallback;
+  }
+  return directMessagePreview(latest);
 }
 
 function latestDirectMessageTime(contactId: string) {
@@ -2554,6 +2776,192 @@ function directAttachmentsToChat(attachments: DirectAttachment[] = []): ChatAtta
   }));
 }
 
+function emptyThreadDraft(): ChatDraftState {
+  return {
+    content: "",
+    attachments: [],
+    replyTo: null,
+  };
+}
+
+function updateActiveThreadDraft(content: string) {
+  upsertThreadDraft(activeThreadId.value, {
+    ...activeThreadDraft.value,
+    content,
+  });
+}
+
+function updateActiveThreadAttachments(attachments: ChatAttachment[]) {
+  upsertThreadDraft(activeThreadId.value, {
+    ...activeThreadDraft.value,
+    attachments,
+  });
+}
+
+function startThreadReply(message: ChatMessage) {
+  upsertThreadDraft(activeThreadId.value, {
+    ...activeThreadDraft.value,
+    replyTo: toReplyReference(message),
+  });
+}
+
+function cancelThreadReply() {
+  upsertThreadDraft(activeThreadId.value, {
+    ...activeThreadDraft.value,
+    replyTo: null,
+  });
+}
+
+function upsertThreadDraft(threadId: string, draft: ChatDraftState) {
+  const hasValue = Boolean(draft.content.trim() || draft.attachments.length || draft.replyTo);
+  if (!hasValue) {
+    clearThreadDraft(threadId);
+    return;
+  }
+  threadDrafts.value = {
+    ...threadDrafts.value,
+    [threadId]: {
+      content: draft.content,
+      attachments: draft.attachments,
+      replyTo: draft.replyTo ?? null,
+    },
+  };
+}
+
+function clearThreadDraft(threadId: string) {
+  const { [threadId]: _removed, ...rest } = threadDrafts.value;
+  threadDrafts.value = rest;
+}
+
+function threadDraftPreview(threadId: string) {
+  const draft = threadDrafts.value[threadId];
+  if (!draft) {
+    return "";
+  }
+  if (draft.content.trim()) {
+    return `${uiLanguage.value === "en-US" ? "Draft: " : "草稿："}${truncatePreview(draft.content)}`;
+  }
+  if (draft.attachments.length) {
+    return uiLanguage.value === "en-US" ? "Draft: attachment" : "草稿：附件";
+  }
+  if (draft.replyTo) {
+    return uiLanguage.value === "en-US" ? "Draft: reply" : "草稿：回复";
+  }
+  return "";
+}
+
+function incrementThreadUnread(threadId: string, amount = 1) {
+  if (amount <= 0) {
+    return;
+  }
+  threadUnread.value = {
+    ...threadUnread.value,
+    [threadId]: (threadUnread.value[threadId] ?? 0) + amount,
+  };
+}
+
+function markThreadRead(threadId: string) {
+  if (!threadUnread.value[threadId]) {
+    return;
+  }
+  const { [threadId]: _removed, ...rest } = threadUnread.value;
+  threadUnread.value = rest;
+}
+
+function toReplyReference(message: ChatMessage): ChatReplyReference {
+  const fallbackContent = message.content.trim()
+    || (message.attachments?.[0]?.kind === "image"
+      ? (uiLanguage.value === "en-US" ? "[Image]" : "[图片]")
+      : message.attachments?.length
+        ? (uiLanguage.value === "en-US" ? "[File]" : "[文件]")
+        : "");
+  return {
+    id: message.id,
+    authorName: message.authorName || (message.role === "user" ? dashboardDisplayName.value : activeChatThread.value?.name),
+    content: fallbackContent,
+    createdAt: message.createdAt,
+    senderId: message.senderId,
+  };
+}
+
+function lastReplyReference(history: ChatMessage[]) {
+  const latest = history[history.length - 1];
+  return latest ? toReplyReference(latest) : null;
+}
+
+function normalizeDirectReplyAuthorName(authorName?: string | null, senderId?: string | null) {
+  if (authorName === "You") {
+    return dashboardDisplayName.value;
+  }
+  if (authorName === "Contact") {
+    return activeContact.value ? displayContactName(activeContact.value) : uiText.value.personContact;
+  }
+  if (authorName) {
+    return authorName;
+  }
+  if (senderId && senderId === currentUser.value?.id) {
+    return dashboardDisplayName.value;
+  }
+  return activeContact.value ? displayContactName(activeContact.value) : uiText.value.personContact;
+}
+
+function messagePreview(message: ChatMessage) {
+  const content = message.content.trim();
+  if (content) {
+    return truncatePreview(content);
+  }
+  if (message.attachments?.length) {
+    return message.attachments[0].kind === "image"
+      ? (uiLanguage.value === "en-US" ? "[Image]" : "[图片]")
+      : `${uiLanguage.value === "en-US" ? "[File]" : "[文件]"} ${truncatePreview(message.attachments[0].name)}`;
+  }
+  return "";
+}
+
+function directMessagePreview(message: DirectMessageRecord) {
+  const content = message.content.trim();
+  if (content) {
+    return truncatePreview(content);
+  }
+  if (message.attachments.length) {
+    return message.attachments[0].kind === "image"
+      ? (uiLanguage.value === "en-US" ? "[Image]" : "[图片]")
+      : `${uiLanguage.value === "en-US" ? "[File]" : "[文件]"} ${truncatePreview(message.attachments[0].name)}`;
+  }
+  return "";
+}
+
+function formatThreadTime(value: number) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const now = new Date();
+  const sameDay = now.toDateString() === date.toDateString();
+  return new Intl.DateTimeFormat(uiLanguage.value, sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function humanThreadDetail(contact: ChatContact) {
+  const relationship = contact.description?.trim() || uiText.value.personContact;
+  return `${uiLanguage.value === "en-US" ? "Direct chat" : "私聊"} · ${relationship}`;
+}
+
+function aiThreadDetail(contact: ChatContact) {
+  return contact.description?.trim() || (uiLanguage.value === "en-US" ? "AI contact" : "AI 联系人");
+}
+
+function groupThreadDetail(group: ChatGroup) {
+  const members = groupMembers(group);
+  const label = uiLanguage.value === "en-US" ? `${members.length} members` : `${members.length} 位成员`;
+  const names = members.slice(0, 3).map((member) => displayContactName(member)).join(" · ");
+  return names ? `${label} · ${names}` : label;
+}
+
 function truncatePreview(value: string) {
   const content = value.replace(/\s+/g, " ").trim();
   return content.length > 28 ? `${content.slice(0, 28)}...` : content;
@@ -2575,20 +2983,21 @@ function fuzzyMatch(value: string, query: string) {
 }
 
 function createThreadMessageSamples(): Record<string, ChatMessage[]> {
+  const now = Date.now();
   return {
     assistant: [],
     aning: [
-      { role: "assistant", content: "今晚要不要把生活里的小事先记下来？" },
-      { role: "user", content: "先记一下，明天再整理。" },
+      { role: "assistant", content: "今晚要不要把生活里的小事先记下来？", createdAt: new Date(now - 1000 * 60 * 14).toISOString() },
+      { role: "user", content: "先记一下，明天再整理。", createdAt: new Date(now - 1000 * 60 * 12).toISOString() },
     ],
     planner: [
-      { role: "assistant", content: "灵感先不用分类，丢进来就行。" },
-      { role: "user", content: "以后这里可以按主题自动聚合。" },
+      { role: "assistant", content: "灵感先不用分类，丢进来就行。", createdAt: new Date(now - 1000 * 60 * 28).toISOString() },
+      { role: "user", content: "以后这里可以按主题自动聚合。", createdAt: new Date(now - 1000 * 60 * 24).toISOString() },
     ],
     "group-roundtable": [
-      { role: "assistant", authorName: "架构师", authorTone: "architect", content: "把问题丢进来，我会先拆结构。" },
-      { role: "assistant", authorName: "审稿人", authorTone: "critic", content: "我负责找风险和反例。" },
-      { role: "assistant", authorName: "陪伴者", authorTone: "mentor", content: "我负责把人的感受和节奏放回决策里。" },
+      { role: "assistant", authorName: "架构师", authorTone: "architect", content: "把问题丢进来，我会先拆结构。", createdAt: new Date(now - 1000 * 60 * 42).toISOString() },
+      { role: "assistant", authorName: "审稿人", authorTone: "critic", content: "我负责找风险和反例。", createdAt: new Date(now - 1000 * 60 * 40).toISOString() },
+      { role: "assistant", authorName: "陪伴者", authorTone: "mentor", content: "我负责把人的感受和节奏放回决策里。", createdAt: new Date(now - 1000 * 60 * 38).toISOString() },
     ],
   };
 }
@@ -2629,6 +3038,43 @@ function loadLegacyMessages(): ChatMessage[] {
     return JSON.parse(raw);
   } catch {
     return [];
+  }
+}
+
+function loadThreadDrafts(): Record<string, ChatDraftState> {
+  const raw = localStorage.getItem(scopedStorageKey(threadDraftsKey));
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, ChatDraftState>;
+    return Object.fromEntries(
+      Object.entries(parsed).map(([threadId, draft]) => [
+        threadId,
+        {
+          content: draft?.content ?? "",
+          attachments: Array.isArray(draft?.attachments) ? draft.attachments : [],
+          replyTo: draft?.replyTo ?? null,
+        },
+      ]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function loadThreadUnread(): Record<string, number> {
+  const raw = localStorage.getItem(scopedStorageKey(threadUnreadKey));
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, number] => Number.isFinite(Number(entry[1])) && Number(entry[1]) > 0),
+    );
+  } catch {
+    return {};
   }
 }
 
@@ -2717,21 +3163,25 @@ function defaultChatGroups(): ChatGroup[] {
 }
 
 function saveModelProfile(profile: ModelProfile) {
+  const normalizedProfile = normalizeModelProfile(profile);
   const nextProfiles = [...modelProfiles.value];
-  const index = nextProfiles.findIndex((item) => item.id === profile.id);
+  const index = nextProfiles.findIndex((item) => item.id === normalizedProfile.id);
   if (index >= 0) {
-    nextProfiles[index] = profile;
+    nextProfiles[index] = normalizedProfile;
   } else {
-    nextProfiles.unshift(profile);
+    nextProfiles.unshift(normalizedProfile);
   }
   modelProfiles.value = nextProfiles;
-  selectModelProfile(profile);
+  if (activeModelProfileId.value === normalizedProfile.id) {
+    config.value = profileToChatConfig(normalizedProfile);
+  }
 }
 
 function selectModelProfile(profile: ModelProfile) {
-  activeModelProfileId.value = profile.id;
-  localStorage.setItem(activeModelProfileKey, profile.id);
-  config.value = profileToChatConfig(profile);
+  const normalizedProfile = normalizeModelProfile(profile);
+  activeModelProfileId.value = normalizedProfile.id;
+  localStorage.setItem(activeModelProfileKey, normalizedProfile.id);
+  config.value = profileToChatConfig(normalizedProfile);
 }
 
 function deleteModelProfile(profileId: string) {
@@ -2748,7 +3198,7 @@ function profileToChatConfig(profile: ModelProfile): ChatConfig {
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
-    systemPrompt: profile.systemPrompt,
+    systemPrompt: defaultConfig.systemPrompt,
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
   };
@@ -2772,10 +3222,70 @@ function loadModelProfiles(): ModelProfile[] {
     return [];
   }
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((profile) => normalizeModelProfile(profile));
   } catch {
     return [];
   }
+}
+
+function normalizeModelProfile(raw: Partial<ModelProfile> & { provider?: ModelProfile["provider"]; systemPrompt?: string }): ModelProfile {
+  const provider = raw.provider ?? defaultConfig.provider;
+  return {
+    id: raw.id ?? `model-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name: raw.name ?? "",
+    provider,
+    baseUrl: raw.baseUrl ?? fallbackProviders().find((item) => item.id === provider)?.default_base_url ?? defaultConfig.baseUrl,
+    apiKey: raw.apiKey ?? "",
+    model: raw.model ?? fallbackProviders().find((item) => item.id === provider)?.default_model ?? defaultConfig.model,
+    temperature: Number.isFinite(Number(raw.temperature)) ? Number(raw.temperature) : defaultConfig.temperature,
+    maxTokens: Number.isFinite(Number(raw.maxTokens)) ? Number(raw.maxTokens) : defaultConfig.maxTokens,
+    persona: {
+      alias: raw.persona?.alias ?? "",
+      role: raw.persona?.role ?? "",
+      temperament: raw.persona?.temperament ?? "",
+      notes: raw.persona?.notes ?? "",
+    },
+    pet: normalizeApiPet(raw.pet),
+  };
+}
+
+function normalizeApiPet(raw?: Partial<ApiPet>): ApiPet {
+  const speciesValues: ApiPet["species"][] = ["spark", "leaf", "stone", "cloud", "cat", "dog", "rabbit", "panda", "fox", "bird", "penguin", "hamster", "turtle"];
+  const species = raw?.species && speciesValues.includes(raw.species) ? raw.species : "spark";
+  const today = localDateKey();
+  const shouldResetDailyCounts = raw?.dailyInteractionDate !== today;
+  return {
+    name: raw?.name?.trim() || "比特",
+    species,
+    appearance: raw?.appearance,
+    level: Math.max(1, Math.floor(Number(raw?.level) || 1)),
+    experience: Math.max(0, Math.floor(Number(raw?.experience) || 0)),
+    mood: clampPreference(Number(raw?.mood) || 72, 0, 100),
+    satiety: clampPreference(Number(raw?.satiety) || 68, 0, 100),
+    energy: clampPreference(Number(raw?.energy) || 76, 0, 100),
+    lastAction: raw?.lastAction ?? "",
+    lastActionAt: raw?.lastActionAt,
+    dailyInteractionDate: today,
+    dailyFeedCount: shouldResetDailyCounts ? 0 : Math.max(0, Math.floor(Number(raw?.dailyFeedCount) || 0)),
+    dailyPetCount: shouldResetDailyCounts ? 0 : Math.max(0, Math.floor(Number(raw?.dailyPetCount) || 0)),
+    dailyQuestCount: shouldResetDailyCounts ? 0 : Math.max(0, Math.floor(Number(raw?.dailyQuestCount) || 0)),
+  };
+}
+
+function clampPreference(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function localDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function loadStoredUser(): AuthUser | null {
@@ -2799,6 +3309,10 @@ function normalizeAuthUser(user: AuthUser): AuthUser {
 
 function loadPreference<T extends string>(key: string, fallback: T): T {
   return (localStorage.getItem(key) as T | null) ?? fallback;
+}
+
+function loadColorModePreference(): ColorMode {
+  return localStorage.getItem(colorModeKey) === "dark" ? "dark" : "light";
 }
 
 function loadBooleanPreference(key: string, fallback: boolean) {
@@ -2833,6 +3347,7 @@ function moduleIcon(moduleId: string) {
     "image-generation": Image,
     "provider-hub": PlugZap,
     notes: NotebookPen,
+    "memory-map": Globe2,
     workflow: Workflow,
     admin: Shield,
   };
@@ -2846,8 +3361,9 @@ function moduleEnglishName(moduleId: string) {
     "image-generation": "Image",
     "provider-hub": "Aggregation",
     notes: "Notes",
+    "memory-map": "Memory Map",
     workflow: "automation",
-    admin: "Self",
+    admin: "Admin",
   };
   return labels[moduleId as keyof typeof labels] ?? moduleId;
 }
@@ -2901,6 +3417,12 @@ function fallbackModules(): PlatformModule[] {
       category: "productivity",
     },
     {
+      id: "memory-map",
+      name: "地图纪念",
+      description: "以 3D 世界地图记录地点、时间和纪念点。",
+      category: "productivity",
+    },
+    {
       id: "workflow",
       name: "秩序",
       description: "自动化流程、任务节点和触发器。",
@@ -2908,7 +3430,7 @@ function fallbackModules(): PlatformModule[] {
     },
     {
       id: "admin",
-      name: "自我",
+      name: "管理员端",
       description: "用户、权限、审计和系统配置能力。",
       category: "system",
     },

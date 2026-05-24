@@ -3,6 +3,7 @@ import type {
   ChatConfig,
   ChatMessage,
   ChatResponse,
+  ChatSendPayload,
   DirectMessageRecord,
   FriendRequestRecord,
   FriendSummary,
@@ -12,6 +13,9 @@ import type {
 } from "../types/chat";
 import type {
   AccountUpdatePayload,
+  AdminAuditLog,
+  AdminOverview,
+  AdminUser,
   AvatarUploadPayload,
   AuthResponse,
   AuthUser,
@@ -21,7 +25,7 @@ import type {
   SignUpPayload,
 } from "../types/auth";
 import type { ImageGenerationConfig, ImageGenerationResponse } from "../types/images";
-import type { PlatformModule } from "../types/platform";
+import type { AdminModule, PlatformModule, TencentMapConfig } from "../types/platform";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -50,10 +54,20 @@ export async function fetchProviders(): Promise<ProviderInfo[]> {
   return response.json();
 }
 
-export async function fetchModules(): Promise<PlatformModule[]> {
-  const response = await fetch(apiUrl("/api/modules"));
+export async function fetchModules(token = ""): Promise<PlatformModule[]> {
+  const response = await fetch(apiUrl("/api/modules"), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
   if (!response.ok) {
     throw new Error(`Module catalog failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchTencentMapConfig(): Promise<TencentMapConfig> {
+  const response = await fetch(apiUrl("/api/maps/tencent/config"));
+  if (!response.ok) {
+    throw new Error(await readError(response));
   }
   return response.json();
 }
@@ -107,6 +121,85 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   return response.json();
 }
 
+export async function fetchAdminOverview(token: string): Promise<AdminOverview> {
+  const response = await fetch(apiUrl("/api/admin/overview"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function fetchAdminUsers(token: string, query = ""): Promise<AdminUser[]> {
+  const suffix = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+  const response = await fetch(apiUrl(`/api/admin/users${suffix}`), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function updateAdminUserRole(token: string, userId: string, role: string): Promise<AdminUser> {
+  const response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(userId)}/role`), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function fetchAdminModules(token: string): Promise<AdminModule[]> {
+  const response = await fetch(apiUrl("/api/admin/modules"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function fetchAdminAuditLogs(token: string): Promise<AdminAuditLog[]> {
+  const response = await fetch(apiUrl("/api/admin/audit-logs"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function updateAdminModule(token: string, moduleId: string, enabled: boolean): Promise<AdminModule> {
+  const response = await fetch(apiUrl(`/api/admin/modules/${encodeURIComponent(moduleId)}`), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
 export async function searchUsers(token: string, query: string): Promise<UserSearchResult[]> {
   const response = await fetch(apiUrl(`/api/auth/users/search?q=${encodeURIComponent(query)}`), {
     headers: {
@@ -134,7 +227,7 @@ export async function fetchDirectMessages(token: string, userId: string): Promis
 export async function sendDirectMessage(
   token: string,
   userId: string,
-  payload: { content: string; attachments: ChatAttachment[] },
+  payload: ChatSendPayload,
 ): Promise<DirectMessageRecord> {
   const response = await fetch(apiUrl(`/api/chat/direct/${encodeURIComponent(userId)}`), {
     method: "POST",
@@ -152,6 +245,7 @@ export async function sendDirectMessage(
         kind: attachment.kind,
         data_url: attachment.dataUrl,
       })),
+      reply_to_message_id: typeof payload.replyTo?.id === "number" ? payload.replyTo.id : null,
     }),
   });
   if (!response.ok) {
@@ -302,28 +396,12 @@ export async function fetchProviderModels(config: ChatConfig): Promise<ProviderM
 }
 
 export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Promise<ChatResponse> {
-  const outboundMessages = messages.map((message) => ({
-    role: message.role,
-    content: message.attachments?.length
-      ? `${message.content}\n\n${attachmentSummary(message)}`
-      : message.content,
-  }));
-
   const response = await fetch(apiUrl("/api/chat"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      provider: config.provider,
-      base_url: config.baseUrl,
-      api_key: config.apiKey,
-      model: config.model,
-      system_prompt: config.systemPrompt,
-      temperature: config.temperature,
-      max_tokens: config.maxTokens,
-      messages: outboundMessages,
-    }),
+    body: JSON.stringify(chatPayload(config, messages)),
   });
 
   if (!response.ok) {
@@ -334,15 +412,73 @@ export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Pro
   return response.json();
 }
 
-function attachmentSummary(message: ChatMessage) {
-  const attachments = message.attachments ?? [];
-  if (!attachments.length) {
-    return "";
+export async function streamChat(
+  config: ChatConfig,
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  const response = await fetch(apiUrl("/api/chat/stream"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(chatPayload(config, messages)),
+  });
+
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
   }
-  return [
-    "Attached files:",
-    ...attachments.map((attachment) => `- ${attachment.name} (${attachment.type || "file"}, ${attachment.size} bytes)`),
-  ].join("\n");
+
+  if (!response.body) {
+    const content = await response.text();
+    if (content) {
+      onChunk(content);
+    }
+    return content;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let content = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    const chunk = decoder.decode(value, { stream: true });
+    if (chunk) {
+      content += chunk;
+      onChunk(chunk);
+    }
+  }
+
+  const tail = decoder.decode();
+  if (tail) {
+    content += tail;
+    onChunk(tail);
+  }
+
+  return content;
+}
+
+function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
+  const outboundMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+
+  return {
+    provider: config.provider,
+    base_url: config.baseUrl,
+    api_key: config.apiKey,
+    model: config.model,
+    system_prompt: config.systemPrompt,
+    temperature: config.temperature,
+    max_tokens: config.maxTokens,
+    messages: outboundMessages,
+  };
 }
 
 export async function generateImage(config: ImageGenerationConfig): Promise<ImageGenerationResponse> {
