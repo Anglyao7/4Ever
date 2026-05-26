@@ -57,7 +57,7 @@ MODULE_BLUEPRINTS = [
     {
         "id": "memory-map",
         "name": "地图纪念",
-        "description": "以 3D 世界地图记录地点、时间和纪念点。",
+        "description": "以普通地图记录地点、时间和纪念点。",
         "category": "productivity",
         "locked": False,
         "enabled": True,
@@ -67,6 +67,14 @@ MODULE_BLUEPRINTS = [
         "name": "秩序",
         "description": "自动化流程、任务节点和触发器。",
         "category": "automation",
+        "locked": False,
+        "enabled": True,
+    },
+    {
+        "id": "inspiration",
+        "name": "灵感温室",
+        "description": "收集灵感、创意提示和想法生长状态。",
+        "category": "productivity",
         "locked": False,
         "enabled": True,
     },

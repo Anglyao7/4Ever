@@ -137,7 +137,6 @@ button:disabled {
 
 :root[data-color-mode="dark"] .dashboard-panel,
 :root[data-color-mode="dark"] .image-panel,
-:root[data-color-mode="dark"] .placeholder-panel,
 :root[data-color-mode="dark"] .config-panel,
 :root[data-color-mode="dark"] .module-panel,
 :root[data-color-mode="dark"] .chat-panel,
@@ -147,6 +146,23 @@ button:disabled {
 :root[data-color-mode="dark"] .notes-editor-card,
 :root[data-color-mode="dark"] .self-card,
 :root[data-color-mode="dark"] .telegram-shell {
+  background: var(--panel-bg);
+  border-color: var(--line);
+  box-shadow: 0 12px 32px var(--shadow-soft);
+}
+
+:root[data-color-mode="dark"] .react-notes-sidebar,
+:root[data-color-mode="dark"] .react-note-editor,
+:root[data-color-mode="dark"] .react-profile-list,
+:root[data-color-mode="dark"] .react-profile-form,
+:root[data-color-mode="dark"] .react-chat-sidebar,
+:root[data-color-mode="dark"] .react-chat-surface,
+:root[data-color-mode="dark"] .react-map-search,
+:root[data-color-mode="dark"] .react-map-canvas,
+:root[data-color-mode="dark"] .react-memory-album,
+:root[data-color-mode="dark"] .react-image-preview,
+:root[data-color-mode="dark"] .react-workflow-canvas,
+:root[data-color-mode="dark"] .react-workflow-history {
   background: var(--panel-bg);
   border-color: var(--line);
   box-shadow: 0 12px 32px var(--shadow-soft);
@@ -253,6 +269,12 @@ button:disabled {
   border-color: rgba(202, 211, 204, 0.16);
 }
 
+:root[data-color-mode="dark"] .landing-image-veil {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(17, 23, 19, 0.82), rgba(17, 23, 19, 0.94) 52%, rgba(12, 16, 14, 0.98) 100%),
+    rgba(12, 16, 14, 0.96);
+}
+
 :root[data-color-mode="dark"] .landing-field span,
 :root[data-color-mode="dark"] .orbit-signal {
   background: linear-gradient(90deg, transparent, rgba(143, 213, 196, 0.38), transparent);
@@ -340,6 +362,29 @@ button:disabled {
   border-color: var(--line);
 }
 
+:root[data-color-mode="dark"] .react-search-field,
+:root[data-color-mode="dark"] .react-secret-row,
+:root[data-color-mode="dark"] .react-note-item,
+:root[data-color-mode="dark"] .react-profile-card,
+:root[data-color-mode="dark"] .react-city-results button,
+:root[data-color-mode="dark"] .react-message,
+:root[data-color-mode="dark"] .react-workflow-node,
+:root[data-color-mode="dark"] .react-workflow-history details,
+:root[data-color-mode="dark"] .react-workflow-handoff,
+:root[data-color-mode="dark"] .react-map-pin,
+:root[data-color-mode="dark"] .react-note-body,
+:root[data-color-mode="dark"] .react-profile-form input,
+:root[data-color-mode="dark"] .react-profile-form select,
+:root[data-color-mode="dark"] .react-profile-form textarea,
+:root[data-color-mode="dark"] .react-composer textarea,
+:root[data-color-mode="dark"] .react-memory-album input,
+:root[data-color-mode="dark"] .react-memory-album textarea,
+:root[data-color-mode="dark"] .react-workflow-canvas textarea {
+  color: var(--ink);
+  background: var(--panel-soft-bg);
+  border-color: var(--line);
+}
+
 :root[data-color-mode="dark"] .home-hero,
 :root[data-color-mode="dark"] .hero-system,
 :root[data-color-mode="dark"] .message-list,
@@ -407,8 +452,6 @@ button:disabled {
 :root[data-color-mode="dark"] .system-line {
   background: linear-gradient(90deg, transparent, rgba(202, 211, 204, 0.42), transparent);
 }
-
-
 
 .intro-stage {
   position: fixed;
@@ -843,6 +886,8 @@ button:disabled {
 .icon-button,
 .send-button,
 .secondary-button {
+  position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -854,6 +899,17 @@ button:disabled {
     color 160ms ease,
     border-color 160ms ease,
     transform 160ms ease;
+}
+
+.top-nav button:active,
+.provider-tab:active,
+.icon-button:active,
+.send-button:active,
+.secondary-button:active,
+.primary-action:active,
+.landing-cta:active,
+.module-card:active {
+  transform: translateY(1px) scale(0.99);
 }
 
 .top-nav button {
@@ -898,6 +954,11 @@ button:disabled {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.58),
     0 10px 24px var(--shadow-soft);
+}
+
+.user-menu-trigger:hover {
+  background: var(--paper-strong);
+  transform: translateY(-1px);
 }
 
 .user-avatar {
@@ -1269,6 +1330,11 @@ button:disabled {
   margin: 0 auto;
   padding: 24px;
   flex: 1;
+  animation: pageReveal 260ms ease both;
+}
+
+.module-page > section {
+  min-width: 0;
 }
 
 .module-page-chat {
@@ -1279,12 +1345,1483 @@ button:disabled {
 }
 
 .dashboard-panel,
-.image-panel,
-.placeholder-panel {
+.image-panel {
   border: 1px solid rgba(222, 215, 203, 0.86);
   border-radius: 8px;
   background: rgba(251, 250, 247, 0.86);
   box-shadow: 0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.react-notes-panel,
+.react-model-hub,
+.react-chat-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.react-map-panel,
+.react-image-panel,
+.react-workflow-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.react-notes-layout,
+.react-model-grid,
+.react-chat-shell {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.react-map-layout,
+.react-image-layout,
+.react-workflow-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(360px, 1fr) minmax(280px, 360px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.react-image-layout {
+  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+}
+
+.react-notes-sidebar,
+.react-note-editor,
+.react-profile-list,
+.react-profile-form,
+.react-chat-sidebar,
+.react-chat-surface {
+  min-width: 0;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(251, 250, 247, 0.88);
+  box-shadow: 0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.react-map-search,
+.react-map-canvas,
+.react-memory-album,
+.react-image-preview,
+.react-workflow-canvas,
+.react-workflow-history {
+  min-width: 0;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(251, 250, 247, 0.88);
+  box-shadow: 0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.react-notes-sidebar,
+.react-profile-list,
+.react-chat-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  max-height: calc(100vh - 168px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.react-map-search,
+.react-memory-album,
+.react-workflow-canvas,
+.react-workflow-history,
+.react-image-preview {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  max-height: calc(100vh - 168px);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(47, 111, 103, 0.34) transparent;
+}
+
+.react-map-search,
+.react-memory-album,
+.react-image-panel .react-profile-form {
+  align-self: start;
+}
+
+.react-image-panel .react-profile-form {
+  max-height: min(640px, calc(100vh - 170px));
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(47, 111, 103, 0.34) transparent;
+}
+
+.react-map-search::-webkit-scrollbar,
+.react-memory-album::-webkit-scrollbar,
+.react-workflow-canvas::-webkit-scrollbar,
+.react-workflow-history::-webkit-scrollbar,
+.react-image-preview::-webkit-scrollbar,
+.react-image-panel .react-profile-form::-webkit-scrollbar {
+  width: 8px;
+}
+
+.react-map-search::-webkit-scrollbar-thumb,
+.react-memory-album::-webkit-scrollbar-thumb,
+.react-workflow-canvas::-webkit-scrollbar-thumb,
+.react-workflow-history::-webkit-scrollbar-thumb,
+.react-image-preview::-webkit-scrollbar-thumb,
+.react-image-panel .react-profile-form::-webkit-scrollbar-thumb {
+  background: rgba(47, 111, 103, 0.24);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.react-image-panel .react-profile-form textarea {
+  min-height: 180px;
+}
+
+.react-search-field,
+.react-secret-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.react-search-field:focus-within,
+.react-secret-row:focus-within,
+.react-note-body:focus,
+.react-profile-form input:focus,
+.react-profile-form select:focus,
+.react-profile-form textarea:focus,
+.react-composer textarea:focus,
+.react-memory-album input:focus,
+.react-memory-album textarea:focus,
+.react-workflow-source select:focus,
+.react-workflow-canvas textarea:focus {
+  border-color: rgba(47, 111, 103, 0.46);
+  box-shadow: 0 0 0 3px rgba(47, 111, 103, 0.09);
+}
+
+.react-search-field input,
+.react-secret-row input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.react-secret-row button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(222, 215, 203, 0.42);
+}
+
+.react-note-list,
+.react-message-list {
+  display: grid;
+  gap: 8px;
+}
+
+.react-note-item,
+.react-profile-card {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  color: var(--ink);
+  border: 1px solid rgba(222, 215, 203, 0.74);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.react-profile-card {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.react-note-item:hover,
+.react-note-item.active,
+.react-profile-card:hover,
+.react-profile-card.active {
+  transform: translateY(-1px);
+  border-color: rgba(47, 111, 103, 0.34);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.react-note-item span,
+.react-profile-card span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.react-note-item strong,
+.react-profile-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-note-item svg,
+.react-profile-card svg,
+.react-city-results svg,
+.react-status-line svg,
+.react-error-line svg {
+  flex: 0 0 auto;
+}
+
+.react-note-item small,
+.react-profile-card small,
+.react-empty-line,
+.react-status-line,
+.react-error-line {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.react-note-editor,
+.react-profile-form,
+.react-chat-surface {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.react-profile-form {
+  align-content: start;
+}
+
+.react-note-toolbar,
+.react-form-actions,
+.react-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.react-note-title {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.react-note-title:focus {
+  box-shadow: inset 0 -2px 0 rgba(47, 111, 103, 0.18);
+}
+
+.react-note-body,
+.react-profile-form textarea,
+.react-profile-form input,
+.react-profile-form select,
+.react-composer textarea {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  outline: none;
+}
+
+.react-note-body,
+.react-composer textarea {
+  min-height: 360px;
+  padding: 14px;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.react-profile-form input,
+.react-profile-form select,
+.react-profile-form textarea,
+.react-memory-album input,
+.react-memory-album textarea,
+.react-workflow-canvas textarea,
+.react-composer textarea {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.react-profile-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.react-profile-form label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.react-profile-form input,
+.react-profile-form select {
+  height: 40px;
+  padding: 0 11px;
+}
+
+.react-profile-form textarea {
+  min-height: 120px;
+  padding: 11px;
+  resize: vertical;
+}
+
+.react-note-status,
+.react-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.react-chat-sidebar {
+  min-height: 420px;
+}
+
+.react-chat-sidebar strong {
+  font-size: 18px;
+}
+
+.react-chat-sidebar p,
+.react-chat-sidebar span {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.react-chat-sidebar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.react-chat-surface {
+  min-height: 620px;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
+.react-message-list {
+  align-content: end;
+  overflow: auto;
+  padding: 8px;
+  min-height: 0;
+}
+
+.react-message {
+  width: fit-content;
+  max-width: min(680px, 86%);
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+}
+
+.react-message.user {
+  justify-self: end;
+  background: rgba(47, 111, 103, 0.1);
+  border-color: rgba(47, 111, 103, 0.2);
+}
+
+.react-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.react-message small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.react-composer textarea {
+  min-height: 52px;
+  flex: 1 1 320px;
+}
+
+.react-error-line {
+  color: #9b1c1c;
+}
+
+.react-note-empty {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed rgba(222, 215, 203, 0.9);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(247, 249, 245, 0.36)),
+    rgba(255, 255, 255, 0.34);
+}
+
+.react-note-empty svg {
+  color: rgba(47, 111, 103, 0.72);
+}
+
+.react-note-empty strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.react-soft-stat {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 11px;
+  color: var(--accent-strong);
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 999px;
+  background: rgba(47, 111, 103, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.react-city-results {
+  display: grid;
+  gap: 8px;
+}
+
+.react-city-results button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  text-align: left;
+}
+
+.react-city-results button:hover {
+  border-color: rgba(47, 111, 103, 0.34);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.react-city-results span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.react-city-results strong,
+.react-city-results small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-city-results small {
+  color: var(--muted);
+}
+
+.react-map-canvas {
+  position: relative;
+  min-height: min(640px, calc(100vh - 170px));
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 24% 28%, rgba(47, 111, 103, 0.14), transparent 29%),
+    radial-gradient(circle at 72% 64%, rgba(204, 170, 105, 0.14), transparent 26%),
+    linear-gradient(135deg, rgba(244, 248, 242, 0.9), rgba(235, 243, 240, 0.88));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36),
+    0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.react-map-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  pointer-events: none;
+  border: 1px solid rgba(47, 111, 103, 0.1);
+  border-radius: 8px;
+}
+
+.react-map-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(47, 111, 103, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(47, 111, 103, 0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle, #000, transparent 78%);
+}
+
+.react-map-pin {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid rgba(47, 111, 103, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 12px 22px rgba(36, 29, 24, 0.08);
+  transform: translate(-50%, -50%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.react-map-pin.active {
+  border-color: rgba(47, 111, 103, 0.5);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 30px rgba(47, 111, 103, 0.14);
+  transform: translate(-50%, -50%) translateY(-2px);
+}
+
+.react-map-pin small {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.react-map-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.react-memory-album header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(222, 215, 203, 0.72);
+}
+
+.react-memory-album header div {
+  min-width: 0;
+}
+
+.react-memory-album h2 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-memory-album header > span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(47, 111, 103, 0.1);
+  font-size: 22px;
+}
+
+.react-memory-album label {
+  display: grid;
+  gap: 7px;
+}
+
+.react-memory-album input,
+.react-memory-album textarea {
+  width: 100%;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 10px;
+  font: inherit;
+}
+
+.react-memory-album textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.react-upload-button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(47, 111, 103, 0.28);
+  padding: 12px;
+  border-radius: 8px;
+  color: var(--accent-strong);
+}
+
+.react-upload-button input {
+  display: none;
+}
+
+.react-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.react-photo-grid img,
+.react-image-preview img {
+  width: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.react-photo-grid img {
+  aspect-ratio: 1;
+}
+
+.react-image-preview {
+  min-height: min(640px, calc(100vh - 170px));
+  align-content: start;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  background:
+    linear-gradient(90deg, rgba(47, 111, 103, 0.055) 1px, transparent 1px),
+    linear-gradient(rgba(47, 111, 103, 0.055) 1px, transparent 1px),
+    rgba(251, 250, 247, 0.88);
+  background-size: 32px 32px;
+}
+
+.react-image-preview .react-note-empty {
+  min-height: 520px;
+  grid-column: 1 / -1;
+}
+
+.react-image-preview img {
+  aspect-ratio: 1;
+  align-self: start;
+  box-shadow: 0 14px 32px rgba(36, 29, 24, 0.1);
+}
+
+.react-workflow-nodes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.react-workflow-node {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.react-workflow-handoff {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  color: var(--ink);
+  border: 1px solid rgba(47, 111, 103, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(47, 111, 103, 0.12), transparent 68%),
+    rgba(255, 255, 255, 0.66);
+}
+
+.react-workflow-handoff > span,
+.react-workflow-handoff button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.react-workflow-handoff > span {
+  color: #fff;
+  background: var(--accent);
+}
+
+.react-workflow-handoff button {
+  color: var(--muted);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.react-workflow-handoff div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.react-workflow-handoff strong,
+.react-workflow-handoff small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-workflow-handoff small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.react-workflow-node strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.react-workflow-node span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent);
+}
+
+.react-workflow-node small,
+.react-workflow-history p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.react-workflow-canvas label {
+  display: grid;
+  gap: 8px;
+}
+
+.react-workflow-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.react-workflow-source select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 11px;
+  color: var(--ink);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  outline: none;
+}
+
+.react-workflow-canvas textarea {
+  min-height: 220px;
+  padding: 12px;
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  resize: vertical;
+}
+
+.react-workflow-preview {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--muted);
+  border: 1px solid rgba(47, 111, 103, 0.16);
+  border-radius: 8px;
+  background: rgba(47, 111, 103, 0.06);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.react-workflow-history details {
+  padding: 10px;
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.react-admin-panel {
+  min-height: 720px;
+}
+
+:root[data-color-mode="dark"] .react-note-empty {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(202, 211, 204, 0.18);
+}
+
+.inspiration-panel {
+  --pointer-x: 50%;
+  --pointer-y: 24%;
+  position: relative;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.inspiration-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.inspiration-ambient span {
+  position: absolute;
+  background: var(--spark-tone);
+  border-radius: 999px;
+  opacity: 0;
+  animation: inspirationSpark 920ms ease-out forwards;
+}
+
+.inspiration-panel > *:not(.inspiration-ambient) {
+  position: relative;
+  z-index: 1;
+}
+
+.inspiration-header-actions,
+.inspiration-focus-strip,
+.inspiration-actions,
+.idea-card-actions,
+.idea-reader-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inspiration-header-actions {
+  justify-content: flex-end;
+}
+
+.inspiration-stat {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--accent-strong);
+  background: rgba(47, 111, 103, 0.08);
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inspiration-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(280px, 360px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.inspiration-prompt-panel,
+.inspiration-compose,
+.inspiration-board,
+.idea-reader {
+  min-width: 0;
+  color: var(--ink);
+  background: rgba(251, 250, 247, 0.88);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.inspiration-prompt-panel,
+.inspiration-compose,
+.inspiration-board {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.inspiration-prompt-copy h2,
+.idea-reader h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.inspiration-prompt-copy span,
+.inspiration-lane-head small,
+.inspiration-stage-overview small,
+.inspiration-garden-pulse small,
+.idea-card small,
+.idea-card p,
+.idea-reader > p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.inspiration-garden-pulse {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(47, 111, 99, 0.08), transparent 56%),
+    rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(47, 111, 103, 0.16);
+  border-radius: 8px;
+}
+
+.inspiration-garden-pulse div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inspiration-garden-pulse span,
+.inspiration-stage-overview small {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inspiration-garden-pulse strong {
+  color: var(--accent-strong);
+}
+
+.inspiration-garden-pulse meter {
+  width: 100%;
+  height: 8px;
+}
+
+.inspiration-garden-pulse small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspiration-seed-tray {
+  display: grid;
+  gap: 8px;
+}
+
+.inspiration-seed-tray button,
+.inspiration-filter-tabs button,
+.inspiration-mood-picker button,
+.inspiration-stage-picker button,
+.idea-card-actions button,
+.idea-reader-close {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+}
+
+.inspiration-seed-tray button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  text-align: left;
+}
+
+.inspiration-seed-tray button span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--accent);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.inspiration-seed-tray button.active,
+.inspiration-filter-tabs button.active,
+.inspiration-mood-picker button.active,
+.inspiration-stage-picker button.active,
+.idea-card-actions button.active {
+  border-color: rgba(47, 111, 103, 0.38);
+  background: rgba(47, 111, 103, 0.1);
+}
+
+.inspiration-compose {
+  align-content: start;
+}
+
+.inspiration-compose.pulsing {
+  animation: inspirationPulse 360ms ease;
+}
+
+.inspiration-compose-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inspiration-compose-head strong {
+  display: block;
+  font-size: 18px;
+}
+
+.inspiration-compose-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--accent);
+  border-radius: 8px;
+}
+
+.inspiration-compose label,
+.inspiration-form-row label {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.inspiration-compose label > span,
+.inspiration-form-row label > span,
+.inspiration-energy span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inspiration-compose input,
+.inspiration-compose textarea,
+.inspiration-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+  font: inherit;
+  outline: none;
+}
+
+.inspiration-compose input {
+  height: 40px;
+  padding: 0 11px;
+}
+
+.inspiration-compose textarea {
+  min-height: 150px;
+  padding: 11px;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.inspiration-energy {
+  display: grid;
+  gap: 7px;
+}
+
+.inspiration-energy div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inspiration-energy meter {
+  width: 100%;
+  height: 8px;
+}
+
+.inspiration-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.inspiration-mood-picker,
+.inspiration-stage-picker,
+.inspiration-filter-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inspiration-mood-picker button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+
+.inspiration-stage-picker button,
+.inspiration-filter-tabs button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inspiration-board {
+  align-content: start;
+}
+
+.inspiration-focus-strip {
+  justify-content: space-between;
+}
+
+.inspiration-search {
+  min-width: min(280px, 100%);
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.inspiration-search input {
+  height: 38px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.inspiration-merge-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(47, 111, 103, 0.08);
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 8px;
+}
+
+.inspiration-merge-bar > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.inspiration-stage-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inspiration-stage-overview button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+  padding: 9px;
+  color: var(--ink);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+}
+
+.inspiration-stage-overview button > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--ink);
+  border-radius: 8px;
+}
+
+.inspiration-stage-overview strong,
+.inspiration-stage-overview small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspiration-stage-overview strong {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.inspiration-stage-overview button.active,
+.inspiration-stage-overview button:hover {
+  border-color: rgba(47, 111, 103, 0.38);
+  background: rgba(47, 111, 103, 0.1);
+}
+
+.inspiration-lane {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(222, 215, 203, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.inspiration-lane + .inspiration-lane {
+  margin-top: 10px;
+}
+
+.inspiration-lane.drag-over {
+  border-color: rgba(47, 111, 103, 0.45);
+  background: rgba(47, 111, 103, 0.08);
+}
+
+.inspiration-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.inspiration-lane-head > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: #fffdf8;
+  background: var(--ink);
+  border-radius: 8px;
+}
+
+.inspiration-lane-head strong,
+.inspiration-lane-head small {
+  display: block;
+}
+
+.inspiration-lane-list {
+  display: grid;
+  gap: 8px;
+}
+
+.idea-card {
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.idea-card:hover,
+.idea-card.blooming {
+  transform: translateY(-1px);
+  border-color: rgba(47, 111, 103, 0.34);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.idea-card-main {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.idea-card-main > span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.idea-card h3,
+.idea-card p {
+  margin: 0;
+}
+
+.idea-card h3 {
+  font-size: 16px;
+}
+
+.idea-card mark {
+  color: inherit;
+  background: rgba(212, 187, 118, 0.34);
+  border-radius: 4px;
+}
+
+.idea-card-actions {
+  justify-content: flex-end;
+  padding: 8px 10px 10px;
+  border-top: 1px solid rgba(222, 215, 203, 0.64);
+}
+
+.idea-card-actions button,
+.idea-reader-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+}
+
+.inspiration-lane-empty,
+.inspiration-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--muted);
+  border: 1px dashed rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.inspiration-empty {
+  margin-top: 10px;
+}
+
+.inspiration-notice {
+  margin: 0;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: rgba(47, 111, 103, 0.08);
+  border: 1px solid rgba(47, 111, 103, 0.16);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.inspiration-notice.error {
+  color: #9b1c1c;
+  background: #fff4f4;
+  border-color: #f1c7c7;
+}
+
+.inspiration-notice.info {
+  color: var(--accent-strong);
+}
+
+.inspiration-notice.board-notice {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+}
+
+.idea-reader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 18, 16, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.idea-reader {
+  position: relative;
+  width: min(620px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  overflow: hidden;
+}
+
+.idea-reader-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+
+.idea-reader-mood {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.idea-reader-orbit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+}
+
+.idea-reader-orbit span {
+  position: absolute;
+  inset: 16%;
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 50%;
+}
+
+.idea-reader-orbit span:nth-child(2) {
+  inset: 24%;
+}
+
+.idea-reader-orbit span:nth-child(3) {
+  inset: 32%;
+}
+
+.idea-reader-orbit span:nth-child(4) {
+  inset: 40%;
+}
+
+.idea-reader-orbit span:nth-child(5) {
+  inset: 48%;
+}
+
+:root[data-color-mode="dark"] .inspiration-prompt-panel,
+:root[data-color-mode="dark"] .inspiration-compose,
+:root[data-color-mode="dark"] .inspiration-board,
+:root[data-color-mode="dark"] .idea-reader {
+  background: var(--panel-bg);
+  border-color: var(--line);
+  box-shadow: 0 12px 32px var(--shadow-soft);
+}
+
+:root[data-color-mode="dark"] .inspiration-seed-tray button,
+:root[data-color-mode="dark"] .inspiration-filter-tabs button,
+:root[data-color-mode="dark"] .inspiration-mood-picker button,
+:root[data-color-mode="dark"] .inspiration-stage-picker button,
+:root[data-color-mode="dark"] .inspiration-stage-overview button,
+:root[data-color-mode="dark"] .idea-card,
+:root[data-color-mode="dark"] .idea-card-actions button,
+:root[data-color-mode="dark"] .idea-reader-close,
+:root[data-color-mode="dark"] .inspiration-lane,
+:root[data-color-mode="dark"] .inspiration-garden-pulse,
+:root[data-color-mode="dark"] .inspiration-search,
+:root[data-color-mode="dark"] .inspiration-compose input,
+:root[data-color-mode="dark"] .inspiration-compose textarea {
+  color: var(--ink);
+  background: var(--panel-soft-bg);
+  border-color: var(--line);
+}
+
+:root[data-color-mode="dark"] .idea-card:hover,
+:root[data-color-mode="dark"] .idea-card.blooming,
+:root[data-color-mode="dark"] .inspiration-seed-tray button.active,
+:root[data-color-mode="dark"] .inspiration-filter-tabs button.active,
+:root[data-color-mode="dark"] .inspiration-mood-picker button.active,
+:root[data-color-mode="dark"] .inspiration-stage-picker button.active,
+:root[data-color-mode="dark"] .inspiration-stage-overview button.active,
+:root[data-color-mode="dark"] .inspiration-stage-overview button:hover,
+:root[data-color-mode="dark"] .idea-card-actions button.active {
+  background: rgba(113, 184, 166, 0.13);
+  border-color: rgba(143, 213, 196, 0.32);
 }
 
 .dashboard-panel {
@@ -1388,6 +2925,8 @@ h1 {
 }
 
 .primary-action {
+  position: relative;
+  overflow: hidden;
   height: 42px;
   display: inline-flex;
   align-items: center;
@@ -1407,6 +2946,24 @@ h1 {
 .primary-action:hover,
 .secondary-button:hover {
   transform: translateY(-1px);
+}
+
+.primary-action::after,
+.secondary-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 20%, rgba(255, 255, 255, 0.24), transparent 80%);
+  opacity: 0;
+  transform: translateX(-70%);
+  transition: opacity 160ms ease, transform 320ms ease;
+}
+
+.primary-action:hover::after,
+.secondary-button:hover::after {
+  opacity: 1;
+  transform: translateX(70%);
 }
 
 .hero-system {
@@ -1514,6 +3071,13 @@ h1 {
   animation-delay: 960ms;
 }
 
+.node-inspiration {
+  top: 6%;
+  right: 41%;
+  color: var(--clay);
+  animation-delay: 1120ms;
+}
+
 .node-admin {
   top: 45%;
   right: 30%;
@@ -1573,6 +3137,10 @@ h1 {
 }
 
 .module-card {
+  --card-x: 50%;
+  --card-y: 30%;
+  position: relative;
+  overflow: hidden;
   min-height: 164px;
   display: grid;
   grid-template-rows: auto 1fr;
@@ -1584,6 +3152,35 @@ h1 {
   border-radius: 8px;
   text-align: left;
   animation: moduleCardIn 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background 180ms ease;
+}
+
+.module-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at var(--card-x) var(--card-y), rgba(255, 255, 255, 0.9), transparent 32%),
+    linear-gradient(120deg, transparent, rgba(45, 111, 99, 0.06), transparent);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.module-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 14px 12px 14px;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(45, 111, 99, 0.42), transparent);
+  opacity: 0;
+  transform: scaleX(0.3);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .module-card:nth-child(2) {
@@ -1609,7 +3206,21 @@ h1 {
 .module-card:hover {
   border-color: rgba(47, 111, 103, 0.36);
   box-shadow: 0 14px 30px rgba(36, 29, 24, 0.08);
-  transform: translateY(-1px);
+  transform: translateY(-3px);
+}
+
+.module-card:hover::before,
+.module-card:hover::after {
+  opacity: 1;
+}
+
+.module-card:hover::after {
+  transform: scaleX(1);
+}
+
+.module-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .module-card-icon {
@@ -1620,6 +3231,12 @@ h1 {
   color: #ffffff;
   background: var(--ink);
   border-radius: 8px;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.module-card:hover .module-card-icon {
+  transform: rotate(-3deg) scale(1.06);
+  box-shadow: 0 10px 22px rgba(36, 29, 24, 0.14);
 }
 
 .module-card-icon-ai {
@@ -1679,11 +3296,37 @@ h1 {
 }
 
 .module-view-header {
+  position: relative;
+  overflow: hidden;
   padding: 18px 20px;
   border: 1px solid rgba(222, 215, 203, 0.86);
   border-radius: 8px;
-  background: rgba(251, 250, 247, 0.88);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(247, 249, 245, 0.9)),
+    rgba(251, 250, 247, 0.88);
   box-shadow: 0 12px 32px rgba(36, 29, 24, 0.055);
+}
+
+.module-view-header::after {
+  content: "";
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(47, 111, 103, 0.38), rgba(204, 170, 105, 0.26), transparent);
+  pointer-events: none;
+}
+
+.module-view-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+.module-view-header h1 {
+  font-family: var(--display-font);
+  font-size: 28px;
+  font-weight: 600;
 }
 
 .chat-view-header {
@@ -2544,6 +4187,34 @@ h1 {
   min-height: 132px;
 }
 
+.avatar-upload-card,
+.avatar-upload-inline {
+  width: fit-content;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.avatar-upload-card {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 10px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px dashed rgba(32, 38, 36, 0.2);
+  border-radius: 8px;
+}
+
+.avatar-upload-card input,
+.avatar-upload-inline input {
+  display: none;
+}
+
 .telegram-chat-panel.chat-panel {
   height: 100%;
   min-height: 0;
@@ -2929,26 +4600,6 @@ h1 {
   color: #243349;
 }
 
-.placeholder-panel {
-  min-height: calc(100vh - 120px);
-  padding: 20px;
-}
-
-.placeholder-body {
-  min-height: 420px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 14px;
-  color: #64758c;
-  text-align: center;
-}
-
-.placeholder-body h2 {
-  max-width: 640px;
-  color: #243349;
-}
-
 .landing-page {
   min-height: 100vh;
   display: grid;
@@ -2968,36 +4619,80 @@ h1 {
 }
 
 .landing-hero {
+  --landing-mask-x: -999px;
+  --landing-mask-y: -999px;
+  --landing-mask-rx: 220px;
+  --landing-mask-ry: 220px;
+  --landing-mask-opacity: 0;
   position: relative;
   display: grid;
   place-items: center;
   min-height: 100vh;
   padding: 36px 24px 72px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--paper);
 }
 
+.landing-image-bg,
+.landing-image-veil,
 .landing-waves {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+
+.landing-image-bg {
+  z-index: 0;
+  background: #020203 url("./signBackground.png") center center / cover no-repeat;
+  opacity: 0.96;
+  transform: scale(1.015);
+}
+
+.landing-image-veil {
+  z-index: 1;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(255, 255, 255, 0.84), rgba(246, 243, 236, 0.94) 48%, rgba(238, 242, 238, 0.98) 100%),
+    rgba(246, 243, 236, 0.96);
+  opacity: 1;
+  -webkit-mask-image: radial-gradient(
+    ellipse var(--landing-mask-rx) var(--landing-mask-ry) at var(--landing-mask-x) var(--landing-mask-y),
+    transparent 0,
+    transparent 38%,
+    rgba(0, 0, 0, calc(var(--landing-mask-opacity) * 0.28)) 58%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  mask-image: radial-gradient(
+    ellipse var(--landing-mask-rx) var(--landing-mask-ry) at var(--landing-mask-x) var(--landing-mask-y),
+    transparent 0,
+    transparent 38%,
+    rgba(0, 0, 0, calc(var(--landing-mask-opacity) * 0.28)) 58%,
+    rgba(0, 0, 0, 1) 100%
+  );
+}
+
+.landing-waves {
   z-index: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
 }
 
 .landing-hero::before {
   content: "";
   position: absolute;
   inset: 8% 10% 18%;
+  z-index: 2;
   border: 1px solid rgba(32, 38, 36, 0.09);
   border-radius: 8px;
   transform: rotate(-3deg);
   animation: frameDrift 9200ms ease-in-out infinite;
+  pointer-events: none;
 }
 
 .landing-field {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 3;
   pointer-events: none;
 }
 
@@ -3041,7 +4736,7 @@ h1 {
   left: 50%;
   width: min(720px, 78vw);
   aspect-ratio: 1;
-  z-index: 2;
+  z-index: 4;
   opacity: 0.92;
   transform: translate(-50%, -53%);
   pointer-events: none;
@@ -3147,7 +4842,7 @@ h1 {
 
 .landing-copy {
   position: relative;
-  z-index: 3;
+  z-index: 5;
   width: min(760px, 100%);
   display: grid;
   justify-items: center;
@@ -3230,7 +4925,7 @@ h1 {
   min-height: 100vh;
   min-height: 100svh;
   display: grid;
-  place-items: center start;
+  place-items: center;
   padding: clamp(32px, 5vw, 72px) clamp(24px, 4vw, 56px);
   overflow: hidden;
   isolation: isolate;
@@ -3242,20 +4937,21 @@ h1 {
 .auth-glass-shell {
   position: relative;
   z-index: 1;
-  width: min(460px, 100%);
-  justify-self: start;
-  transform: translate(calc(clamp(54px, 6.5vw, 104px) + 70px), -50px);
+  width: min(1080px, 100%);
+  display: grid;
+  grid-template-columns: minmax(260px, 0.92fr) minmax(340px, 460px);
+  align-items: center;
+  gap: clamp(34px, 8vw, 112px);
+  transform: translateY(-8px);
   transition: transform 220ms ease;
 }
 
 .auth-glass-shell.sign-up {
-  transform: translate(calc(clamp(54px, 6.5vw, 104px) + 70px), -30px);
+  transform: translateY(-2px);
 }
 
 .auth-brand {
-  position: fixed;
-  top: clamp(24px, 4vw, 42px);
-  left: clamp(24px, 4vw, 56px);
+  position: relative;
   z-index: 3;
   min-width: 0;
   color: rgba(255, 250, 240, 0.92);
@@ -3264,13 +4960,19 @@ h1 {
 
 .auth-brand-link {
   display: inline-flex;
+  padding: 0;
   color: #fffaf0;
   font-family: var(--display-font);
-  font-size: clamp(36px, 4.2vw, 54px);
+  font-size: clamp(48px, 7vw, 92px);
   font-weight: 600;
   line-height: 0.94;
   letter-spacing: 0;
   text-decoration: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
   transition:
     color 180ms ease,
     transform 180ms ease;
@@ -3283,6 +4985,7 @@ h1 {
 
 .auth-brand p {
   margin: 16px 0 0;
+  max-width: 360px;
   color: rgba(255, 250, 240, 0.76);
   font-size: 16px;
   font-weight: 500;
@@ -3292,6 +4995,7 @@ h1 {
 .auth-card {
   position: relative;
   width: 100%;
+  justify-self: end;
   min-width: 0;
   padding: 22px;
   overflow: hidden;
@@ -4140,6 +5844,8 @@ h1 {
 }
 
 .admin-nav-item {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -4153,12 +5859,32 @@ h1 {
   font-weight: 900;
   text-align: left;
   cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.admin-nav-item::before {
+  content: "";
+  position: absolute;
+  inset: 7px auto 7px 6px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 999px;
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .admin-nav-item:hover,
 .admin-nav-item.active {
   color: var(--ink);
   background: rgba(246, 243, 236, 0.9);
+  transform: translateX(2px);
+}
+
+.admin-nav-item:hover::before,
+.admin-nav-item.active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .admin-console {
@@ -4169,6 +5895,10 @@ h1 {
 
 .admin-console-header {
   margin-bottom: 0;
+}
+
+.admin-refresh-button.refreshing svg {
+  animation: adminRefreshSpin 900ms linear infinite;
 }
 
 .admin-users-card,
@@ -4280,6 +6010,8 @@ h1 {
 }
 
 .admin-user-row {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) 120px 120px 120px;
   gap: 12px;
@@ -4291,6 +6023,7 @@ h1 {
   border: 0;
   border-bottom: 1px solid rgba(222, 215, 203, 0.64);
   text-align: left;
+  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .admin-user-row:last-child {
@@ -4304,6 +6037,21 @@ h1 {
 .admin-user-row:not(.admin-user-head):hover,
 .admin-user-row.active {
   background: rgba(246, 243, 236, 0.88);
+}
+
+.admin-user-row:not(.admin-user-head):hover {
+  transform: translateX(3px);
+  box-shadow: inset 3px 0 0 rgba(45, 111, 99, 0.22);
+}
+
+.admin-user-row.saving::after,
+.admin-module-card.saving::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(45, 111, 99, 0.12), transparent);
+  animation: adminSavingSweep 900ms ease-in-out infinite;
 }
 
 .admin-user-head {
@@ -4424,6 +6172,32 @@ h1 {
   font-size: 13px;
 }
 
+.admin-risk-badge,
+.admin-risk-inline {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: #9b1c1c;
+  background: #fff4f4;
+  border: 1px solid #f1c7c7;
+  border-radius: 999px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.admin-risk-badge {
+  margin-top: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.admin-risk-inline {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  vertical-align: middle;
+}
+
 .admin-field {
   display: grid;
   gap: 8px;
@@ -4460,6 +6234,63 @@ h1 {
 .admin-detail-grid strong {
   color: var(--ink);
   font-size: 13px;
+}
+
+.admin-user-controls {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(222, 215, 203, 0.72);
+}
+
+.admin-user-controls strong,
+.admin-user-controls span {
+  display: block;
+}
+
+.admin-user-controls strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.admin-user-controls span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.admin-user-control-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-user-control-actions .secondary-button {
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-filter-chip {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-filter-chip.active {
+  color: #9b1c1c;
+  background: #fff4f4;
+  border-color: #f1c7c7;
 }
 
 .admin-module-grid {
@@ -4502,10 +6333,19 @@ h1 {
 }
 
 .admin-module-card {
+  position: relative;
+  overflow: hidden;
   min-height: 210px;
   display: grid;
   align-content: space-between;
   gap: 18px;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.admin-module-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(45, 111, 99, 0.28);
+  box-shadow: 0 14px 30px rgba(36, 29, 24, 0.08);
 }
 
 .admin-module-card.disabled {
@@ -4547,6 +6387,8 @@ h1 {
 }
 
 .admin-switch {
+  position: relative;
+  overflow: hidden;
   height: 42px;
   display: flex;
   align-items: center;
@@ -4559,6 +6401,12 @@ h1 {
   border-radius: 8px;
   font-weight: 900;
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.admin-switch:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(45, 111, 99, 0.28);
 }
 
 .admin-switch:disabled {
@@ -4597,6 +6445,15 @@ h1 {
 
 .admin-switch.active i::after {
   transform: translateX(18px);
+}
+
+.admin-switch.saving i::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 1px solid rgba(45, 111, 99, 0.26);
+  border-radius: 999px;
+  animation: switchSavingPulse 900ms ease-in-out infinite;
 }
 
 .api-pet-stage h2,
@@ -6886,12 +8743,60 @@ h1 {
   resize: vertical;
 }
 
+.workflow-contact-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(222, 215, 203, 0.86);
+  border-radius: 8px;
+}
+
+.workflow-contact-picker label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.workflow-contact-picker small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .workflow-field + .workflow-field {
   margin-top: 12px;
 }
 
 .workflow-run-button {
   margin-top: 14px;
+}
+
+.workflow-node-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(47, 111, 103, 0.06);
+  border: 1px solid rgba(47, 111, 103, 0.16);
+  border-radius: 8px;
+}
+
+.workflow-node-palette button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(47, 111, 103, 0.18);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .workflow-step {
@@ -6902,6 +8807,7 @@ h1 {
   border: 1px solid rgba(222, 215, 203, 0.86);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.56);
+  cursor: grab;
 }
 
 .workflow-step.finished {
@@ -6928,6 +8834,30 @@ h1 {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.54);
   border: 1px solid rgba(222, 215, 203, 0.78);
+}
+
+.workflow-step-tools {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: start;
+  gap: 5px;
+}
+
+.workflow-step-tools button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.workflow-step-tools button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .workflow-step strong,
@@ -7633,10 +9563,23 @@ select:focus {
   gap: 10px;
   margin-bottom: 14px;
   align-items: start;
+  animation: messageArrive 260ms ease both;
 }
 
 .message.user {
   margin-left: auto;
+  grid-template-columns: minmax(0, max-content) 34px;
+}
+
+.message.user .avatar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.message.user .message-bubble-stack {
+  grid-column: 1;
+  grid-row: 1;
+  justify-items: end;
 }
 
 .avatar {
@@ -7749,6 +9692,8 @@ select:focus {
 
 .message p,
 .message-markdown {
+  position: relative;
+  overflow: hidden;
   width: fit-content;
   max-width: min(620px, calc(100vw - 168px));
   margin: 0;
@@ -7761,6 +9706,14 @@ select:focus {
   border: 1px solid #e0e7f0;
   border-radius: 8px;
   box-shadow: 0 4px 14px rgba(22, 34, 51, 0.05);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.message:hover p,
+.message:hover .message-markdown {
+  border-color: rgba(45, 111, 99, 0.18);
+  box-shadow: 0 8px 22px rgba(22, 34, 51, 0.08);
+  transform: translateY(-1px);
 }
 
 .message-markdown.markdown-body {
@@ -7789,6 +9742,11 @@ select:focus {
   background: #1f6feb;
   border-color: #1f6feb;
   justify-self: end;
+}
+
+.message.user .message-meta-row {
+  justify-self: end;
+  min-height: 16px;
 }
 
 .message-actions {
@@ -8396,6 +10354,10 @@ select:focus {
     0 10px 26px rgba(32, 38, 36, 0.08);
 }
 
+.composer.just-sent .composer-input {
+  animation: composerSendPulse 420ms ease both;
+}
+
 .composer textarea {
   height: 24px;
   min-height: 24px;
@@ -8409,6 +10371,33 @@ select:focus {
   box-shadow: none;
   line-height: 24px;
   resize: none;
+}
+
+.composer-energy {
+  position: absolute;
+  right: 12px;
+  bottom: 5px;
+  left: 12px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(214, 221, 214, 0.54);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.composer.has-draft .composer-energy,
+.composer:focus-within .composer-energy {
+  opacity: 1;
+}
+
+.composer-energy span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--blue), var(--gold));
+  border-radius: inherit;
+  transition: width 160ms ease;
 }
 
 .composer textarea:focus {
@@ -8443,6 +10432,15 @@ select:focus {
   background: var(--ink);
   border: 1px solid rgba(32, 38, 36, 0.9);
   box-shadow: 0 10px 24px rgba(32, 38, 36, 0.14);
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.send-button:hover:not(:disabled) {
+  box-shadow: 0 14px 28px rgba(32, 38, 36, 0.18);
+}
+
+.composer.just-sent .send-button {
+  animation: sendButtonPop 420ms ease both;
 }
 
 .send-button span {
@@ -8946,8 +10944,7 @@ select:focus {
   border-color: rgba(255, 157, 157, 0.26);
 }
 
-:root[data-color-mode="dark"] .module-view-header,
-:root[data-color-mode="dark"] .placeholder-panel {
+:root[data-color-mode="dark"] .module-view-header {
   color: var(--ink);
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.045), transparent 42%),
@@ -8956,13 +10953,11 @@ select:focus {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
 }
 
-:root[data-color-mode="dark"] .module-view-header h1,
-:root[data-color-mode="dark"] .placeholder-body h2 {
+:root[data-color-mode="dark"] .module-view-header h1 {
   color: var(--ink);
 }
 
-:root[data-color-mode="dark"] .module-view-header .eyebrow,
-:root[data-color-mode="dark"] .placeholder-body {
+:root[data-color-mode="dark"] .module-view-header .eyebrow {
   color: #cbd6ce;
 }
 
@@ -9167,6 +11162,93 @@ select:focus {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes messageArrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sendButtonPop {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.12) rotate(-4deg);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes composerSendPulse {
+  0%,
+  100% {
+    filter: none;
+  }
+  35% {
+    filter: drop-shadow(0 0 18px rgba(45, 111, 99, 0.18));
+  }
+}
+
+@keyframes adminSavingSweep {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  20%,
+  80% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes switchSavingPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes adminRefreshSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes inspirationSpark {
+  0% {
+    opacity: 0.9;
+    transform: translate(0, 0) scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--spark-dx), var(--spark-dy)) scale(0.2);
+  }
+}
+
+@keyframes inspirationPulse {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translateY(-1px);
   }
 }
 
@@ -9788,6 +11870,80 @@ select:focus {
     min-height: 0;
   }
 
+  .react-notes-layout,
+  .react-model-grid,
+  .react-chat-shell,
+  .react-map-layout,
+  .react-image-layout,
+  .react-workflow-layout,
+  .inspiration-workspace {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .react-notes-sidebar,
+  .react-profile-list,
+  .react-chat-sidebar,
+  .react-map-search,
+  .react-memory-album,
+  .react-workflow-history {
+    position: static;
+    max-height: none;
+  }
+
+  .react-chat-sidebar {
+    min-height: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .react-notes-sidebar,
+  .react-profile-list,
+  .react-chat-sidebar,
+  .react-map-search,
+  .react-memory-album,
+  .react-workflow-history,
+  .react-workflow-canvas,
+  .react-image-preview {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .react-chat-sidebar p,
+  .react-chat-sidebar span {
+    grid-column: 2;
+  }
+
+  .react-chat-surface {
+    min-height: 560px;
+  }
+
+  .react-map-canvas,
+  .react-image-preview {
+    min-height: 460px;
+  }
+
+  .react-image-panel .react-profile-form {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .react-image-preview {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .react-workflow-nodes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inspiration-header {
+    gap: 14px;
+  }
+
+  .inspiration-header-actions {
+    justify-content: flex-start;
+  }
+
   .hero-system {
     min-height: 330px;
   }
@@ -9803,17 +11959,25 @@ select:focus {
 
   .auth-page {
     align-items: start;
-    padding: 84px 20px 36px;
+    padding: 82px 20px 36px;
     background-position: center center;
   }
 
   .auth-glass-shell {
-    width: min(460px, 100%);
-    transform: translate(calc(clamp(28px, 5vw, 54px) + 70px), -50px);
+    width: min(720px, 100%);
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 24px;
+    transform: none;
   }
 
   .auth-glass-shell.sign-up {
-    transform: translate(calc(clamp(28px, 5vw, 54px) + 70px), -30px);
+    transform: none;
+  }
+
+  .auth-brand,
+  .auth-card {
+    justify-self: stretch;
   }
 
   .auth-card {
@@ -9905,6 +12069,17 @@ select:focus {
     gap: 8px;
   }
 
+  .topbar-brand strong {
+    font-size: 19px;
+  }
+
+  .topbar-brand span:not(.mini-type-dots) {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .workspace,
   .module-page {
     padding: 14px;
@@ -9939,6 +12114,11 @@ select:focus {
 
   .topbar-actions {
     gap: 8px;
+  }
+
+  .topbar-actions > .secondary-button,
+  .topbar-actions > .primary-action {
+    width: auto;
   }
 
   .user-menu-trigger {
@@ -10007,6 +12187,114 @@ select:focus {
     padding: 20px;
   }
 
+  .react-note-toolbar,
+  .react-form-actions,
+  .react-composer,
+  .inspiration-focus-strip,
+  .inspiration-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inspiration-header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inspiration-header-actions .primary-action {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .inspiration-stat {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .react-note-toolbar > *,
+  .react-form-actions > *,
+  .react-composer > *,
+  .react-workflow-source,
+  .react-workflow-source > *,
+  .module-view-header > .primary-action,
+  .react-map-search > .primary-action {
+    width: 100%;
+  }
+
+  .react-workflow-source {
+    grid-template-columns: 1fr;
+  }
+
+  .react-chat-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .react-chat-sidebar p,
+  .react-chat-sidebar span {
+    grid-column: auto;
+  }
+
+  .react-chat-surface {
+    min-height: calc(100vh - 250px);
+  }
+
+  .react-image-preview,
+  .react-map-canvas {
+    min-height: 360px;
+  }
+
+  .module-view-header h1 {
+    font-size: 26px;
+  }
+
+  .react-message {
+    max-width: 100%;
+  }
+
+  .react-note-title {
+    font-size: 24px;
+  }
+
+  .react-note-body {
+    min-height: 300px;
+  }
+
+  .react-workflow-nodes,
+  .react-photo-grid,
+  .inspiration-form-row,
+  .inspiration-stage-picker,
+  .inspiration-stage-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .inspiration-prompt-panel,
+  .inspiration-compose,
+  .inspiration-board {
+    padding: 12px;
+  }
+
+  .inspiration-lane {
+    padding: 9px;
+  }
+
+  .idea-card-actions {
+    justify-content: stretch;
+  }
+
+  .idea-card-actions button {
+    flex: 1 1 34px;
+  }
+
+  .react-map-pin small {
+    display: none;
+  }
+
+  .react-map-pin {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
   .landing-hero {
     min-height: 100vh;
     padding: 18px 16px 72px;
@@ -10033,27 +12321,26 @@ select:focus {
   }
 
   .auth-page {
-    padding: 78px 14px 24px;
+    padding: 28px 14px 24px;
     background-position: center center;
   }
 
   .auth-glass-shell {
-    width: min(420px, calc(100% - 70px));
-    transform: translate(70px, -50px);
+    width: 100%;
+    gap: 18px;
+    transform: none;
   }
 
   .auth-glass-shell.sign-up {
-    transform: translate(70px, -30px);
+    transform: none;
   }
 
   .auth-brand {
     max-width: 300px;
-    top: 18px;
-    left: 18px;
   }
 
   .auth-brand-link {
-    font-size: 42px;
+    font-size: 44px;
   }
 
   .auth-brand p {

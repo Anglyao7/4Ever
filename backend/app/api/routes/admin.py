@@ -8,6 +8,7 @@ from app.api.routes.auth import build_public_avatar_url, resolve_user
 from app.api.routes.modules import MODULE_BLUEPRINTS, ensure_initial_module_settings, module_blueprint, module_enabled_map
 from app.db.models import (
     AdminAuditLogRecord,
+    AdminUserFlagRecord,
     AuthSessionRecord,
     DirectMessageRecord,
     FriendshipRecord,
@@ -15,7 +16,7 @@ from app.db.models import (
     UserRecord,
 )
 from app.db.session import get_db
-from app.schemas.auth import AdminAuditLog, AdminOverview, AdminUser, AdminUserRoleUpdate
+from app.schemas.auth import AdminAuditLog, AdminOverview, AdminUser, AdminUserRiskUpdate, AdminUserRoleUpdate
 from app.schemas.modules import ModuleAdminModule, ModuleUpdateRequest
 
 
@@ -80,6 +81,15 @@ async def list_users(
         .group_by(UserRecord.id)
         .subquery()
     )
+    risk_flags = (
+        select(
+            AdminUserFlagRecord.user_id.label("user_id"),
+            AdminUserFlagRecord.risk_flagged.label("risk_flagged"),
+            AdminUserFlagRecord.note.label("risk_note"),
+        )
+        .where(AdminUserFlagRecord.risk_flagged.is_(True))
+        .subquery()
+    )
     statement = (
         select(
             UserRecord,
@@ -87,11 +97,14 @@ async def list_users(
             func.coalesce(sent_message_counts.c.sent_message_count, 0).label("sent_message_count"),
             func.coalesce(received_message_counts.c.received_message_count, 0).label("received_message_count"),
             func.coalesce(friendship_counts.c.friendship_count, 0).label("friendship_count"),
+            func.coalesce(risk_flags.c.risk_flagged, False).label("risk_flagged"),
+            risk_flags.c.risk_note.label("risk_note"),
         )
         .outerjoin(session_counts, session_counts.c.user_id == UserRecord.id)
         .outerjoin(sent_message_counts, sent_message_counts.c.user_id == UserRecord.id)
         .outerjoin(received_message_counts, received_message_counts.c.user_id == UserRecord.id)
         .outerjoin(friendship_counts, friendship_counts.c.user_id == UserRecord.id)
+        .outerjoin(risk_flags, risk_flags.c.user_id == UserRecord.id)
     )
     query = q.strip().lower()
     if query:
@@ -111,8 +124,10 @@ async def list_users(
             sent_message_count=sent_message_count,
             received_message_count=received_message_count,
             friendship_count=friendship_count,
+            risk_flagged=bool(risk_flagged),
+            risk_note=risk_note,
         )
-        for user, session_count, sent_message_count, received_message_count, friendship_count in rows
+        for user, session_count, sent_message_count, received_message_count, friendship_count, risk_flagged, risk_note in rows
     ]
 
 
@@ -145,7 +160,40 @@ async def update_user_role(
     )
     db.commit()
     db.refresh(user)
-    return to_admin_user(user)
+    return to_admin_user_with_flag(user, db)
+
+
+@router.patch("/users/{user_id}/risk", response_model=AdminUser)
+async def update_user_risk(
+    user_id: str,
+    request: AdminUserRiskUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AdminUser:
+    current_user = require_admin(authorization, db)
+    user = db.get(UserRecord, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    note = request.note.strip() if request.note else None
+    flag = db.get(AdminUserFlagRecord, user_id)
+    if not flag:
+        flag = AdminUserFlagRecord(user_id=user_id)
+    flag.risk_flagged = request.risk_flagged
+    flag.note = note if request.risk_flagged else None
+    flag.updated_by = current_user.id
+    db.add(flag)
+    db.add(
+        AdminAuditLogRecord(
+            actor_id=current_user.id,
+            action="user.risk.update",
+            target_type="user",
+            target_id=user.id,
+            detail=f"{user.username}: {'risk flagged' if request.risk_flagged else 'risk cleared'}{f' · {note}' if note else ''}",
+        ),
+    )
+    db.commit()
+    db.refresh(user)
+    return to_admin_user(user, risk_flagged=flag.risk_flagged, risk_note=flag.note)
 
 
 @router.get("/modules", response_model=list[ModuleAdminModule])
@@ -259,6 +307,8 @@ def to_admin_user(
     sent_message_count: int = 0,
     received_message_count: int = 0,
     friendship_count: int = 0,
+    risk_flagged: bool = False,
+    risk_note: Optional[str] = None,
 ) -> AdminUser:
     return AdminUser(
         id=user.id,
@@ -271,7 +321,18 @@ def to_admin_user(
         session_count=session_count,
         message_count=sent_message_count + received_message_count,
         friend_count=friendship_count,
+        risk_flagged=risk_flagged,
+        risk_note=risk_note,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+def to_admin_user_with_flag(user: UserRecord, db: Session) -> AdminUser:
+    flag = db.get(AdminUserFlagRecord, user.id)
+    return to_admin_user(
+        user,
+        risk_flagged=bool(flag.risk_flagged) if flag else False,
+        risk_note=flag.note if flag and flag.risk_flagged else None,
     )

@@ -1,7 +1,7 @@
-export type WorkflowNodeType = "ai" | "notes" | "image" | "chat";
+export type WorkflowNodeType = "source" | "transform" | "ai" | "notes" | "image" | "chat" | "contact";
 export type WorkflowRunStatus = "running" | "success" | "failed";
 export type WorkflowNodeResultStatus = "success";
-export type WorkflowInputType = "text" | "textarea" | "noteSelect";
+export type WorkflowInputType = "text" | "textarea" | "noteSelect" | "contactMulti";
 
 export interface WorkflowInputField {
   key: string;

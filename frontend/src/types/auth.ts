@@ -34,6 +34,8 @@ export interface AdminUser {
   session_count: number;
   message_count: number;
   friend_count: number;
+  risk_flagged: boolean;
+  risk_note?: string | null;
   last_login_at?: string | null;
   created_at: string;
   updated_at: string;

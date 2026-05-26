@@ -25,7 +25,7 @@ import type {
   SignUpPayload,
 } from "../types/auth";
 import type { ImageGenerationConfig, ImageGenerationResponse } from "../types/images";
-import type { AdminModule, PlatformModule, TencentMapConfig } from "../types/platform";
+import type { AdminModule, PlatformModule, TencentCitySearchResult, TencentMapConfig } from "../types/platform";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -70,6 +70,15 @@ export async function fetchTencentMapConfig(): Promise<TencentMapConfig> {
     throw new Error(await readError(response));
   }
   return response.json();
+}
+
+export async function searchTencentCities(query: string): Promise<TencentCitySearchResult[]> {
+  const response = await fetch(apiUrl(`/api/maps/tencent/city-search?q=${encodeURIComponent(query)}`));
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  const data = await response.json();
+  return data.results ?? [];
 }
 
 export async function fetchHealth(): Promise<boolean> {
@@ -154,6 +163,21 @@ export async function updateAdminUserRole(token: string, userId: string, role: s
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ role }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function updateAdminUserRisk(token: string, userId: string, riskFlagged: boolean, note = ""): Promise<AdminUser> {
+  const response = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(userId)}/risk`), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ risk_flagged: riskFlagged, note }),
   });
   if (!response.ok) {
     throw new Error(await readError(response));

@@ -68,6 +68,8 @@ class AdminUser(BaseModel):
     session_count: int = 0
     message_count: int = 0
     friend_count: int = 0
+    risk_flagged: bool = False
+    risk_note: Optional[str] = None
     last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -75,6 +77,11 @@ class AdminUser(BaseModel):
 
 class AdminUserRoleUpdate(BaseModel):
     role: str = Field(min_length=1, max_length=40)
+
+
+class AdminUserRiskUpdate(BaseModel):
+    risk_flagged: bool
+    note: Optional[str] = Field(default=None, max_length=240)
 
 
 class AdminOverview(BaseModel):
