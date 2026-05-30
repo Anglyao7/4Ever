@@ -144,6 +144,7 @@ def ensure_schema_updates() -> None:
                     "events_json TEXT NOT NULL DEFAULT '[]', "
                     "mcp_server_ids_json TEXT NOT NULL, "
                     "input_json TEXT NOT NULL, "
+                    "canvas_json TEXT NOT NULL DEFAULT '', "
                     "node_results_json TEXT NOT NULL, "
                     "review_status VARCHAR(24) NOT NULL DEFAULT 'not_required', "
                     "review_note TEXT NOT NULL DEFAULT '', "
@@ -171,6 +172,8 @@ def ensure_schema_updates() -> None:
                 connection.execute(text("ALTER TABLE workflow_agent_runs ADD COLUMN graph_steps_json TEXT NOT NULL DEFAULT '[]'"))
             if "events_json" not in workflow_run_columns:
                 connection.execute(text("ALTER TABLE workflow_agent_runs ADD COLUMN events_json TEXT NOT NULL DEFAULT '[]'"))
+            if "canvas_json" not in workflow_run_columns:
+                connection.execute(text("ALTER TABLE workflow_agent_runs ADD COLUMN canvas_json TEXT NOT NULL DEFAULT ''"))
             if "review_status" not in workflow_run_columns:
                 connection.execute(text("ALTER TABLE workflow_agent_runs ADD COLUMN review_status VARCHAR(24) NOT NULL DEFAULT 'not_required'"))
             if "review_note" not in workflow_run_columns:

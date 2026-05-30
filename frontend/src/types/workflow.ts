@@ -1,3 +1,5 @@
+import type { WorkflowCanvas } from "./workflow-canvas";
+
 export type WorkflowNodeType = "source" | "transform" | "ai" | "notes" | "image" | "chat" | "contact" | "mcp" | "agent";
 export type WorkflowRunStatus = "running" | "success" | "failed" | "canceled";
 export type WorkflowNodeResultStatus = "success" | "failed";
@@ -162,6 +164,7 @@ export interface AgentRunCreate {
   mcp_server_ids: string[];
   input: Record<string, string>;
   source: string;
+  canvas?: WorkflowCanvas;
 }
 
 export interface AgentRunReviewUpdate {
@@ -192,6 +195,7 @@ export interface AgentRunResponse {
   status: WorkflowRunStatus;
   graph_steps: string[];
   input: Record<string, string>;
+  canvas?: WorkflowCanvas;
   node_results: AgentRunNodeResult[];
   review_status: string;
   review_note: string;

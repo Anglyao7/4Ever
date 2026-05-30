@@ -83,6 +83,32 @@ def build_agent_graph(template_id: str) -> AgentGraph:
     return AgentGraph(template_id=template_id, nodes=[], edges=[])
 
 
+def build_canvas_agent_graph(template_id: str, canvas: Optional[dict[str, Any]]) -> AgentGraph:
+    if not is_canvas_payload(canvas):
+        return build_agent_graph(template_id)
+    canvas_nodes = canvas.get("nodes", [])
+    canvas_connections = canvas.get("connections", [])
+    ordered_nodes = ordered_canvas_nodes(canvas_nodes, canvas_connections)
+    nodes: list[AgentGraphNode] = []
+    graph_step_by_canvas_id: dict[str, str] = {}
+    for index, node in enumerate(ordered_nodes):
+        if not isinstance(node, dict):
+            continue
+        canvas_id = str(node.get("id", index))
+        graph_step = f"canvas_{index + 1}_{slug_graph_step(str(node.get('type') or 'node'))}"
+        graph_step_by_canvas_id[canvas_id] = graph_step
+        nodes.append(
+            AgentGraphNode(
+                id=f"canvas-{canvas_id}",
+                type=workflow_type_for_canvas_node(str(node.get("type", "transform"))),
+                title=str(node.get("label") or node.get("type") or f"画布节点 {index + 1}"),
+                graph_step=graph_step,
+            )
+        )
+    edges = canvas_edges(canvas_connections, graph_step_by_canvas_id, [node.graph_step for node in nodes])
+    return AgentGraph(template_id=template_id, nodes=nodes, edges=edges)
+
+
 async def execute_agent_graph(
     graph: AgentGraph,
     state: AgentGraphState,
@@ -101,8 +127,9 @@ async def execute_agent_graph(
                 "status": "running",
             },
         )
+    execution_nodes = graph_execution_nodes(graph)
     resume_after = state.get("resume_after", "")
-    start_index = resume_start_index(graph, resume_after)
+    start_index = resume_start_index_for_nodes(execution_nodes, resume_after)
     if event_handler and resume_after:
         event_handler(
             "run.resumed",
@@ -114,7 +141,7 @@ async def execute_agent_graph(
                 "start_index": start_index,
             },
         )
-    for index, node in enumerate(graph.nodes[start_index:], start=start_index):
+    for index, node in enumerate(execution_nodes[start_index:], start=start_index):
         cancel_check = state.get("cancel_check")
         if callable(cancel_check) and cancel_check():
             state["status"] = "canceled"
@@ -225,21 +252,137 @@ def utc_now() -> str:
 
 def graph_execution_plan(template_id: str) -> list[str]:
     graph = build_agent_graph(template_id)
-    if not graph.edges:
-        return []
-    plan = [graph.edges[0][0]]
-    plan.extend(edge[1] for edge in graph.edges)
-    return plan
+    return graph_plan_from_edges(graph)
+
+
+def canvas_graph_execution_plan(template_id: str, canvas: Optional[dict[str, Any]]) -> list[str]:
+    graph = build_canvas_agent_graph(template_id, canvas)
+    return graph_plan_from_edges(graph)
+
+
+def graph_plan_from_edges(graph: AgentGraph) -> list[str]:
+    plan = [node.graph_step for node in graph_execution_nodes(graph)]
+    return [*plan, "persist"] if plan else []
 
 
 def resume_start_index(graph: AgentGraph, resume_after: str) -> int:
+    return resume_start_index_for_nodes(graph.nodes, resume_after)
+
+
+def resume_start_index_for_nodes(nodes: list[AgentGraphNode], resume_after: str) -> int:
     if not resume_after:
         return 0
-    for index, node in enumerate(graph.nodes):
+    for index, node in enumerate(nodes):
         if node.graph_step == resume_after or node.id == resume_after:
             return index + 1
     return 0
 
 
+def graph_execution_nodes(graph: AgentGraph) -> list[AgentGraphNode]:
+    if not graph.nodes or not graph.edges:
+        return graph.nodes
+    node_by_step = {node.graph_step: node for node in graph.nodes}
+    outgoing: dict[str, list[str]] = {node.graph_step: [] for node in graph.nodes}
+    indegree: dict[str, int] = {node.graph_step: 0 for node in graph.nodes}
+    for source, target in graph.edges:
+        if source not in node_by_step or target not in node_by_step:
+            continue
+        if target in outgoing[source]:
+            continue
+        outgoing[source].append(target)
+        indegree[target] += 1
+    original_order = {node.graph_step: index for index, node in enumerate(graph.nodes)}
+    queue = sorted([step for step, degree in indegree.items() if degree == 0], key=lambda step: original_order[step])
+    ordered_steps: list[str] = []
+    while queue:
+        step = queue.pop(0)
+        ordered_steps.append(step)
+        for target in outgoing[step]:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                queue.append(target)
+                queue.sort(key=lambda item: original_order[item])
+    if len(ordered_steps) != len(graph.nodes):
+        return graph.nodes
+    return [node_by_step[step] for step in ordered_steps]
+
+
 def linear_edges(step_ids: list[str]) -> list[tuple[str, str]]:
     return [(step_ids[index], step_ids[index + 1]) for index in range(len(step_ids) - 1)]
+
+
+def canvas_edges(connections: list[Any], step_by_canvas_id: dict[str, str], ordered_steps: list[str]) -> list[tuple[str, str]]:
+    edges: list[tuple[str, str]] = []
+    for connection in connections:
+        if not isinstance(connection, dict):
+            continue
+        source = step_by_canvas_id.get(str(connection.get("sourceNodeId")))
+        target = step_by_canvas_id.get(str(connection.get("targetNodeId")))
+        if source and target and source != target:
+            edge = (source, target)
+            if edge not in edges:
+                edges.append(edge)
+    if not edges:
+        edges = linear_edges(ordered_steps)
+    if ordered_steps:
+        persist_edge = (ordered_steps[-1], "persist")
+        if persist_edge not in edges:
+            edges.append(persist_edge)
+    return edges
+
+
+def is_canvas_payload(canvas: Optional[dict[str, Any]]) -> bool:
+    return isinstance(canvas, dict) and isinstance(canvas.get("nodes"), list) and len(canvas.get("nodes", [])) > 0
+
+
+def ordered_canvas_nodes(nodes: list[Any], connections: list[Any]) -> list[dict[str, Any]]:
+    valid_nodes = [node for node in nodes if isinstance(node, dict) and node.get("id")]
+    if not valid_nodes:
+        return []
+    valid_connections = [connection for connection in connections if isinstance(connection, dict)]
+    if not valid_connections:
+        return valid_nodes
+    node_by_id = {str(node.get("id")): node for node in valid_nodes}
+    targets = {str(connection.get("targetNodeId")) for connection in valid_connections if connection.get("targetNodeId")}
+    start_nodes = [node for node in valid_nodes if str(node.get("id")) not in targets]
+    ordered: list[dict[str, Any]] = []
+    visited: set[str] = set()
+
+    def walk(node_id: str) -> None:
+        node = node_by_id.get(node_id)
+        if not node or node_id in visited:
+            return
+        visited.add(node_id)
+        ordered.append(node)
+        for connection in valid_connections:
+            if str(connection.get("sourceNodeId")) == node_id:
+                walk(str(connection.get("targetNodeId")))
+
+    for node in start_nodes or valid_nodes[:1]:
+        walk(str(node.get("id")))
+    for node in valid_nodes:
+        walk(str(node.get("id")))
+    return ordered
+
+
+def workflow_type_for_canvas_node(node_type: str) -> str:
+    if node_type in {"trigger", "workflow-trigger"}:
+        return "source"
+    if node_type == "ai-chat":
+        return "ai"
+    if node_type in {"image-gen", "image-studio"}:
+        return "image"
+    if node_type in {"send-message", "chat-thread"}:
+        return "chat"
+    if node_type in {"note-create", "notes-query"}:
+        return "notes"
+    if node_type == "agent-run":
+        return "agent"
+    if node_type in {"http-request", "provider-models", "memory-map", "mcp-tool"}:
+        return "mcp"
+    return "transform"
+
+
+def slug_graph_step(value: str) -> str:
+    normalized = "".join(character if character.isalnum() else "_" for character in value.lower()).strip("_")
+    return normalized or "node"

@@ -155,6 +155,7 @@ class WorkflowAgentRunRecord(Base):
     events_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     mcp_server_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False)
+    canvas_json: Mapped[str] = mapped_column(Text, nullable=False, default="")
     node_results_json: Mapped[str] = mapped_column(Text, nullable=False)
     review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="not_required")
     review_note: Mapped[str] = mapped_column(Text, nullable=False, default="")

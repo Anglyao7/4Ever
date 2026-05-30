@@ -37,6 +37,7 @@ def apply_run_to_record(record: WorkflowAgentRunRecord, run: AgentRunResponse, e
     record.events_json = json.dumps([dump_model(event) for event in (events or synthesize_agent_run_events(run))], ensure_ascii=False)
     record.mcp_server_ids_json = json.dumps(run.mcp_server_ids, ensure_ascii=False)
     record.input_json = json.dumps(run.input, ensure_ascii=False)
+    record.canvas_json = json.dumps(run.canvas, ensure_ascii=False) if run.canvas else ""
     record.node_results_json = json.dumps([dump_model(node) for node in run.node_results], ensure_ascii=False)
     record.review_status = run.review_status
     record.review_note = run.review_note
@@ -62,6 +63,7 @@ def running_agent_run_from_prepared(prepared, agent, policy) -> AgentRunResponse
         status="running",
         graph_steps=[],
         input={**prepared.request.input, "source": prepared.request.source},
+        canvas=prepared.request.canvas,
         node_results=[],
         review_status="pending" if policy and policy.requires_review else "not_required",
         started_at=prepared.started_at,
@@ -350,6 +352,7 @@ def run_from_record(record: WorkflowAgentRunRecord) -> AgentRunResponse:
         status=record.status,
         graph_steps=safe_json_list(getattr(record, "graph_steps_json", "[]") or "[]"),
         input=json.loads(record.input_json),
+        canvas=safe_json_dict(getattr(record, "canvas_json", "") or "") or None,
         node_results=[
             AgentRunNodeResult(**node)
             for node in json.loads(record.node_results_json)

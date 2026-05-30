@@ -20,7 +20,7 @@ from app.schemas.agents import McpServer  # noqa: E402
 from app.schemas.agents import AgentRunCreate  # noqa: E402
 from app.schemas.ai import ChatCompletionResponse, ProviderFormat  # noqa: E402
 from app.services.agents.active_runs import register_active_run, unregister_active_run  # noqa: E402
-from app.services.agents.graph import build_agent_graph  # noqa: E402
+from app.services.agents.graph import AgentGraph, AgentGraphNode, build_agent_graph, build_canvas_agent_graph, graph_execution_nodes  # noqa: E402
 from app.services.agents.langgraph_adapter import compile_langgraph_state_graph, execute_agent_graph_runtime, langgraph_plan, langgraph_runtime_status  # noqa: E402
 from app.services.agents.mcp_client import call_mcp_tool, list_mcp_tools  # noqa: E402
 from app.services.agents.runner import arguments_for_tool, execute_agent_workflow, prepare_agent_run, run_agent_workflow, tool_for_node  # noqa: E402
@@ -798,6 +798,69 @@ class McpClientTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_canvas_payload_builds_runtime_graph_from_connections(self) -> None:
+        canvas = {
+            "id": "canvas-test",
+            "nodes": [
+                {"id": "trigger", "type": "trigger", "label": "手动触发", "config": {}, "inputs": [], "outputs": ["output"]},
+                {"id": "models", "type": "provider-models", "label": "获取模型列表", "config": {"provider": "openai"}, "inputs": ["api_config"], "outputs": ["models"]},
+                {"id": "agent", "type": "agent-run", "label": "秩序 Agent", "config": {"agentId": "workflow-agent"}, "inputs": ["task"], "outputs": ["summary"]},
+            ],
+            "connections": [
+                {"sourceNodeId": "trigger", "sourceHandle": "output", "targetNodeId": "models", "targetHandle": "api_config"},
+                {"sourceNodeId": "models", "sourceHandle": "models", "targetNodeId": "agent", "targetHandle": "task"},
+            ],
+        }
+
+        execution = await execute_agent_workflow(
+            AgentRunCreate(
+                template_id="note-copy",
+                agent_id="workflow-agent",
+                mcp_server_ids=[],
+                input={"note": "从灵感画布进入秩序"},
+                source="inspiration",
+                canvas=canvas,
+            )
+        )
+
+        self.assertEqual(execution.run.status, "success")
+        self.assertEqual(execution.run.canvas, canvas)
+        self.assertEqual([node.node_id for node in execution.run.node_results], ["canvas-trigger", "canvas-models", "canvas-agent"])
+        self.assertEqual([node.graph_step for node in execution.run.node_results], ["canvas_1_trigger", "canvas_2_provider_models", "canvas_3_agent_run"])
+        self.assertIn("Canvas node: 获取模型列表", execution.run.node_results[1].output)
+
+    async def test_canvas_graph_preserves_connection_edges(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "a", "type": "trigger", "label": "开始"},
+                {"id": "b", "type": "token-usage", "label": "Token 统计"},
+                {"id": "c", "type": "memory-map", "label": "地图记忆"},
+            ],
+            "connections": [
+                {"sourceNodeId": "a", "targetNodeId": "b"},
+                {"sourceNodeId": "a", "targetNodeId": "c"},
+            ],
+        }
+
+        graph = build_canvas_agent_graph("note-copy", canvas)
+
+        self.assertIn(("canvas_1_trigger", "canvas_2_token_usage"), graph.edges)
+        self.assertIn(("canvas_1_trigger", "canvas_3_memory_map"), graph.edges)
+        self.assertNotIn(("canvas_2_token_usage", "canvas_3_memory_map"), graph.edges)
+
+    async def test_internal_executor_uses_edge_topology_order(self) -> None:
+        graph = AgentGraph(
+            template_id="custom",
+            nodes=[
+                AgentGraphNode("second", "transform", "第二步", "second"),
+                AgentGraphNode("first", "source", "第一步", "first"),
+                AgentGraphNode("third", "ai", "第三步", "third"),
+            ],
+            edges=[("first", "second"), ("second", "third"), ("third", "persist")],
+        )
+
+        self.assertEqual([node.graph_step for node in graph_execution_nodes(graph)], ["first", "second", "third"])
+
     async def test_ai_node_uses_planned_synthesis_by_default(self) -> None:
         execution = await execute_agent_workflow(
             AgentRunCreate(

@@ -413,6 +413,7 @@ export default function WorkflowPanel() {
         mcp_server_ids: activeMcpServers.map((server) => server.id),
         input: { [active.inputs[0]?.key ?? "input"]: source },
         source: sourceKind,
+        canvas: workflowHandoff?.canvas,
       };
       const streamedEvents = await streamAgentRun(payload, {
         signal: abortController.signal,
@@ -441,7 +442,7 @@ export default function WorkflowPanel() {
         setRunNotice(runningRunIdRef.current ? "已请求取消当前工作流。" : "已停止当前本地等待。后端尚未返回 run id。");
         return;
       }
-      const fallbackRun = localRun(activeView, source, sourceKind, activeAgent?.id ?? "", activeMcpServers, startedAt);
+      const fallbackRun = localRun(activeView, source, sourceKind, activeAgent?.id ?? "", activeMcpServers, startedAt, workflowHandoff?.canvas);
       const runSaved = commitRun(fallbackRun);
       setRunError(runSaved ? formatRunError(error) : `${formatRunError(error)} 但${workflowRunsStorageError}`);
       if (workflowHandoff) {
@@ -802,6 +803,8 @@ function runFromAgentResponse(response: AgentRunResponse): WorkflowRun {
       ...response.input,
       agent: response.agent_id,
       mcp: response.mcp_server_ids.join(","),
+      canvasNodes: response.canvas?.nodes?.length ? String(response.canvas.nodes.length) : "",
+      canvasConnections: response.canvas?.connections?.length ? String(response.canvas.connections.length) : "",
     },
     nodeResults: response.node_results.map((result) => ({
       nodeId: result.node_id,
@@ -1009,6 +1012,7 @@ function WorkflowRunContext({ run, agentCatalog, eventSummary, canResume }: { ru
         <span><Bot size={13} />Agent：{agentName}</span>
         <span><DatabaseZap size={13} />MCP：{mcpNames.length ? mcpNames.join(" / ") : "未使用外部工具"}</span>
         <span><Workflow size={13} />运行：{run.preview ? "本地预演" : shortId(run.id)}</span>
+        {run.input.canvasNodes && <span><Workflow size={13} />画布：{run.input.canvasNodes} 节点 / {run.input.canvasConnections || "0"} 线</span>}
         <span><ShieldCheck size={13} />复核：{reviewStatusLabel(run.reviewStatus)}</span>
         {run.threadId && <span><MessageSquareText size={13} />会话：{shortId(run.threadId)}</span>}
         {run.checkpointId && <span><CheckCircle2 size={13} />检查点：{shortId(run.checkpointId)}</span>}
@@ -1232,6 +1236,7 @@ function localRun(
   agentId: string,
   activeMcpServers: McpServer[],
   startedAt: string,
+  canvas?: WorkflowCanvas,
 ): WorkflowRun {
   return {
     id: `run-${Date.now()}`,
@@ -1243,6 +1248,8 @@ function localRun(
       source: sourceKind,
       agent: agentId,
       mcp: activeMcpServers.map((server) => server.id).join(","),
+      canvasNodes: canvas?.nodes.length ? String(canvas.nodes.length) : "",
+      canvasConnections: canvas?.connections.length ? String(canvas.connections.length) : "",
     },
     nodeResults: active.nodes.map((node, index) => ({
       nodeId: node.id,
@@ -1474,11 +1481,12 @@ function workflowNodeTypeFromCanvas(type: string): WorkflowNodeType {
   if (type === "trigger" || type === "workflow-trigger") return "source";
   if (type === "ai-chat") return "ai";
   if (type === "image-gen") return "image";
-  if (type === "send-message") return "chat";
-  if (type === "note-create") return "notes";
+  if (type === "send-message" || type === "chat-thread") return "chat";
+  if (type === "note-create" || type === "notes-query") return "notes";
   if (type === "agent-run") return "agent";
-  if (type === "http-request" || type === "provider-models" || type === "memory-map") return "mcp";
-  if (type === "condition" || type === "loop" || type === "delay" || type === "transform" || type === "token-usage") return "transform";
+  if (type === "image-studio") return "image";
+  if (type === "http-request" || type === "provider-models" || type === "memory-map" || type === "mcp-tool") return "mcp";
+  if (type === "condition" || type === "loop" || type === "delay" || type === "transform" || type === "token-usage" || type === "module-catalog" || type === "admin-audit") return "transform";
   return "transform";
 }
 
@@ -1490,7 +1498,7 @@ function canvasNodeDescription(node: WorkflowCanvas["nodes"][number], index: num
 
 function WorkflowCanvasHandoffPreview(props: { canvas: WorkflowCanvas }) {
   const canvas = props.canvas;
-  const path = workflowCanvasPath(canvas);
+  const summary = workflowCanvasSummary(canvas);
   return (
     <div className="workflow-canvas-handoff" aria-label="灵感画布流程预览">
       <div className="workflow-canvas-handoff-head">
@@ -1498,21 +1506,33 @@ function WorkflowCanvasHandoffPreview(props: { canvas: WorkflowCanvas }) {
         <strong>画布流程</strong>
         <small>{canvas.nodes.length} 个节点 · {canvas.connections.length} 条线</small>
       </div>
-      {path.length > 0 ? (
+      {summary.path.length > 0 ? (
         <ol className="workflow-canvas-path">
-          {path.map((item, index) => <li key={`${item}-${index}`}><span>{index + 1}</span><strong>{item}</strong></li>)}
+          {summary.path.map((item, index) => <li key={`${item}-${index}`}><span>{index + 1}</span><strong>{item}</strong></li>)}
         </ol>
       ) : (
         <p className="workflow-canvas-empty">还没有可识别的连接路径，秩序将按输入内容直接拆解。</p>
+      )}
+      {(summary.branchLabels.length > 0 || summary.disconnectedLabels.length > 0) && (
+        <div className="workflow-canvas-warnings" role="status" aria-live="polite">
+          {summary.branchLabels.length > 0 && <span>分支：{summary.branchLabels.join(" / ")}</span>}
+          {summary.disconnectedLabels.length > 0 && <span>未接入：{summary.disconnectedLabels.join(" / ")}</span>}
+        </div>
       )}
     </div>
   );
 }
 
-function workflowCanvasPath(canvas: WorkflowCanvas) {
-  if (!canvas.nodes.length) return [];
+function workflowCanvasSummary(canvas: WorkflowCanvas) {
+  const empty = { path: [] as string[], branchLabels: [] as string[], disconnectedLabels: [] as string[] };
+  if (!canvas.nodes.length) return empty;
   const nodeById = new Map(canvas.nodes.map((node) => [node.id, node]));
-  if (!canvas.connections.length) return canvas.nodes.map((node) => node.label);
+  if (!canvas.connections.length) return { ...empty, disconnectedLabels: canvas.nodes.map((node) => node.label) };
+  const connectedNodeIds = new Set<string>();
+  canvas.connections.forEach((connection) => {
+    connectedNodeIds.add(connection.sourceNodeId);
+    connectedNodeIds.add(connection.targetNodeId);
+  });
   const targets = new Set(canvas.connections.map((connection) => connection.targetNodeId));
   const first = canvas.nodes.find((node) => !targets.has(node.id)) ?? canvas.nodes[0];
   const path = [first.label];
@@ -1527,7 +1547,11 @@ function workflowCanvasPath(canvas: WorkflowCanvas) {
     visited.add(nextNode.id);
     current = nextNode.id;
   }
-  return path;
+  const branchLabels = canvas.nodes
+    .filter((node) => canvas.connections.filter((connection) => connection.sourceNodeId === node.id).length > 1)
+    .map((node) => node.label);
+  const disconnectedLabels = canvas.nodes.filter((node) => !connectedNodeIds.has(node.id)).map((node) => node.label);
+  return { path, branchLabels, disconnectedLabels };
 }
 
 function graphStepForNode(nodeId: string, type: WorkflowNodeType) {
