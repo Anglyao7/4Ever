@@ -145,6 +145,7 @@ export interface ProviderConnectionResponse {
   ok: boolean;
   message: string;
   model_count: number;
+  models?: ProviderModel[];
 }
 
 export interface ProviderModelsResponse {

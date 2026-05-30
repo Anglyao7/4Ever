@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.routes.auth import resolve_user
 from app.db.models import ModuleSettingRecord
 from app.db.session import get_db
 from app.schemas.modules import PlatformModule
@@ -25,23 +26,23 @@ MODULE_BLUEPRINTS = [
     {
         "id": "chat",
         "name": "交耳",
-        "description": "兼容 OpenAI、Anthropic、Gemini 格式的对话模块。",
+        "description": "真实用户好友、私聊和 AI 会话模块。",
         "category": "ai",
         "locked": False,
         "enabled": True,
     },
     {
         "id": "image-generation",
-        "name": "虚实",
-        "description": "文本生图、多模型聚合和生成记录能力。",
+        "name": "绘影",
+        "description": "图像生成实验台，可使用独立图像模型配置。",
         "category": "ai",
         "locked": False,
         "enabled": True,
     },
     {
         "id": "provider-hub",
-        "name": "聚合",
-        "description": "统一管理模型供应商、密钥和默认模型。",
+        "name": "接口中枢",
+        "description": "统一维护全局模型 API 与当前配置。",
         "category": "integration",
         "locked": False,
         "enabled": True,
@@ -65,15 +66,23 @@ MODULE_BLUEPRINTS = [
     {
         "id": "workflow",
         "name": "秩序",
-        "description": "自动化流程、任务节点和触发器。",
+        "description": "面向用户开放 Agent、MCP 和工作流编排。",
         "category": "automation",
+        "locked": False,
+        "enabled": True,
+    },
+    {
+        "id": "token-usage",
+        "name": "Token统计",
+        "description": "统计本机 AI 工具 Token 用量、活跃度和排行榜。",
+        "category": "analytics",
         "locked": False,
         "enabled": True,
     },
     {
         "id": "inspiration",
         "name": "灵感温室",
-        "description": "收集灵感、创意提示和想法生长状态。",
+        "description": "依托大模型发掘新灵感、追问并沉淀下一步。",
         "category": "productivity",
         "locked": False,
         "enabled": True,
@@ -90,11 +99,17 @@ MODULE_BLUEPRINTS = [
 
 
 @router.get("", response_model=list[PlatformModule])
-async def list_modules(db: Session = Depends(get_db)) -> list[PlatformModule]:
+async def list_modules(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> list[PlatformModule]:
     ensure_initial_module_settings(db)
     enabled_map = module_enabled_map(db)
+    is_admin = user_is_admin(authorization, db)
     modules = []
     for blueprint in MODULE_BLUEPRINTS:
+        if blueprint["id"] == "admin" and not is_admin:
+            continue
         enabled = enabled_map.get(blueprint["id"], blueprint["enabled"])
         if not enabled:
             continue
@@ -109,6 +124,16 @@ async def list_modules(db: Session = Depends(get_db)) -> list[PlatformModule]:
             ),
         )
     return modules
+
+
+def user_is_admin(authorization: Optional[str], db: Session) -> bool:
+    if not authorization:
+        return False
+    try:
+        user = resolve_user(authorization, db)
+    except HTTPException:
+        return False
+    return user.role == "admin"
 
 
 def module_blueprint(module_id: str) -> Optional[dict]:

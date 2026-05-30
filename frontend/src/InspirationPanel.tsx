@@ -1,614 +1,437 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Combine, GitFork, Leaf, NotebookPen, Pencil, RefreshCw, Save, Search, Shuffle, Sparkles, Sprout, Star, Trash2, Wand2, Workflow, X } from "lucide-react";
+import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import { ArrowRight, CheckCircle2, Compass, KeyRound, Lightbulb, Loader2, NotebookPen, Send, Sparkles, Wand2, Workflow } from "lucide-react";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+import { sendChat } from "./services/api";
+import type { ChatConfig, ChatMessage, ModelProfile } from "./types/chat";
 import type { NoteDraft } from "./types/notes";
 
-type IdeaStage = "seed" | "growing" | "done";
-type InspirationFilter = "all" | "pinned" | IdeaStage;
+type TutorialStep = {
+  title: string;
+  body: string;
+  action: string;
+  target: "form" | "lens" | "results";
+  bubbleClass: string;
+};
 
-type IdeaCard = {
+type InspirationResult = {
   id: string;
   title: string;
   body: string;
-  mood: string;
-  stage: IdeaStage;
-  pinned?: boolean;
   createdAt: string;
-  updatedAt: string;
 };
 
-type SparkParticle = {
-  id: string;
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  size: number;
-  tone: string;
+type InspirationNotice = {
+  message: string;
+  action?: "notes" | "workflow";
 };
 
-const storageKey = "4ever.inspiration.ideas";
+type SpotlightRect = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  width: number;
+  height: number;
+};
+
+const profilesKey = "4ever.model.profiles";
+const activeProfileKey = "4ever.model.activeProfile";
+const tutorialSeenKey = "4ever.inspiration.tutorialSeen";
 const notesStorageKey = "4ever.notes";
 const activeNoteStorageKey = "4ever.notes.active";
 const workflowHandoffStorageKey = "4ever.workflow.handoff";
-const moods = ["✨", "🌿", "🔥", "🌊", "🧭", "🪐"];
-const stageOrder: IdeaStage[] = ["seed", "growing", "done"];
-const filters: InspirationFilter[] = ["all", "pinned", "seed", "growing", "done"];
-const prompts = [
-  "什么小工具能让今天平静 5%？",
-  "把一段记忆变成一个界面。",
-  "这个系统应该在你开口前察觉什么？",
-  "设计一个像仪式而不是表单的功能。",
+const noteSaveFallback = "转成笔记失败，请检查浏览器存储空间后再试。";
+
+const tutorialSteps: TutorialStep[] = [
+  { title: "从问题开始", body: "这里不是存档框。先把模糊的主题、困惑或目标写进去，让大模型有东西可以拆。", action: "我有方向了", target: "form", bubbleClass: "bubble-form" },
+  { title: "选择发掘角度", body: "同一个主题换一个角度，会得到完全不同的创意分支。先选一个你想打开的方向。", action: "继续", target: "lens", bubbleClass: "bubble-lens" },
+  { title: "把结果变成下一步", body: "生成结果会在这里出现。你可以继续追问，也可以转成笔记或送入秩序继续执行。", action: "开始发掘", target: "results", bubbleClass: "bubble-results" },
 ];
 
-export default function InspirationPanel() {
-  const panelRef = useRef<HTMLElement | null>(null);
-  const searchInput = useRef<HTMLInputElement | null>(null);
-  const [ideas, setIdeas] = useState<IdeaCard[]>(loadIdeas);
-  const [promptIndex, setPromptIndex] = useState(0);
-  const [draft, setDraft] = useState({ title: "", body: "", mood: "✨", stage: "seed" as IdeaStage });
-  const [editingId, setEditingId] = useState("");
-  const [notice, setNotice] = useState("");
-  const [noticeTone, setNoticeTone] = useState<"info" | "error">("info");
-  const [query, setQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<InspirationFilter>("all");
-  const [mergeIds, setMergeIds] = useState<string[]>([]);
-  const [selectedIdea, setSelectedIdea] = useState<IdeaCard | null>(null);
-  const [sparks, setSparks] = useState<SparkParticle[]>([]);
-  const [bloomId, setBloomId] = useState("");
-  const [draftPulse, setDraftPulse] = useState(false);
-  const [dragId, setDragId] = useState("");
-  const [dragOverStage, setDragOverStage] = useState<IdeaStage | "">("");
+const lenses = ["产品机会", "用户情绪", "反常识", "技术组合", "叙事表达", "商业路径"];
 
-  const activePrompt = prompts[promptIndex % prompts.length];
-  const sortedIdeas = useMemo(() => [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [ideas]);
-  const filteredIdeas = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return sortedIdeas.filter((idea) => {
-      const matchesFilter = activeFilter === "all" || (activeFilter === "pinned" && idea.pinned) || idea.stage === activeFilter;
-      const haystack = `${idea.title} ${idea.body} ${idea.mood}`.toLowerCase();
-      return matchesFilter && (!keyword || haystack.includes(keyword));
-    });
-  }, [activeFilter, query, sortedIdeas]);
-  const ideasByStage = useMemo(() => ({
-    seed: filteredIdeas.filter((idea) => idea.stage === "seed"),
-    growing: filteredIdeas.filter((idea) => idea.stage === "growing"),
-    done: filteredIdeas.filter((idea) => idea.stage === "done"),
-  }), [filteredIdeas]);
-  const stageTotals = useMemo(() => ({
-    seed: ideas.filter((idea) => idea.stage === "seed").length,
-    growing: ideas.filter((idea) => idea.stage === "growing").length,
-    done: ideas.filter((idea) => idea.stage === "done").length,
-  }), [ideas]);
-  const newestIdea = sortedIdeas[0];
-  const canSave = Boolean(draft.title.trim() && draft.body.trim());
-  const draftEnergy = Math.min(100, Math.round((draft.title.trim().length * 2 + draft.body.trim().length) / 2));
-  const gardenMomentum = ideas.length ? Math.round(((stageTotals.growing * 0.6 + stageTotals.done) / ideas.length) * 100) : 0;
+export default function InspirationPanel() {
+  const formRef = useRef<HTMLDivElement>(null);
+  const lensRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const tutorialDialogRef = useRef<HTMLElement | null>(null);
+  const [profiles] = useState<ModelProfile[]>(loadProfiles);
+  const [tutorialOpen, setTutorialOpen] = useState(() => readStorageValue(tutorialSeenKey) !== "true");
+  const [tutorialIndex, setTutorialIndex] = useState(0);
+  const [brief, setBrief] = useState("");
+  const [audience, setAudience] = useState("");
+  const [lens, setLens] = useState(lenses[0]);
+  const [results, setResults] = useState<InspirationResult[]>([]);
+  const [followUp, setFollowUp] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState<InspirationNotice | null>(null);
+  const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(null);
+  const activeProfile = useMemo(() => activeUsableProfile(profiles), [profiles]);
+  const currentTutorial = tutorialSteps[tutorialIndex];
+  const tutorialBubbleStyle = useMemo(() => bubbleStyleForSpotlight(spotlightRect), [spotlightRect]);
+  const generateBlockedReason = inspirationBlockedReason({ brief, activeProfile, loading });
 
   useEffect(() => {
-    const onKeydown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
-      if (event.key === "Escape") {
-        if (selectedIdea) {
-          setSelectedIdea(null);
-          event.preventDefault();
-          return;
-        }
-        if (query || mergeIds.length || activeFilter !== "all") {
-          setQuery("");
-          setMergeIds([]);
-          setActiveFilter("all");
-          burstAt(58, 32, 5);
-          event.preventDefault();
-        }
-        return;
-      }
-      if (isTyping) {
-        return;
-      }
-      if (event.key === "/") {
-        searchInput.current?.focus();
-        burstAt(58, 30, 4);
-        event.preventDefault();
-      }
-      if (event.key.toLowerCase() === "n") {
-        createIdea();
-        event.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", onKeydown);
-    return () => window.removeEventListener("keydown", onKeydown);
-  }, [activeFilter, mergeIds.length, query, selectedIdea]);
-
-  function persist(nextIdeas: IdeaCard[]) {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(nextIdeas));
-      setIdeas(nextIdeas);
-      setNotice("");
-      return true;
-    } catch {
-      setNoticeTone("error");
-      setNotice("浏览器本地存储已满，请删除部分灵感后再试。");
-      return false;
-    }
-  }
-
-  function createIdea() {
-    setEditingId("");
-    setDraft({ title: activePrompt, body: "", mood: "✨", stage: "seed" });
-    burstAt(40, 28, 8);
-  }
-
-  function pulseDraft(field: "title" | "body") {
-    setDraftPulse(true);
-    window.setTimeout(() => setDraftPulse(false), 360);
-    burstAt(field === "title" ? 39 : 44, field === "title" ? 46 : 55, field === "title" ? 2 : 3);
-  }
-
-  function saveDraft(event: React.FormEvent) {
-    event.preventDefault();
-    commitDraft();
-  }
-
-  function commitDraft() {
-    if (!canSave) {
+    if (!tutorialOpen) {
+      setSpotlightRect(null);
       return;
     }
-    const now = new Date().toISOString();
-    const savedId = editingId || createId();
-    const nextIdeas = editingId
-      ? ideas.map((idea) => idea.id === editingId ? { ...idea, ...draft, title: draft.title.trim(), body: draft.body.trim(), updatedAt: now } : idea)
-      : [{ id: savedId, title: draft.title.trim(), body: draft.body.trim(), mood: draft.mood, stage: draft.stage, pinned: false, createdAt: now, updatedAt: now }, ...ideas];
-    if (persist(nextIdeas)) {
-      setDraft({ title: "", body: "", mood: "✨", stage: "seed" });
-      setEditingId("");
-      setBloom(savedId);
-      burstAt(56, 54, 12);
-    }
-  }
-
-  function editIdea(idea: IdeaCard) {
-    setEditingId(idea.id);
-    setSelectedIdea(null);
-    setDraft({ title: idea.title, body: idea.body, mood: idea.mood, stage: idea.stage });
-    burstAt(48, 42, 5);
-  }
-
-  function forkIdea(idea: IdeaCard) {
-    setEditingId("");
-    setSelectedIdea(null);
-    setDraft({
-      title: `分叉：${idea.title}`,
-      body: `从「${idea.title}」延伸：\n\n${idea.body}\n\n下一步：`,
-      mood: idea.mood,
-      stage: "seed",
+    const target = {
+      form: formRef.current,
+      lens: lensRef.current,
+      results: resultsRef.current,
+    }[currentTutorial.target];
+    if (!target) return;
+    const updateSpotlight = () => setSpotlightRect(rectWithPadding(target.getBoundingClientRect(), 8));
+    const frame = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      updateSpotlight();
     });
-    setBloom(idea.id);
-    burstAt(45, 58, 12);
-  }
-
-  function createNoteFromIdea(idea: IdeaCard) {
-    const now = new Date().toISOString();
-    const note: NoteDraft = {
-      id: `note-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
-      title: idea.title,
-      content: `${idea.body}\n\n---\n来源：灵感温室 / ${stageLabel(idea.stage)} ${idea.mood}`,
-      updatedAt: now,
-      pinned: Boolean(idea.pinned),
+    const settleTimer = window.setTimeout(updateSpotlight, prefersReducedMotion() ? 0 : 320);
+    window.addEventListener("resize", updateSpotlight);
+    window.addEventListener("scroll", updateSpotlight, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("resize", updateSpotlight);
+      window.removeEventListener("scroll", updateSpotlight, true);
     };
-    const stored = JSON.parse(localStorage.getItem(notesStorageKey) ?? "[]") as NoteDraft[];
-    const notes = Array.isArray(stored) ? stored.filter((item) => item.id) : [];
-    localStorage.setItem(notesStorageKey, JSON.stringify([note, ...notes]));
-    localStorage.setItem(activeNoteStorageKey, note.id);
-    return note;
-  }
+  }, [currentTutorial.target, tutorialOpen]);
 
-  function sendIdeaToNotes(idea: IdeaCard) {
+  useEffect(() => {
+    if (!tutorialOpen) return;
+    const focusFrame = window.requestAnimationFrame(() => tutorialDialogRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") finishTutorial();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [tutorialOpen, tutorialIndex]);
+
+  async function generateInspiration(extraInstruction = "") {
+    if (!activeProfile || !brief.trim() || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice(null);
+    const latestResult = extraInstruction ? results[0] : null;
+    const prompt = [
+      "你是一个帮助用户发掘新灵感的创意合伙人。不要只整理用户已有想法，要主动提出新方向。",
+      `主题或困惑：${brief.trim()}`,
+      audience.trim() ? `目标用户/场景：${audience.trim()}` : "目标用户/场景：用户尚未明确，请帮他补全可能人群。",
+      `发掘角度：${lens}`,
+      latestResult ? `上一轮结果：${latestResult.body.slice(0, 2400)}` : "",
+      extraInstruction ? `继续追问：${extraInstruction}` : "",
+      "输出 4 个新灵感方向。每个方向包含：标题、洞察、可执行原型、一个可继续追问的问题。用 Markdown，保持具体。",
+    ].filter(Boolean).join("\n");
     try {
-      createNoteFromIdea(idea);
-      setNoticeTone("info");
-      setNotice("已送入札记，可在札记模块继续整理。");
-      setBloom(idea.id);
-      burstAt(64, 54, 12);
-    } catch {
-      setNoticeTone("error");
-      setNotice("无法写入札记，请检查浏览器本地存储。");
+      const response = await sendChat(configFromProfile(activeProfile), [{ role: "user", content: prompt } as ChatMessage]);
+      setResults((current) => [{ id: createId(), title: `${lens} · ${brief.trim().slice(0, 24)}`, body: response.content, createdAt: new Date().toISOString() }, ...current]);
+      setFollowUp("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "灵感发掘失败");
+    } finally {
+      setLoading(false);
     }
   }
 
-  function sendIdeaToWorkflow(idea: IdeaCard) {
+  function finishTutorial() {
     try {
-      const note = createNoteFromIdea(idea);
+      localStorage.setItem(tutorialSeenKey, "true");
+    } catch {
+      // 关闭教程应优先响应用户操作，存储失败只影响下次是否再次显示。
+    }
+    setTutorialOpen(false);
+  }
+
+  function saveAsNote(result: InspirationResult) {
+    const previousNotes = readStorageValue(notesStorageKey);
+    const previousActiveNote = readStorageValue(activeNoteStorageKey);
+    try {
+      const note: NoteDraft = {
+        id: `note-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+        title: result.title,
+        content: `# ${result.title}\n\n${result.body}\n\n---\n来源：灵感温室 / 大模型发掘`,
+        updatedAt: new Date().toISOString(),
+        pinned: false,
+      };
+      const stored = readStoredNotes();
+      localStorage.setItem(notesStorageKey, JSON.stringify([note, ...stored]));
+      localStorage.setItem(activeNoteStorageKey, note.id);
+      setNotice({ message: `已转成笔记：${note.title}`, action: "notes" });
+      setError("");
+    } catch (cause) {
+      restoreStorageValue(notesStorageKey, previousNotes);
+      restoreStorageValue(activeNoteStorageKey, previousActiveNote);
+      setNotice(null);
+      setError(storageActionError(cause, noteSaveFallback));
+    }
+  }
+
+  function navigateTo(route: string) {
+    window.history.pushState({}, "", route);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+
+  function sendToWorkflow(result: InspirationResult) {
+    try {
       localStorage.setItem(workflowHandoffStorageKey, JSON.stringify({
         source: "inspiration",
-        sourceId: idea.id,
-        noteId: note.id,
-        title: idea.title,
-        content: note.content,
-        mood: idea.mood,
-        stage: idea.stage,
+        sourceId: result.id,
+        noteId: "",
+        title: result.title,
+        content: result.body,
+        mood: lens,
+        stage: "seed",
         createdAt: new Date().toISOString(),
       }));
-      setNoticeTone("info");
-      setNotice("已送入秩序，工作流会接住这条灵感。");
-      setBloom(idea.id);
-      burstAt(70, 52, 14);
-      window.setTimeout(() => window.location.assign("/automation"), 180);
-    } catch {
-      setNoticeTone("error");
-      setNotice("无法写入工作流来源，请检查浏览器本地存储。");
+      setNotice({ message: `已送入秩序：${result.title}`, action: "workflow" });
+      setError("");
+    } catch (cause) {
+      setNotice(null);
+      setError(storageActionError(cause, "送入秩序失败，请检查浏览器存储空间后再试。"));
     }
-  }
-
-  function togglePin(idea: IdeaCard) {
-    const nextIdeas = ideas.map((item) => item.id === idea.id ? { ...item, pinned: !item.pinned, updatedAt: new Date().toISOString() } : item);
-    if (persist(nextIdeas)) {
-      const nextIdea = nextIdeas.find((item) => item.id === idea.id);
-      if (nextIdea) {
-        setSelectedIdea((current) => current?.id === idea.id ? nextIdea : current);
-      }
-      setBloom(idea.id);
-      burstAt(78, 42, 8);
-    }
-  }
-
-  function advanceIdea(idea: IdeaCard) {
-    const nextStage: Record<IdeaStage, IdeaStage> = { seed: "growing", growing: "done", done: "seed" };
-    const nextIdeas = ideas.map((item) => item.id === idea.id ? { ...item, stage: nextStage[item.stage], updatedAt: new Date().toISOString() } : item);
-    if (persist(nextIdeas)) {
-      const nextIdea = nextIdeas.find((item) => item.id === idea.id);
-      if (nextIdea) {
-        setSelectedIdea((current) => current?.id === idea.id ? nextIdea : current);
-      }
-      setBloom(idea.id);
-      burstAt(82, 46, 9);
-    }
-  }
-
-  function deleteIdea(ideaId: string) {
-    if (!persist(ideas.filter((idea) => idea.id !== ideaId))) {
-      return;
-    }
-    if (editingId === ideaId) {
-      setEditingId("");
-      setDraft({ title: "", body: "", mood: "✨", stage: "seed" });
-    }
-    setSelectedIdea((current) => current?.id === ideaId ? null : current);
-  }
-
-  function mergeIdeas() {
-    const selected = mergeIds.map((id) => ideas.find((idea) => idea.id === id)).filter(Boolean) as IdeaCard[];
-    if (selected.length < 2) {
-      return;
-    }
-    const now = new Date().toISOString();
-    const nextIdea = {
-      id: createId(),
-      title: `共鸣灵感 · ${selected.map((idea) => idea.mood).join("")}`,
-      body: `这些灵感碰撞出了一个新方向：\n\n${selected.map((idea) => `- ${idea.title}: ${idea.body}`).join("\n")}`,
-      mood: "🧭",
-      stage: "seed" as IdeaStage,
-      pinned: true,
-      createdAt: now,
-      updatedAt: now,
-    };
-    if (persist([nextIdea, ...ideas])) {
-      setMergeIds([]);
-      setSelectedIdea(nextIdea);
-      setBloom(nextIdea.id);
-      burstAt(72, 38, 18);
-    }
-  }
-
-  function dropIdea(stage: IdeaStage) {
-    const targetId = dragId;
-    setDragId("");
-    setDragOverStage("");
-    if (!targetId) {
-      return;
-    }
-    const target = ideas.find((idea) => idea.id === targetId);
-    if (!target || target.stage === stage) {
-      return;
-    }
-    const nextIdeas = ideas.map((idea) => idea.id === targetId ? { ...idea, stage, updatedAt: new Date().toISOString() } : idea);
-    if (persist(nextIdeas)) {
-      setBloom(targetId);
-      burstAt(stage === "seed" ? 70 : stage === "growing" ? 82 : 93, 48, 10);
-    }
-  }
-
-  function wanderIdea() {
-    const pool = filteredIdeas.length ? filteredIdeas : sortedIdeas;
-    const idea = pool[Math.floor(Math.random() * pool.length)];
-    if (idea) {
-      setSelectedIdea(idea);
-      setBloom(idea.id);
-      burstAt(62, 36, 12);
-    }
-  }
-
-  function plantStarterIdeas() {
-    const now = new Date().toISOString();
-    const starterIdeas: IdeaCard[] = [
-      { id: createId(), title: activePrompt, body: "先从触摸、拖拽、组合这些灵感开始。", mood: "✨", stage: "seed", pinned: true, createdAt: now, updatedAt: now },
-      { id: createId(), title: "一个小小的交互仪式", body: "选中两张卡片加入共鸣，再把它们组合成新的方向。", mood: "🌿", stage: "growing", pinned: false, createdAt: now, updatedAt: now },
-    ];
-    if (persist(starterIdeas)) {
-      burstAt(50, 60, 20);
-    }
-  }
-
-  function burstAt(x: number, y: number, amount = 6) {
-    const tones = ["#79c99e", "#7bbbd3", "#f0c766", "#f4a6b5"];
-    const particles = Array.from({ length: amount }, (_, index) => ({
-      id: `spark-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 7)}`,
-      x,
-      y,
-      dx: (Math.random() - 0.5) * 42,
-      dy: -18 - Math.random() * 44,
-      size: 5 + Math.random() * 8,
-      tone: tones[index % tones.length],
-    }));
-    setSparks((current) => [...current, ...particles].slice(-42));
-    window.setTimeout(() => {
-      const ids = new Set(particles.map((particle) => particle.id));
-      setSparks((current) => current.filter((particle) => !ids.has(particle.id)));
-    }, 920);
-  }
-
-  function setBloom(ideaId: string) {
-    setBloomId(ideaId);
-    window.setTimeout(() => setBloomId((current) => (current === ideaId ? "" : current)), 760);
   }
 
   return (
-    <section
-      ref={panelRef}
-      className="inspiration-panel"
-      aria-label="灵感温室"
-      onPointerMove={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        event.currentTarget.style.setProperty("--pointer-x", `${((event.clientX - rect.left) / rect.width) * 100}%`);
-        event.currentTarget.style.setProperty("--pointer-y", `${((event.clientY - rect.top) / rect.height) * 100}%`);
-      }}
-    >
-      <div className="inspiration-ambient" aria-hidden="true">
-        {sparks.map((spark) => (
-          <span key={spark.id} style={{
-            left: `${spark.x}%`,
-            top: `${spark.y}%`,
-            width: `${spark.size}px`,
-            height: `${spark.size}px`,
-            "--spark-dx": `${spark.dx}px`,
-            "--spark-dy": `${spark.dy}px`,
-            "--spark-tone": spark.tone,
-          } as React.CSSProperties} />
-        ))}
-      </div>
+    <section className={`inspiration-panel ai-inspiration-panel ${tutorialOpen ? "inspiration-tutorial-active" : ""}`} aria-label="灵感温室">
       <div className="module-view-header inspiration-header">
         <div>
-          <p className="eyebrow">Inspiration Garden</p>
+          <p className="eyebrow">AI 灵感实验室</p>
           <h1>灵感温室</h1>
+          <span className="module-view-subtitle">依托大模型帮助你发掘新的灵感方向</span>
         </div>
         <div className="inspiration-header-actions">
-          <span className="inspiration-stat"><Sprout size={15} />{ideas.length} 条灵感</span>
-          <span className="inspiration-stat"><Star size={15} />{ideas.filter((idea) => idea.pinned).length} 个收藏</span>
-          <button className="primary-action compact" type="button" onClick={createIdea}><Sparkles size={16} /><span>新灵感</span></button>
+          <button className="secondary-button" type="button" onClick={() => {
+            setTutorialIndex(0);
+            setTutorialOpen(true);
+          }}><Compass size={16} /><span>教程</span></button>
         </div>
       </div>
 
-      <div className="inspiration-workspace">
-        <aside className="inspiration-prompt-panel" onPointerDown={() => burstAt(28, 34, 3)}>
-          <div className="inspiration-prompt-copy">
-            <p className="eyebrow">创意提示</p>
-            <h2>{activePrompt}</h2>
-            <span>给下一条记录一点轻轻的推力。</span>
-          </div>
-          <div className="inspiration-garden-pulse" aria-label="灵感态势">
-            <div>
-              <span>推进度</span>
-              <strong>{gardenMomentum}%</strong>
-            </div>
-            <meter min="0" max="100" value={gardenMomentum} />
-            <small>{newestIdea ? `最近更新：${newestIdea.title}` : "等待第一条灵感进入系统"}</small>
-          </div>
-          <div className="inspiration-seed-tray" aria-label="灵感种子">
-            {prompts.map((prompt, index) => (
-              <button key={prompt} type="button" className={index === promptIndex ? "active" : ""} onClick={() => {
-                setPromptIndex(index);
-                if (!draft.title.trim()) {
-                  setDraft((current) => ({ ...current, title: prompt }));
-                }
-                burstAt(22 + index * 9, 34 + index * 4, 5);
-              }}>
-                <span>{index + 1}</span>{prompt}
-              </button>
-            ))}
-          </div>
-          <button className="secondary-button" type="button" onClick={() => {
-            setPromptIndex((current) => (current + 1) % prompts.length);
-            burstAt(24, 34, 7);
-          }}><RefreshCw size={16} /><span>换一个</span></button>
+      <div className="ai-inspiration-workspace">
+        <aside className="ai-inspiration-guide">
+          <div className="ai-guide-card active"><span><Lightbulb size={17} /></span><strong>输入模糊主题</strong><p>写下困惑、目标、用户场景或一个还没成形的问题。</p></div>
+          <div className="ai-guide-card"><span><Wand2 size={17} /></span><strong>选择发掘角度</strong><p>换角度会得到完全不同的创意分支。</p></div>
+          <div className="ai-guide-card"><span><Workflow size={17} /></span><strong>推进成行动</strong><p>把生成结果送入笔记或秩序继续拆解。</p></div>
         </aside>
 
-        <form className={`inspiration-compose ${draftPulse ? "pulsing" : ""}`} onSubmit={saveDraft}>
-          <div className="inspiration-compose-head">
-            <span className="inspiration-compose-mark"><Leaf size={17} /></span>
-            <div><p className="eyebrow">{editingId ? "编辑中" : "捕捉"}</p><strong>清晨便签</strong></div>
-          </div>
-          <label><span>标题</span><input value={draft.title} placeholder="给这个火花命名" onChange={(event) => {
-            setDraft((current) => ({ ...current, title: event.target.value }));
-            pulseDraft("title");
-          }} /></label>
-          <label><span>记录</span><textarea value={draft.body} placeholder="在它消失前，先记下这个想法的形状..." rows={6} onChange={(event) => {
-            setDraft((current) => ({ ...current, body: event.target.value }));
-            pulseDraft("body");
-          }} /></label>
-          <div className="inspiration-energy" aria-label="灵感浓度">
-            <div><span>灵感浓度</span><strong>{draftEnergy}%</strong></div>
-            <meter min="0" max="100" value={draftEnergy} />
-          </div>
-          <div className="inspiration-form-row">
-            <label><span>情绪</span><div className="inspiration-mood-picker">{moods.map((mood) => <button key={mood} type="button" className={draft.mood === mood ? "active" : ""} onClick={() => setDraft((current) => ({ ...current, mood }))}>{mood}</button>)}</div></label>
-            <label><span>阶段</span><div className="inspiration-stage-picker">{stageOrder.map((stage) => <button key={stage} type="button" className={draft.stage === stage ? "active" : ""} onClick={() => setDraft((current) => ({ ...current, stage }))}>{stageIcon(stage)}<span>{stageLabel(stage)}</span></button>)}</div></label>
-          </div>
-          {notice && <p className={`inspiration-notice ${noticeTone}`}>{notice}</p>}
-          <div className="inspiration-actions">
-            <button className="secondary-button" type="button" onClick={() => {
-              setEditingId("");
-              setDraft({ title: "", body: "", mood: "✨", stage: "seed" });
-            }}><X size={16} /><span>清空</span></button>
-            <button className="primary-action compact" type="button" disabled={!canSave} onClick={commitDraft}><Save size={16} /><span>{editingId ? "更新" : "保存"}</span></button>
-          </div>
-        </form>
-
-        <div className="inspiration-board">
-          <div className="inspiration-focus-strip">
-            <label className="inspiration-search"><Search size={15} /><input ref={searchInput} value={query} type="search" placeholder="搜索这座温室" onChange={(event) => setQuery(event.target.value)} /></label>
-            <div className="inspiration-filter-tabs" aria-label="筛选灵感">{filters.map((filter) => <button key={filter} type="button" className={activeFilter === filter ? "active" : ""} onClick={() => {
-              setActiveFilter(filter);
-              burstAt(filter === "pinned" ? 58 : 48, 30, 5);
-            }}>{filterLabel(filter)}</button>)}</div>
-            <button className="secondary-button" type="button" disabled={!ideas.length} onClick={wanderIdea}><Shuffle size={15} /><span>随机漫游</span></button>
-          </div>
-          <div className="inspiration-stage-overview" aria-label="阶段概览">
-            {stageOrder.map((stage) => (
-              <button key={stage} type="button" className={activeFilter === stage ? "active" : ""} onClick={() => {
-                setActiveFilter(stage);
-                burstAt(stage === "seed" ? 42 : stage === "growing" ? 54 : 66, 36, 6);
-              }}>
-                <span>{stageIcon(stage)}</span>
-                <strong>{stageTotals[stage]}</strong>
-                <small>{stageLabel(stage)}</small>
-              </button>
-            ))}
-          </div>
-          {notice && <p className={`inspiration-notice board-notice ${noticeTone}`}>{notice}</p>}
-          {mergeIds.length > 0 && (
-            <div className="inspiration-merge-bar">
-              <div><Sparkles size={16} /><strong>正在共鸣</strong><span>{mergeIds.length} 项</span></div>
-              <button className="secondary-button" type="button" onClick={() => setMergeIds([])}><X size={15} /><span>清除</span></button>
-              <button className="primary-action compact" type="button" disabled={mergeIds.length < 2} onClick={mergeIdeas}><Wand2 size={15} /><span>组合灵感</span></button>
+        <main className="ai-inspiration-console">
+          <div className="ai-inspiration-form">
+            <div ref={formRef} className={`ai-topic-fields ${tutorialOpen && currentTutorial.target === "form" ? "tutorial-spotlight" : ""}`}>
+              <label><span>我想探索</span><textarea value={brief} rows={5} aria-label="我想探索" placeholder="例如：怎样把个人记忆做成一个有情绪的产品？" onChange={(event) => setBrief(event.target.value)} /></label>
+              <label><span>目标用户 / 场景</span><input value={audience} aria-label="目标用户或场景" placeholder="可选，例如：独立创作者、长期记录生活的人" onChange={(event) => setAudience(event.target.value)} /></label>
             </div>
-          )}
-          {stageOrder.map((stage) => (
-            <section key={stage} className={`inspiration-lane lane-${stage} ${dragOverStage === stage ? "drag-over" : ""}`} onDragOver={(event) => {
-              event.preventDefault();
-              setDragOverStage(stage);
-            }} onDragLeave={() => setDragOverStage("")} onDrop={() => dropIdea(stage)}>
-              <header className="inspiration-lane-head"><span>{stageIcon(stage)}</span><div><strong>{stageLabel(stage)}</strong><small>{ideasByStage[stage].length} 项</small></div></header>
-              <div className="inspiration-lane-list">
-                {ideasByStage[stage].map((idea) => (
-                  <article key={idea.id} className={`idea-card stage-${idea.stage} ${idea.pinned ? "pinned" : ""} ${bloomId === idea.id ? "blooming" : ""}`} draggable onDragStart={() => setDragId(idea.id)} onDragEnd={() => {
-                    setDragId("");
-                    setDragOverStage("");
-                  }}>
-                    <button className="idea-card-main" type="button" onClick={() => {
-                      setSelectedIdea(idea);
-                      burstAt(50, 34, 8);
-                    }}>
-                      <span>{idea.mood}</span>
-                      <h3>{highlight(idea.title, query)}</h3>
-                      <p>{highlight(idea.body, query)}</p>
-                      <small>{formatDate(idea.updatedAt)}</small>
-                    </button>
-                    <div className="idea-card-actions">
-                      <button type="button" className={mergeIds.includes(idea.id) ? "active" : ""} title="加入共鸣" onClick={() => setMergeIds((current) => current.includes(idea.id) ? current.filter((id) => id !== idea.id) : [...current, idea.id])}><Combine size={15} /></button>
-                      <button type="button" className={idea.pinned ? "active" : ""} title="收藏灵感" onClick={() => togglePin(idea)}><Star size={15} /></button>
-                      <button type="button" title="编辑灵感" onClick={() => editIdea(idea)}><Pencil size={15} /></button>
-                      <button type="button" title="分叉为新灵感" onClick={() => forkIdea(idea)}><GitFork size={15} /></button>
-                      <button type="button" title="转成札记" onClick={() => sendIdeaToNotes(idea)}><NotebookPen size={15} /></button>
-                      <button type="button" title="送入秩序" onClick={() => sendIdeaToWorkflow(idea)}><Workflow size={15} /></button>
-                      <button type="button" title="推进阶段" onClick={() => advanceIdea(idea)}><ArrowRight size={15} /></button>
-                      <button type="button" title="删除灵感" onClick={() => deleteIdea(idea.id)}><Trash2 size={15} /></button>
-                    </div>
-                  </article>
-                ))}
-                {ideasByStage[stage].length === 0 && <div className="inspiration-lane-empty">{dragId ? "松手，灵感会落到这里" : "等待一颗新火花"}</div>}
+            <div ref={lensRef} className={`ai-lens-grid ${tutorialOpen && currentTutorial.target === "lens" ? "tutorial-spotlight" : ""}`} aria-label="发掘角度">{lenses.map((item) => <button key={item} type="button" className={lens === item ? "active" : ""} aria-pressed={lens === item} onClick={() => setLens(item)}>{item}</button>)}</div>
+            {!activeProfile && <div className="ai-model-empty" role="status" aria-live="polite"><KeyRound size={17} /><div><strong>需要先配置全局模型</strong><small>灵感温室读取接口中枢的当前模型配置，不在这里单独输入 Key。</small></div><button className="secondary-button compact" type="button" onClick={() => navigateTo("/aggregation")}>去接口中枢</button></div>}
+            {error && <p className="inspiration-notice error" role="alert">{error}</p>}
+              {notice && <div className="inspiration-notice info action-notice" role="status" aria-live="polite"><span>{notice.message}</span>{notice.action === "notes" && <button type="button" onClick={() => navigateTo("/notes")}>查看笔记</button>}{notice.action === "workflow" && <button type="button" onClick={() => navigateTo("/automation")}>打开秩序</button>}</div>}
+              <div className="ai-generate-row">
+                <button className="primary-action compact ai-generate-button" type="button" disabled={Boolean(generateBlockedReason)} title={generateBlockedReason || "发掘新灵感"} onClick={() => generateInspiration()}>{loading ? <Loader2 size={16} className="spinning" /> : <Sparkles size={16} />}<span>{loading ? "发掘中" : "发掘新灵感"}</span></button>
+                {generateBlockedReason && <p className={`react-status-line ${loading ? "pending" : ""} ai-generate-status`} role="status" aria-live="polite">{loading && <Loader2 size={14} className="spinning" />}{generateBlockedReason}</p>}
               </div>
-            </section>
-          ))}
-          {!ideas.length && <div className="inspiration-empty"><Sparkles size={30} /><strong>还没有灵感</strong><button className="primary-action compact" type="button" onClick={plantStarterIdeas}><Sparkles size={15} /><span>种下第一批灵感</span></button></div>}
-          {ideas.length > 0 && filteredIdeas.length === 0 && <div className="inspiration-empty inspiration-empty-filtered"><Search size={28} /><strong>没有匹配的灵感</strong></div>}
-        </div>
+            </div>
+
+          <div ref={resultsRef} className={`ai-inspiration-results ${tutorialOpen && currentTutorial.target === "results" ? "tutorial-spotlight" : ""}`} aria-live="polite" aria-relevant="additions text" aria-busy={loading}>
+            {results.map((result) => <article key={result.id} className="ai-result-card">
+              <header><Sparkles size={17} /><strong>{result.title}</strong><small>{new Date(result.createdAt).toLocaleString("zh-CN")}</small></header>
+              <MarkdownResult content={result.body} />
+              <div className="ai-result-actions">
+                <button className="secondary-button" type="button" onClick={() => saveAsNote(result)}><NotebookPen size={15} /><span>转成笔记</span></button>
+                <button className="secondary-button" type="button" onClick={() => sendToWorkflow(result)}><Workflow size={15} /><span>送入秩序</span></button>
+              </div>
+            </article>)}
+            {!results.length && <div className="inspiration-empty" role="status" aria-live="polite"><Sparkles size={30} /><strong>等待一次发掘</strong><p>输入主题后，大模型会主动生成新的方向、原型和追问。</p></div>}
+          </div>
+
+          {!!results.length && <div className="ai-followup-box">
+            <input value={followUp} aria-label="继续追问" placeholder="继续追问，例如：把第 2 个方向做成移动端功能" onChange={(event) => setFollowUp(event.target.value)} />
+            <button className="secondary-button" type="button" disabled={!followUp.trim() || loading} onClick={() => generateInspiration(followUp)}><Send size={15} /><span>继续发掘</span></button>
+          </div>}
+        </main>
       </div>
 
-      {selectedIdea && (
-        <div className="idea-reader-backdrop" onClick={(event) => {
-          if (event.currentTarget === event.target) {
-            setSelectedIdea(null);
-          }
-        }}>
-          <article className="idea-reader">
-            <div className="idea-reader-orbit" aria-hidden="true">{[1, 2, 3, 4, 5].map((index) => <span key={index} />)}</div>
-            <button className="idea-reader-close" type="button" title="关闭" onClick={() => setSelectedIdea(null)}><X size={18} /></button>
-            <div className="idea-reader-mood">{selectedIdea.mood}</div>
-            <p className="eyebrow">{stageLabel(selectedIdea.stage)} · {formatDate(selectedIdea.updatedAt)}</p>
-            <h2>{selectedIdea.title}</h2>
-            <p>{selectedIdea.body}</p>
-            <div className="idea-reader-actions">
-              <button className="secondary-button" type="button" onClick={() => editIdea(selectedIdea)}><Pencil size={15} /><span>编辑灵感</span></button>
-              <button className="secondary-button" type="button" onClick={() => forkIdea(selectedIdea)}><GitFork size={15} /><span>分叉新稿</span></button>
-              <button className="secondary-button" type="button" onClick={() => sendIdeaToNotes(selectedIdea)}><NotebookPen size={15} /><span>转成札记</span></button>
-              <button className="secondary-button" type="button" onClick={() => sendIdeaToWorkflow(selectedIdea)}><Workflow size={15} /><span>送入秩序</span></button>
-              <button className="primary-action compact" type="button" onClick={() => advanceIdea(selectedIdea)}><ArrowRight size={15} /><span>推进阶段</span></button>
-            </div>
-          </article>
-        </div>
-      )}
+      {tutorialOpen && <TutorialBackdrop rect={spotlightRect} />}
+      {tutorialOpen && createPortal(<article ref={tutorialDialogRef} className={`inspiration-tutorial-card spotlight-bubble ${currentTutorial.bubbleClass}`} style={tutorialBubbleStyle} role="dialog" aria-modal="true" aria-labelledby="inspiration-tutorial-title" tabIndex={-1}>
+          <button className="inspiration-tutorial-close" type="button" aria-label="关闭教程" onClick={finishTutorial}>×</button>
+          <div className="tutorial-progress" role="list" aria-label={`教程进度：第 ${tutorialIndex + 1} 步，共 ${tutorialSteps.length} 步`}>{tutorialSteps.map((_, index) => <span key={index} role="listitem" className={index <= tutorialIndex ? "active" : ""} aria-current={index === tutorialIndex ? "step" : undefined} aria-label={`第 ${index + 1} 步${index === tutorialIndex ? "，当前步骤" : index < tutorialIndex ? "，已完成" : ""}`} />)}</div>
+          <span className="tutorial-icon"><Sparkles size={24} /></span>
+          <h2 id="inspiration-tutorial-title">{currentTutorial.title}</h2>
+          <p>{currentTutorial.body}</p>
+          <div className="tutorial-actions">
+            <button className="secondary-button" type="button" onClick={finishTutorial}>跳过</button>
+            <button className="primary-action compact" type="button" onClick={() => tutorialIndex === tutorialSteps.length - 1 ? finishTutorial() : setTutorialIndex((current) => current + 1)}>{tutorialIndex === tutorialSteps.length - 1 ? <CheckCircle2 size={16} /> : <ArrowRight size={16} />}<span>{currentTutorial.action}</span></button>
+          </div>
+        </article>, document.body)}
     </section>
   );
 }
 
-function loadIdeas() {
+function inspirationBlockedReason({ brief, activeProfile, loading }: { brief: string; activeProfile?: ModelProfile; loading: boolean }) {
+  if (loading) return "正在发掘，请等待当前结果返回。";
+  if (!activeProfile) return "需要先在接口中枢配置全局模型。";
+  if (!brief.trim()) return "先输入要探索的主题或困惑。";
+  return "";
+}
+
+function TutorialBackdrop(props: { rect: SpotlightRect | null }) {
+  const rect = props.rect;
+  return (
+    <div className="inspiration-tutorial-backdrop spotlight-backdrop" role="presentation" aria-hidden="true">
+      {rect ? (
+        <>
+          <span className="spotlight-mask" style={{ top: 0, right: 0, left: 0, height: rect.top }} />
+          <span className="spotlight-mask" style={{ top: rect.bottom, right: 0, bottom: 0, left: 0 }} />
+          <span className="spotlight-mask" style={{ top: rect.top, left: 0, width: rect.left, height: rect.height }} />
+          <span className="spotlight-mask" style={{ top: rect.top, right: 0, left: rect.right, height: rect.height }} />
+        </>
+      ) : <span className="spotlight-mask" style={{ inset: 0 }} />}
+    </div>
+  );
+}
+
+function rectWithPadding(rect: DOMRect, padding: number): SpotlightRect {
+  const top = Math.max(8, rect.top - padding);
+  const left = Math.max(8, rect.left - padding);
+  const right = Math.min(window.innerWidth - 8, rect.right + padding);
+  const bottom = Math.min(window.innerHeight - 8, rect.bottom + padding);
+  return { top, right, bottom, left, width: right - left, height: bottom - top };
+}
+
+function bubbleStyleForSpotlight(rect: SpotlightRect | null): CSSProperties | undefined {
+  if (!rect || typeof window === "undefined") return undefined;
+  const margin = 24;
+  const gap = 16;
+  if (window.innerWidth <= 620) {
+    const mobileMargin = 14;
+    const aboveSpace = Math.max(0, rect.top - gap - mobileMargin);
+    const belowSpace = Math.max(0, window.innerHeight - rect.bottom - gap - mobileMargin);
+    const placeBelow = belowSpace >= aboveSpace;
+    const availableSpace = placeBelow ? belowSpace : aboveSpace;
+    const maxHeight = Math.min(420, Math.max(160, availableSpace));
+    const preferredTop = placeBelow ? rect.bottom + gap : rect.top - gap - maxHeight;
+    const top = clamp(preferredTop, mobileMargin, window.innerHeight - mobileMargin - maxHeight);
+    return { top, right: mobileMargin, bottom: "auto", left: mobileMargin, width: "auto", maxHeight, overflowX: "hidden", overflowY: "auto" };
+  }
+  const bubbleWidth = Math.min(480, window.innerWidth - margin * 2);
+  const estimatedHeight = 278;
+  const rightSpace = window.innerWidth - rect.right - gap - margin;
+  const leftSpace = rect.left - gap - margin;
+  let left = rect.right + gap;
+  let top = rect.top;
+
+  if (rightSpace >= bubbleWidth) {
+    left = rect.right + gap;
+    top = clamp(rect.top, margin, window.innerHeight - estimatedHeight - margin);
+  } else if (leftSpace >= bubbleWidth) {
+    left = rect.left - gap - bubbleWidth;
+    top = clamp(rect.top, margin, window.innerHeight - estimatedHeight - margin);
+  } else {
+    left = clamp(rect.left, margin, window.innerWidth - bubbleWidth - margin);
+    const belowTop = rect.bottom + gap;
+    top = belowTop + estimatedHeight + margin <= window.innerHeight ? belowTop : Math.max(margin, rect.top - estimatedHeight - gap);
+  }
+
+  return { top, left, right: "auto", bottom: "auto", width: bubbleWidth };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function loadProfiles(): ModelProfile[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey) ?? "[]") as IdeaCard[];
-    return Array.isArray(parsed)
-      ? parsed.filter((idea) => idea.id && idea.title && idea.body).map((idea) => ({ ...idea, pinned: Boolean(idea.pinned) }))
-      : [];
+    const parsed = JSON.parse(readStorageValue(profilesKey) ?? "[]") as ModelProfile[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
+function readStoredNotes(): NoteDraft[] {
+  try {
+    const parsed = JSON.parse(readStorageValue(notesStorageKey) ?? "[]") as NoteDraft[];
+    return Array.isArray(parsed) ? parsed.filter((item) => item.id) : [];
+  } catch {
+    return [];
+  }
+}
+
+function storageActionError(cause: unknown, fallback: string) {
+  if (cause instanceof DOMException && (cause.name === "QuotaExceededError" || cause.name === "SecurityError")) {
+    return fallback;
+  }
+  return cause instanceof Error && cause.message ? cause.message : fallback;
+}
+
+function restoreStorageValue(key: string, value: string | null) {
+  try {
+    if (value === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, value);
+    }
+  } catch {
+    // Best-effort rollback only; the visible error already tells the user the save failed.
+  }
+}
+
+function readStorageValue(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function activeUsableProfile(profiles: ModelProfile[]) {
+  const activeId = readStorageValue(activeProfileKey) ?? "";
+  const active = profiles.find((profile) => profile.id === activeId);
+  return isUsableProfile(active) ? active : profiles.find(isUsableProfile);
+}
+
+function isUsableProfile(profile: ModelProfile | undefined) {
+  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && profile.apiKey.trim());
+}
+
+function configFromProfile(profile: ModelProfile): ChatConfig {
+  return {
+    provider: profile.provider,
+    baseUrl: profile.baseUrl,
+    apiKey: profile.apiKey,
+    model: profile.model,
+    systemPrompt: profile.systemPrompt ?? "",
+    temperature: Math.max(profile.temperature ?? 0.7, 0.85),
+    maxTokens: profile.maxTokens,
+  };
+}
+
+function MarkdownResult(props: { content: string }) {
+  const html = useMemo(() => renderResultMarkdown(props.content), [props.content]);
+  return <div className="markdown-body ai-result-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function renderResultMarkdown(content: string) {
+  const sanitized = DOMPurify.sanitize(marked.parse(content, { async: false }) as string);
+  const template = document.createElement("template");
+  template.innerHTML = sanitized;
+  template.content.querySelectorAll("a[href]").forEach((anchor) => {
+    anchor.setAttribute("target", "_blank");
+    anchor.setAttribute("rel", "noopener noreferrer");
+  });
+  return template.innerHTML;
+}
+
 function createId() {
   return `idea-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-}
-
-function stageLabel(stage: IdeaStage) {
-  return { seed: "种子", growing: "生长中", done: "已完成" }[stage];
-}
-
-function filterLabel(filter: InspirationFilter) {
-  if (filter === "all") return "全部";
-  if (filter === "pinned") return "收藏";
-  return stageLabel(filter);
-}
-
-function stageIcon(stage: IdeaStage) {
-  const icons = { seed: <Sprout size={14} />, growing: <Leaf size={14} />, done: <CheckCircle2 size={14} /> };
-  return icons[stage];
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
-
-function highlight(value: string, query: string) {
-  const keyword = query.trim();
-  if (!keyword) {
-    return value;
-  }
-  const index = value.toLowerCase().indexOf(keyword.toLowerCase());
-  if (index < 0) {
-    return value;
-  }
-  return (
-    <>
-      {value.slice(0, index)}
-      <mark>{value.slice(index, index + keyword.length)}</mark>
-      {value.slice(index + keyword.length)}
-    </>
-  );
 }
