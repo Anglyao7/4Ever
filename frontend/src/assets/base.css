@@ -2965,6 +2965,86 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.workflow-canvas-handoff {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  color: var(--ink);
+  background: rgba(49, 95, 155, 0.055);
+  border: 1px solid rgba(49, 95, 155, 0.16);
+  border-radius: 8px;
+}
+
+.workflow-canvas-handoff-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-canvas-handoff-head svg {
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+}
+
+.workflow-canvas-handoff-head strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.workflow-canvas-handoff-head small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.workflow-canvas-path {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-canvas-path li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-canvas-path li span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-canvas-path li strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-canvas-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .react-admin-panel {
   min-height: 720px;
 }

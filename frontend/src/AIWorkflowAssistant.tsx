@@ -3,13 +3,13 @@ import { Bot, Send, Sparkles, Wand2, Loader2, CheckCircle2, AlertCircle } from "
 import { sendChat } from "./services/api";
 import { nodeTemplates } from "./lib/node-templates";
 import type { ChatMessage, ModelProfile } from "./types/chat";
-import type { WorkflowNode, NodePosition } from "./types/workflow-canvas";
+import type { NodeConnection, WorkflowNode, NodePosition } from "./types/workflow-canvas";
 
 const profilesKey = "4ever.model.profiles";
 const activeProfileKey = "4ever.model.activeProfile";
 
 type AIAssistantProps = {
-  onGenerateWorkflow: (nodes: WorkflowNode[]) => void;
+  onGenerateWorkflow: (nodes: WorkflowNode[], connections?: NodeConnection[]) => void;
 };
 
 type AssistantMessage = {
@@ -78,6 +78,10 @@ JSON 格式示例：
       }
     }
   ],
+  "connections": [
+    { "from": 0, "output": "output", "to": 1, "input": "input" },
+    { "from": 1, "output": "response", "to": 2, "input": "content" }
+  ],
   "explanation": "这个工作流会先手动触发，然后调用 AI 生成创意标题，最后保存到笔记"
 }
 \`\`\`
@@ -136,7 +140,7 @@ JSON 格式示例：
         try {
           const workflowData = JSON.parse(jsonMatch[1]);
           if (workflowData.nodes && Array.isArray(workflowData.nodes)) {
-            generateWorkflowFromAI(workflowData.nodes);
+            generateWorkflowFromAI(workflowData.nodes, Array.isArray(workflowData.connections) ? workflowData.connections : []);
           }
         } catch (parseError) {
           console.error("Failed to parse workflow JSON:", parseError);
@@ -156,7 +160,7 @@ JSON 格式示例：
     }
   };
 
-  const generateWorkflowFromAI = (aiNodes: any[]) => {
+  const generateWorkflowFromAI = (aiNodes: any[], aiConnections: any[]) => {
     const nodes: WorkflowNode[] = aiNodes.map((aiNode, index) => {
       const template = nodeTemplates.find((t) => t.type === aiNode.type);
       if (!template) {
@@ -181,13 +185,15 @@ JSON 格式示例：
     }).filter((node): node is WorkflowNode => node !== null);
 
     if (nodes.length > 0) {
-      onGenerateWorkflow(nodes);
+      onGenerateWorkflow(nodes, normalizeAIConnections(nodes, aiConnections));
     }
   };
 
   const quickPrompts = [
     "帮我做一个每天早上 9 点自动发送天气预报的工作流",
     "创建一个工作流：用 AI 生成图片描述，然后生成图片，最后发送给我",
+    "读取接口中枢的模型列表，选择一个模型后总结 Token 使用情况",
+    "把地图记忆里的城市线索整理成一份行动计划，再交给秩序 Agent",
     "设计一个工作流：定时获取新闻，用 AI 总结，保存到笔记",
     "做一个循环处理任务列表的工作流",
   ];
@@ -294,6 +300,36 @@ JSON 格式示例：
       )}
     </div>
   );
+}
+
+function normalizeAIConnections(nodes: WorkflowNode[], aiConnections: any[]): NodeConnection[] {
+  const parsed = aiConnections
+    .map((connection, index) => {
+      const sourceIndex = Number(connection?.from);
+      const targetIndex = Number(connection?.to);
+      const source = nodes[sourceIndex];
+      const target = nodes[targetIndex];
+      if (!source || !target || source.id === target.id) return null;
+      return {
+        id: `conn_${Date.now()}_${index}`,
+        sourceNodeId: source.id,
+        sourceHandle: String(connection?.output || source.outputs[0] || "output"),
+        targetNodeId: target.id,
+        targetHandle: String(connection?.input || target.inputs[0] || "input"),
+      } satisfies NodeConnection;
+    })
+    .filter((connection): connection is NodeConnection => Boolean(connection));
+  if (parsed.length) return parsed;
+  return nodes.slice(0, -1).map((node, index) => {
+    const target = nodes[index + 1];
+    return {
+      id: `conn_${Date.now()}_${index}`,
+      sourceNodeId: node.id,
+      sourceHandle: node.outputs[0] || "output",
+      targetNodeId: target.id,
+      targetHandle: target.inputs[0] || "input",
+    };
+  });
 }
 
 function loadProfiles(): ModelProfile[] {

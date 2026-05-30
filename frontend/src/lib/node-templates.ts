@@ -90,6 +90,62 @@ export const nodeTemplates: NodeTemplate[] = [
     outputs: ["response", "status", "error"],
     color: "#65706b",
   },
+  {
+    type: "provider-models",
+    label: "获取模型列表",
+    icon: "🔌",
+    category: "action",
+    description: "读取接口中枢当前 API 支持的模型",
+    defaultConfig: {
+      provider: "openai",
+      baseUrl: "",
+    },
+    inputs: ["api_config"],
+    outputs: ["models", "selected_model"],
+    color: "#2d6f63",
+  },
+  {
+    type: "token-usage",
+    label: "Token 统计",
+    icon: "📈",
+    category: "data",
+    description: "读取 Token 统计概览、趋势或排行数据",
+    defaultConfig: {
+      range: "30d",
+      view: "overview",
+    },
+    inputs: ["range"],
+    outputs: ["overview", "trend", "rankings"],
+    color: "#315f9b",
+  },
+  {
+    type: "memory-map",
+    label: "地图记忆",
+    icon: "🗺️",
+    category: "data",
+    description: "读取或写入城市、地点和记忆线索",
+    defaultConfig: {
+      city: "",
+      query: "",
+    },
+    inputs: ["city", "memory"],
+    outputs: ["places", "memory_card"],
+    color: "#65706b",
+  },
+  {
+    type: "agent-run",
+    label: "秩序 Agent",
+    icon: "🧭",
+    category: "action",
+    description: "把当前内容交给秩序模块的 Agent / MCP 流程",
+    defaultConfig: {
+      agentId: "researcher",
+      mcpServers: [],
+    },
+    inputs: ["task", "context"],
+    outputs: ["run_id", "summary", "status"],
+    color: "#b45b42",
+  },
 
   // 逻辑控制
   {
