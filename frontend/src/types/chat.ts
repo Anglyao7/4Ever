@@ -114,6 +114,7 @@ export interface PixelPetAppearance {
 export interface ModelProfile extends Omit<ChatConfig, "systemPrompt"> {
   id: string;
   name: string;
+  systemPrompt?: string;
   persona: ApiPersona;
   pet: ApiPet;
 }
@@ -144,6 +145,7 @@ export interface ProviderConnectionResponse {
   ok: boolean;
   message: string;
   model_count: number;
+  models?: ProviderModel[];
 }
 
 export interface ProviderModelsResponse {

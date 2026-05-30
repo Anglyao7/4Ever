@@ -151,6 +151,7 @@ class ProviderConnectionResponse(BaseModel):
     ok: bool
     message: str
     model_count: int = 0
+    models: List[ProviderModel] = Field(default_factory=list)
 
 
 class ProviderModelsResponse(BaseModel):

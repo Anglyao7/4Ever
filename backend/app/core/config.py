@@ -28,6 +28,16 @@ class Settings:
     app_port = int(getenv("APP_PORT", "7778"))
     api_prefix = "/api"
     ai_timeout_seconds = float(getenv("AI_TIMEOUT_SECONDS", "120"))
+    mcp_timeout_seconds = float(getenv("MCP_TIMEOUT_SECONDS", "30"))
+    mcp_result_max_chars = int(getenv("MCP_RESULT_MAX_CHARS", "3000"))
+    bigmodel_mcp_live = getenv("BIGMODEL_MCP_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
+    agent_synthesis_provider = getenv("AGENT_SYNTHESIS_PROVIDER", "").strip().lower()
+    agent_synthesis_base_url = getenv("AGENT_SYNTHESIS_BASE_URL", "").strip()
+    agent_synthesis_api_key = getenv("AGENT_SYNTHESIS_API_KEY", "").strip()
+    agent_synthesis_model = getenv("AGENT_SYNTHESIS_MODEL", "").strip()
+    agent_synthesis_live = getenv("AGENT_SYNTHESIS_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
+    agent_graph_runtime = getenv("AGENT_GRAPH_RUNTIME", "auto").strip().lower()
+    agent_langgraph_checkpoint_path = getenv("AGENT_LANGGRAPH_CHECKPOINT_PATH", "").strip()
     database_url = getenv("DATABASE_URL", "sqlite:///./4ever.db")
     media_root = Path(getenv("MEDIA_ROOT", str(base_dir / "media"))).resolve()
     avatar_upload_dirname = getenv("AVATAR_UPLOAD_DIRNAME", "avatars")

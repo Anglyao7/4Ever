@@ -19,3 +19,11 @@ export interface AdminModule {
 export interface TencentMapConfig {
   map_key: string;
 }
+
+export interface TencentCitySearchResult {
+  id: string;
+  name: string;
+  region: string;
+  lat: number;
+  lon: number;
+}

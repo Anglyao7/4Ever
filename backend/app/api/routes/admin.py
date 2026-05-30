@@ -8,15 +8,20 @@ from app.api.routes.auth import build_public_avatar_url, resolve_user
 from app.api.routes.modules import MODULE_BLUEPRINTS, ensure_initial_module_settings, module_blueprint, module_enabled_map
 from app.db.models import (
     AdminAuditLogRecord,
+    AdminUserFlagRecord,
+    AgentPromptSettingRecord,
     AuthSessionRecord,
     DirectMessageRecord,
     FriendshipRecord,
+    McpServerSettingRecord,
     ModuleSettingRecord,
     UserRecord,
 )
 from app.db.session import get_db
-from app.schemas.auth import AdminAuditLog, AdminOverview, AdminUser, AdminUserRoleUpdate
+from app.schemas.agents import AgentBlueprint, AgentPromptAdminUpdate, McpServer, McpServerAdminUpdate
+from app.schemas.auth import AdminAuditLog, AdminOverview, AdminUser, AdminUserRiskUpdate, AdminUserRoleUpdate
 from app.schemas.modules import ModuleAdminModule, ModuleUpdateRequest
+from app.services.agents.catalog import configured_agent_by_id, find_agent, configured_mcp_server_by_id, find_mcp_server, list_configured_agents, list_configured_mcp_servers
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -80,6 +85,15 @@ async def list_users(
         .group_by(UserRecord.id)
         .subquery()
     )
+    risk_flags = (
+        select(
+            AdminUserFlagRecord.user_id.label("user_id"),
+            AdminUserFlagRecord.risk_flagged.label("risk_flagged"),
+            AdminUserFlagRecord.note.label("risk_note"),
+        )
+        .where(AdminUserFlagRecord.risk_flagged.is_(True))
+        .subquery()
+    )
     statement = (
         select(
             UserRecord,
@@ -87,11 +101,14 @@ async def list_users(
             func.coalesce(sent_message_counts.c.sent_message_count, 0).label("sent_message_count"),
             func.coalesce(received_message_counts.c.received_message_count, 0).label("received_message_count"),
             func.coalesce(friendship_counts.c.friendship_count, 0).label("friendship_count"),
+            func.coalesce(risk_flags.c.risk_flagged, False).label("risk_flagged"),
+            risk_flags.c.risk_note.label("risk_note"),
         )
         .outerjoin(session_counts, session_counts.c.user_id == UserRecord.id)
         .outerjoin(sent_message_counts, sent_message_counts.c.user_id == UserRecord.id)
         .outerjoin(received_message_counts, received_message_counts.c.user_id == UserRecord.id)
         .outerjoin(friendship_counts, friendship_counts.c.user_id == UserRecord.id)
+        .outerjoin(risk_flags, risk_flags.c.user_id == UserRecord.id)
     )
     query = q.strip().lower()
     if query:
@@ -111,8 +128,10 @@ async def list_users(
             sent_message_count=sent_message_count,
             received_message_count=received_message_count,
             friendship_count=friendship_count,
+            risk_flagged=bool(risk_flagged),
+            risk_note=risk_note,
         )
-        for user, session_count, sent_message_count, received_message_count, friendship_count in rows
+        for user, session_count, sent_message_count, received_message_count, friendship_count, risk_flagged, risk_note in rows
     ]
 
 
@@ -145,7 +164,40 @@ async def update_user_role(
     )
     db.commit()
     db.refresh(user)
-    return to_admin_user(user)
+    return to_admin_user_with_flag(user, db)
+
+
+@router.patch("/users/{user_id}/risk", response_model=AdminUser)
+async def update_user_risk(
+    user_id: str,
+    request: AdminUserRiskUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AdminUser:
+    current_user = require_admin(authorization, db)
+    user = db.get(UserRecord, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    note = request.note.strip() if request.note else None
+    flag = db.get(AdminUserFlagRecord, user_id)
+    if not flag:
+        flag = AdminUserFlagRecord(user_id=user_id)
+    flag.risk_flagged = request.risk_flagged
+    flag.note = note if request.risk_flagged else None
+    flag.updated_by = current_user.id
+    db.add(flag)
+    db.add(
+        AdminAuditLogRecord(
+            actor_id=current_user.id,
+            action="user.risk.update",
+            target_type="user",
+            target_id=user.id,
+            detail=f"{user.username}: {'risk flagged' if request.risk_flagged else 'risk cleared'}{f' · {note}' if note else ''}",
+        ),
+    )
+    db.commit()
+    db.refresh(user)
+    return to_admin_user(user, risk_flagged=flag.risk_flagged, risk_note=flag.note)
 
 
 @router.get("/modules", response_model=list[ModuleAdminModule])
@@ -209,6 +261,97 @@ async def update_module_status(
     )
 
 
+@router.get("/mcp-servers", response_model=list[McpServer])
+async def list_admin_mcp_servers(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> list[McpServer]:
+    require_admin(authorization, db)
+    return list_configured_mcp_servers(db)
+
+
+@router.patch("/mcp-servers/{server_id}", response_model=McpServer)
+async def update_mcp_server_status(
+    server_id: str,
+    request: McpServerAdminUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> McpServer:
+    current_user = require_admin(authorization, db)
+    server = find_mcp_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP server not found.")
+    record = db.get(McpServerSettingRecord, server_id)
+    if not record:
+        record = McpServerSettingRecord(server_id=server_id, enabled=request.enabled)
+        db.add(record)
+    else:
+        record.enabled = request.enabled
+    db.add(
+        AdminAuditLogRecord(
+            actor_id=current_user.id,
+            action="mcp.status.update",
+            target_type="mcp_server",
+            target_id=server_id,
+            detail=f"{server.name}: {'enabled' if request.enabled else 'disabled'}",
+        ),
+    )
+    db.commit()
+    updated = configured_mcp_server_by_id(server_id, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="MCP server not found.")
+    return updated
+
+
+@router.get("/agents", response_model=list[AgentBlueprint])
+async def list_admin_agents(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> list[AgentBlueprint]:
+    require_admin(authorization, db)
+    return list_configured_agents(db)
+
+
+@router.patch("/agents/{agent_id}", response_model=AgentBlueprint)
+async def update_agent_prompt(
+    agent_id: str,
+    request: AgentPromptAdminUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> AgentBlueprint:
+    current_user = require_admin(authorization, db)
+    agent = find_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    version = request.prompt_version.strip()
+    prompt = request.system_prompt.strip()
+    if not version:
+        raise HTTPException(status_code=422, detail="Prompt version is required.")
+    if len(prompt) < 20:
+        raise HTTPException(status_code=422, detail="System prompt must be at least 20 characters.")
+    record = db.get(AgentPromptSettingRecord, agent_id)
+    if not record:
+        record = AgentPromptSettingRecord(agent_id=agent_id)
+        db.add(record)
+    record.prompt_version = version
+    record.system_prompt = prompt
+    record.updated_by = current_user.id
+    db.add(
+        AdminAuditLogRecord(
+            actor_id=current_user.id,
+            action="agent.prompt.update",
+            target_type="agent",
+            target_id=agent_id,
+            detail=f"{agent.name}: {version}",
+        ),
+    )
+    db.commit()
+    updated = configured_agent_by_id(agent_id, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return updated
+
+
 @router.get("/audit-logs", response_model=list[AdminAuditLog])
 async def list_audit_logs(
     authorization: Optional[str] = Header(default=None),
@@ -259,6 +402,8 @@ def to_admin_user(
     sent_message_count: int = 0,
     received_message_count: int = 0,
     friendship_count: int = 0,
+    risk_flagged: bool = False,
+    risk_note: Optional[str] = None,
 ) -> AdminUser:
     return AdminUser(
         id=user.id,
@@ -271,7 +416,18 @@ def to_admin_user(
         session_count=session_count,
         message_count=sent_message_count + received_message_count,
         friend_count=friendship_count,
+        risk_flagged=risk_flagged,
+        risk_note=risk_note,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+def to_admin_user_with_flag(user: UserRecord, db: Session) -> AdminUser:
+    flag = db.get(AdminUserFlagRecord, user.id)
+    return to_admin_user(
+        user,
+        risk_flagged=bool(flag.risk_flagged) if flag else False,
+        risk_note=flag.note if flag and flag.risk_flagged else None,
     )

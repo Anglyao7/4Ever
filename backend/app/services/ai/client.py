@@ -137,4 +137,5 @@ async def test_provider_connection(request: ProviderConnectionRequest) -> Provid
         ok=True,
         message="连接正常，模型列表可访问。",
         model_count=len(models.models),
+        models=models.models,
     )

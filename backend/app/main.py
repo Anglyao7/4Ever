@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, auth, catalog, chat, health, images, maps, modules
+from app.api.routes import admin, agents, auth, catalog, chat, health, images, maps, modules, token_usage
 from app.core.config import get_settings
 from app.db.session import init_db
 
@@ -27,12 +27,14 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(admin.router, prefix=settings.api_prefix)
+app.include_router(agents.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(catalog.router, prefix=settings.api_prefix)
 app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(images.router, prefix=settings.api_prefix)
 app.include_router(maps.router, prefix=settings.api_prefix)
 app.include_router(modules.router, prefix=settings.api_prefix)
+app.include_router(token_usage.router, prefix=settings.api_prefix)
 app.mount("/api/media", StaticFiles(directory=settings.media_root), name="media")
 
 

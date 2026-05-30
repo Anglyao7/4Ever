@@ -4,20 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "dev": "vite --host 127.0.0.1 --port 7777 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 7777 --strictPort"
   },
   "dependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
     "dompurify": "^3.4.2",
-    "lucide-vue-next": "^0.468.0",
+    "lucide-react": "^1.16.0",
     "marked": "^15.0.12",
-    "vite": "^6.0.5",
-    "vue": "^3.5.13"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "vite": "^6.0.5"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "vue-tsc": "^2.2.0"
+    "typescript": "^5.7.2"
   }
 }

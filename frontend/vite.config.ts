@@ -1,15 +1,23 @@
 import { defineConfig } from "vite";
-import vue from "@vitejs/plugin-vue";
+import react from "@vitejs/plugin-react";
+
+const frontendPort = 7777;
+const backendTarget = "http://127.0.0.1:7778";
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [react()],
   server: {
     host: "127.0.0.1",
-    port: 7777,
+    port: frontendPort,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:7778",
-      "/health": "http://127.0.0.1:7778",
+      "/api": backendTarget,
+      "/health": backendTarget,
     },
+  },
+  preview: {
+    host: "127.0.0.1",
+    port: frontendPort,
+    strictPort: true,
   },
 });

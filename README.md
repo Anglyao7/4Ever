@@ -2,16 +2,16 @@
 
 4Ever is a modular multi-model workspace. It starts with a clean AI workbench and grows toward one place for chat, image generation, provider aggregation, automation, and personal account space.
 
-The current application includes a FastAPI backend, a Vue 3 frontend, authentication, provider management, a Telegram-inspired chat surface, image generation controls, and a `Self` module for profile, diary, and account settings.
+The current application includes a FastAPI backend, a React + Vite frontend, authentication, provider management, chat, image generation, notes, memory map, workflow, inspiration, and admin modules.
 
 ## Features
 
-- Independent module pages for Insight, Chat, Image, Aggregation, Automation, and Self.
+- Independent module pages for Insight, Chat, Image, Provider Hub, Notes, Memory Map, Workflow, Inspiration, and Admin.
 - Auth flow with standalone Sign in / Sign up pages.
 - Provider aggregation with API key visibility, connection testing, and model fetching.
-- Chat interface designed around recent conversations and responsive mobile behavior.
-- Image generation panel with simplified size presets.
-- Personal Self module for profile, diary drafts, password changes, status, and preferences.
+- Chat interface with locally stored API profile selection.
+- Image generation panel with provider, model, size, and prompt controls.
+- Notes, city memories, workflow templates, and inspiration boards stored locally in the browser.
 - FastAPI service with SQLite by default and support for PostgreSQL/MySQL URLs.
 
 ## TODO List
@@ -36,14 +36,14 @@ The current application includes a FastAPI backend, a Vue 3 frontend, authentica
 │   ├── .env.example            # Backend environment example
 │   ├── requirements.txt        # Python dependencies
 │   └── README.md               # Backend-specific notes
-├── frontend/                   # Vue 3 + Vite frontend
+├── frontend/                   # React + Vite frontend
 │   ├── src/
 │   │   ├── assets/             # Global styles and visual assets
-│   │   ├── components/         # Module panels and shared UI components
+│   │   ├── *Panel.tsx          # Module panels
+│   │   ├── App.tsx             # React application shell and routing
 │   │   ├── services/           # API client functions
 │   │   ├── types/              # Frontend TypeScript contracts
-│   │   ├── views/              # Main workspace view
-│   │   └── main.ts             # Vue app bootstrap
+│   │   └── main.ts             # React app bootstrap
 │   ├── .env.example            # Frontend environment example
 │   ├── package.json            # Frontend scripts and dependencies
 │   ├── vite.config.ts          # Vite dev server and proxy config
