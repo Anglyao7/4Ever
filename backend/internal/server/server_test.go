@@ -60,6 +60,11 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 		t.Fatalf("expected one user, got %#v", overview)
 	}
 
+	defaultKey := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{}, token)
+	if defaultKey["key"].(map[string]any)["name"] != "本机 CLI" || defaultKey["raw_key"] == "" {
+		t.Fatalf("default token usage key name should match Python schema: %#v", defaultKey)
+	}
+
 	keyOne := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "MacBook"}, token)
 	keyTwo := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "iMac"}, token)
 	rawOne := keyOne["raw_key"].(string)

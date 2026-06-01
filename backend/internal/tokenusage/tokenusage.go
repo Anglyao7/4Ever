@@ -34,7 +34,7 @@ type APIKeyResponse struct {
 }
 
 type APIKeyCreateRequest struct {
-	Name string `json:"name" binding:"required,min=1,max=120"`
+	Name *string `json:"name" binding:"omitempty,min=1,max=120"`
 }
 
 type APIKeyCreateResponse struct {
@@ -228,7 +228,10 @@ func (h Handler) CreateKey(c *gin.Context) {
 	}
 	rawKey := "4ev_tok_" + randomURLSafe(28)
 	id := randomHex(12)
-	name := strings.TrimSpace(req.Name)
+	name := "本机 CLI"
+	if req.Name != nil {
+		name = strings.TrimSpace(*req.Name)
+	}
 	if name == "" {
 		name = "本机 CLI"
 	}
