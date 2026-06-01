@@ -34,7 +34,7 @@ type APIKeyResponse struct {
 }
 
 type APIKeyCreateRequest struct {
-	Name *string `json:"name" binding:"omitempty,min=1,max=120"`
+	Name optionalString `json:"name"`
 }
 
 type APIKeyCreateResponse struct {
@@ -49,6 +49,28 @@ type APIKeyRevealResponse struct {
 type APIKeyUpdateRequest struct {
 	Name   *string `json:"name" binding:"omitempty,min=1,max=120"`
 	Status *string `json:"status"`
+}
+
+type optionalString struct {
+	Set   bool
+	Valid bool
+	Value string
+}
+
+func (value *optionalString) UnmarshalJSON(data []byte) error {
+	value.Set = true
+	if string(data) == "null" {
+		value.Valid = false
+		value.Value = ""
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	value.Valid = true
+	value.Value = text
+	return nil
 }
 
 type DeviceIn struct {
@@ -226,11 +248,19 @@ func (h Handler) CreateKey(c *gin.Context) {
 	if !httputil.BindJSON(c, &req) {
 		return
 	}
+	if req.Name.Set && !req.Name.Valid {
+		httputil.Error(c, http.StatusUnprocessableEntity, "name must be a string.")
+		return
+	}
+	if req.Name.Set && len([]rune(req.Name.Value)) > 120 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "name must be 120 characters or fewer.")
+		return
+	}
 	rawKey := "4ev_tok_" + randomURLSafe(28)
 	id := randomHex(12)
 	name := "本机 CLI"
-	if req.Name != nil {
-		name = strings.TrimSpace(*req.Name)
+	if req.Name.Set {
+		name = strings.TrimSpace(req.Name.Value)
 	}
 	if name == "" {
 		name = "本机 CLI"

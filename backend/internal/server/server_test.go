@@ -97,6 +97,15 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	if defaultKey["key"].(map[string]any)["name"] != "本机 CLI" || defaultKey["raw_key"] == "" {
 		t.Fatalf("default token usage key name should match Python schema: %#v", defaultKey)
 	}
+	blankNameKey := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "   "}, token)
+	if blankNameKey["key"].(map[string]any)["name"] != "本机 CLI" {
+		t.Fatalf("blank token usage key name should match Python route fallback: %#v", blankNameKey)
+	}
+	nullNameKey := rawPost(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": nil}, token)
+	if nullNameKey.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("null token usage key name should be rejected with 422, got %d", nullNameKey.StatusCode)
+	}
+	_ = nullNameKey.Body.Close()
 
 	keyOne := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "MacBook"}, token)
 	keyTwo := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "iMac"}, token)
