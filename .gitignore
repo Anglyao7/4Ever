@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 node_modules/
+.npm-cache/
 dist/
 .env
 *.log

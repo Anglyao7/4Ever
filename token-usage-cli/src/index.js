@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, dirname, join, sep } from "node:path";
@@ -464,31 +464,7 @@ function parseQwenCode() {
 function parseOpenCode() {
   const dbPath = join(OPENCODE_DIR, "opencode.db");
   if (!existsSync(dbPath)) return { buckets: [], sessions: [] };
-  const script = `
-import json, sqlite3, sys
-db_path = sys.argv[1]
-rows = []
-try:
-    con = sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
-    for message_id, data in con.execute("SELECT id, data FROM message"):
-        try:
-            record = json.loads(data)
-        except Exception:
-            continue
-        if record.get("role") != "assistant" or not isinstance(record.get("tokens"), dict):
-            continue
-        rows.append({"id": str(message_id), "record": record})
-finally:
-    try:
-        con.close()
-    except Exception:
-        pass
-print(json.dumps(rows))
-`;
-  const result = spawnSync("python3", ["-c", script, dbPath], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
-  if (result.status !== 0 || !result.stdout.trim()) return { buckets: [], sessions: [] };
-  let rows = [];
-  try { rows = JSON.parse(result.stdout); } catch { return { buckets: [], sessions: [] }; }
+  const rows = readOpenCodeMessages(dbPath);
 
   const entries = [];
   const sessionEvents = [];
@@ -509,6 +485,127 @@ print(json.dumps(rows))
     entries.push({ sessionId, source: "opencode", model, project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens });
   }
   return { buckets: aggregateBuckets(entries), sessions: extractSessions(sessionEvents, entries) };
+}
+
+function readOpenCodeMessages(dbPath) {
+  const sqliteRows = readOpenCodeMessagesWithSQLite(dbPath);
+  if (sqliteRows.length) return sqliteRows;
+  try {
+    const dbBytes = readFileSync(dbPath);
+    const cells = extractSQLiteTextCells(dbBytes);
+    const rows = [];
+    for (const cell of cells) {
+      const record = parseLikelyJSON(cell);
+      if (!record || record.role !== "assistant" || typeof record.tokens !== "object" || record.tokens === null) continue;
+      rows.push({ id: `${dbPath}:${rows.length}`, record });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+function readOpenCodeMessagesWithSQLite(dbPath) {
+  try {
+    const stdout = execFileSync("sqlite3", ["-json", "-readonly", dbPath, "SELECT id, data FROM message"], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+    const rows = JSON.parse(stdout || "[]");
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((row) => {
+      try {
+        const record = JSON.parse(row.data);
+        if (record?.role !== "assistant" || typeof record.tokens !== "object" || record.tokens === null) return [];
+        return [{ id: String(row.id), record }];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+function extractSQLiteTextCells(bytes) {
+  if (bytes.length < 100 || bytes.toString("utf8", 0, 16) !== "SQLite format 3\u0000") return [];
+  const pageSize = bytes.readUInt16BE(16) || 65536;
+  const cells = [];
+  for (let pageStart = 0; pageStart < bytes.length; pageStart += pageSize) {
+    const pageTypeOffset = pageStart === 0 ? 100 : pageStart;
+    if (pageTypeOffset >= bytes.length || bytes[pageTypeOffset] !== 0x0d) continue;
+    const cellCount = bytes.readUInt16BE(pageTypeOffset + 3);
+    const pointerBase = pageTypeOffset + 8;
+    for (let index = 0; index < cellCount; index += 1) {
+      const pointerOffset = pointerBase + index * 2;
+      if (pointerOffset + 2 > bytes.length) break;
+      const cellOffset = pageStart + bytes.readUInt16BE(pointerOffset);
+      cells.push(...decodeSQLiteTableLeafCell(bytes, cellOffset));
+    }
+  }
+  return cells;
+}
+
+function decodeSQLiteTableLeafCell(bytes, offset) {
+  try {
+    const payloadLength = readSQLiteVarint(bytes, offset);
+    const rowID = readSQLiteVarint(bytes, payloadLength.next);
+    const payloadStart = rowID.next;
+    const payloadEnd = payloadStart + payloadLength.value;
+    if (payloadEnd > bytes.length) return [];
+    const headerLength = readSQLiteVarint(bytes, payloadStart);
+    const serialTypes = [];
+    let cursor = headerLength.next;
+    const headerEnd = payloadStart + headerLength.value;
+    while (cursor < headerEnd) {
+      const serialType = readSQLiteVarint(bytes, cursor);
+      serialTypes.push(serialType.value);
+      cursor = serialType.next;
+    }
+    const values = [];
+    cursor = headerEnd;
+    for (const serialType of serialTypes) {
+      const length = sqliteSerialTypeLength(serialType);
+      if (length < 0 || cursor + length > payloadEnd) return [];
+      if (serialType >= 13 && serialType % 2 === 1) {
+        values.push(bytes.toString("utf8", cursor, cursor + length));
+      }
+      cursor += length;
+    }
+    return values;
+  } catch {
+    return [];
+  }
+}
+
+function readSQLiteVarint(bytes, offset) {
+  let value = 0;
+  for (let index = 0; index < 9; index += 1) {
+    const byte = bytes[offset + index];
+    if (byte === undefined) throw new Error("invalid sqlite varint");
+    if (index === 8) return { value: value * 256 + byte, next: offset + 9 };
+    value = value * 128 + (byte & 0x7f);
+    if ((byte & 0x80) === 0) return { value, next: offset + index + 1 };
+  }
+  throw new Error("invalid sqlite varint");
+}
+
+function sqliteSerialTypeLength(serialType) {
+  if (serialType === 0 || serialType === 8 || serialType === 9) return 0;
+  if (serialType === 1) return 1;
+  if (serialType === 2) return 2;
+  if (serialType === 3) return 3;
+  if (serialType === 4) return 4;
+  if (serialType === 5) return 6;
+  if (serialType === 6 || serialType === 7) return 8;
+  if (serialType >= 12) return Math.floor((serialType - 12) / 2);
+  return -1;
+}
+
+function parseLikelyJSON(text) {
+  if (!text || !text.includes("\"tokens\"") || !text.includes("\"assistant\"")) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function parseOpenClaw() {

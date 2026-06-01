@@ -524,7 +524,7 @@ func (h Handler) renderNode(node graphNode, source string, index int, agent Agen
 	case "agent":
 		return strings.Join([]string{
 			fmt.Sprintf("%s 已加载。模型建议：%s。", agent.Name, agent.ModelHint),
-			fmt.Sprintf("LangGraph plan: %s", strings.Join(graphPlan, " -> ")),
+			fmt.Sprintf("Graph plan: %s", strings.Join(graphPlan, " -> ")),
 			fmt.Sprintf("Graph trace: %s", strings.Join(trace, " -> ")),
 			canvasNote,
 			"密钥由后端环境变量托管。",
@@ -964,15 +964,15 @@ func (h Handler) inspectRunCheckpoint(record models.WorkflowAgentRun) map[string
 	if len(events) > 0 {
 		lastEvent = stringValue(events[len(events)-1]["event"], "")
 	}
-	return map[string]any{"run_id": record.ID, "thread_id": record.ThreadID, "checkpoint_id": record.CheckpointID, "status": record.Status, "resume_after": resumeAfter, "resumable": resumeAfter != "", "graph_steps": run.GraphSteps, "completed_steps": completedSteps, "failed_step": failedStep, "event_count": len(events), "last_event": lastEvent, "steps": steps, "langgraph": langgraphInspection(record.ThreadID, h.Settings)}
+	return map[string]any{"run_id": record.ID, "thread_id": record.ThreadID, "checkpoint_id": record.CheckpointID, "status": record.Status, "resume_after": resumeAfter, "resumable": resumeAfter != "", "graph_steps": run.GraphSteps, "completed_steps": completedSteps, "failed_step": failedStep, "event_count": len(events), "last_event": lastEvent, "steps": steps, "graph_runtime": graphRuntimeInspection(record.ThreadID, h.Settings)}
 }
 
-func langgraphInspection(threadID string, settings config.Settings) map[string]any {
+func graphRuntimeInspection(threadID string, settings config.Settings) map[string]any {
 	requested := settings.AgentGraphRuntime
 	if strings.TrimSpace(requested) == "" {
 		requested = "auto"
 	}
-	return map[string]any{"runtime": "internal", "requested": requested, "available": false, "reason": "Go backend internal runtime", "thread_id": threadID, "checkpoint_count": 0, "write_count": 0, "latest_checkpoint_id": "", "latest_parent_checkpoint_id": "", "latest_step": "", "latest_source": "", "node_checkpoints": map[string]any{}, "inspectable": false}
+	return map[string]any{"runtime": "internal", "requested": requested, "available": true, "reason": "Go backend internal graph runtime", "thread_id": threadID, "checkpoint_count": 0, "write_count": 0, "latest_checkpoint_id": "", "latest_parent_checkpoint_id": "", "latest_step": "", "latest_source": "", "node_checkpoints": map[string]any{}, "inspectable": false}
 }
 
 func writeSSE(c *gin.Context, event string, data map[string]string) {

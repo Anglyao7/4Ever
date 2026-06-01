@@ -3011,7 +3011,7 @@ button:disabled {
 .workflow-canvas-path li {
   min-width: 0;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -3034,6 +3034,13 @@ button:disabled {
   color: var(--ink);
   font-size: 12px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-canvas-path li small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
   white-space: nowrap;
 }
 
@@ -3062,6 +3069,51 @@ button:disabled {
   border-radius: 8px;
   font-size: 11px;
   font-weight: 900;
+}
+
+.workflow-canvas-edge-list {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-canvas-edge-list > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(49, 95, 155, 0.14);
+  border-radius: 8px;
+}
+
+.workflow-canvas-edge-list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-canvas-edge-list small {
+  max-width: 96px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-canvas-edge-list i {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: center;
 }
 
 .react-admin-panel {

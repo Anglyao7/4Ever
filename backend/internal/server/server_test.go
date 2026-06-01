@@ -46,7 +46,7 @@ func testRouter(t *testing.T) *httptest.Server {
 	return httptest.NewServer(server.New(settings, db))
 }
 
-func TestSignUpDisplayNameDefaultMatchesPythonRoute(t *testing.T) {
+func TestSignUpDisplayNameDefaultMatchesLegacyRoute(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -70,7 +70,7 @@ func TestSignUpDisplayNameDefaultMatchesPythonRoute(t *testing.T) {
 	_ = empty.Body.Close()
 }
 
-func TestModulesTreatInvalidAuthAsNonAdminLikePythonRoute(t *testing.T) {
+func TestModulesTreatInvalidAuthAsNonAdminLikeLegacyRoute(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -106,11 +106,11 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 
 	defaultKey := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{}, token)
 	if defaultKey["key"].(map[string]any)["name"] != "本机 CLI" || defaultKey["raw_key"] == "" {
-		t.Fatalf("default token usage key name should match Python schema: %#v", defaultKey)
+		t.Fatalf("default token usage key name should match legacy schema: %#v", defaultKey)
 	}
 	blankNameKey := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "   "}, token)
 	if blankNameKey["key"].(map[string]any)["name"] != "本机 CLI" {
-		t.Fatalf("blank token usage key name should match Python route fallback: %#v", blankNameKey)
+		t.Fatalf("blank token usage key name should match legacy route fallback: %#v", blankNameKey)
 	}
 	nullNameKey := rawPost(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": nil}, token)
 	if nullNameKey.StatusCode != http.StatusUnprocessableEntity {
@@ -186,7 +186,7 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	}
 }
 
-func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
+func TestTokenUsageIngestValidationMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -334,7 +334,7 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
-func TestTokenUsageIngestSchemaVersionDefaultMatchesPythonSchema(t *testing.T) {
+func TestTokenUsageIngestSchemaVersionDefaultMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -362,7 +362,7 @@ func TestTokenUsageIngestSchemaVersionDefaultMatchesPythonSchema(t *testing.T) {
 	}
 }
 
-func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
+func TestTencentCitySearchQueryValidationMatchesLegacyRoute(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -385,7 +385,7 @@ func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
 	_ = blank.Body.Close()
 }
 
-func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
+func TestQueryValidationMatchesLegacyRoutes(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -422,7 +422,7 @@ func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
 	}
 }
 
-func TestAdminBooleanUpdatesRequireExplicitFieldsLikePythonSchema(t *testing.T) {
+func TestAdminBooleanUpdatesRequireExplicitFieldsLikeLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -447,7 +447,7 @@ func TestAdminBooleanUpdatesRequireExplicitFieldsLikePythonSchema(t *testing.T) 
 	}
 }
 
-func TestAdminRequestLengthValidationMatchesPythonSchema(t *testing.T) {
+func TestAdminRequestLengthValidationMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -530,7 +530,7 @@ func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	}
 }
 
-func TestAgentQueryAndToolValidationMatchesPythonSchema(t *testing.T) {
+func TestAgentQueryAndToolValidationMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -558,18 +558,18 @@ func TestAgentQueryAndToolValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
-func TestAgentCatalogReportsInternalRuntimeLikePythonBackend(t *testing.T) {
+func TestAgentCatalogReportsGoInternalRuntime(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
 	catalog := getJSON(t, ts.URL+"/api/agents/catalog", "")
 	runtime := catalog["graph_runtime"].(map[string]any)
-	if runtime["runtime"] != "internal" || runtime["requested"] != "internal" || runtime["available"] != false {
+	if runtime["runtime"] != "internal" || runtime["requested"] != "internal" || runtime["available"] != true {
 		t.Fatalf("unexpected graph runtime status: %#v", runtime)
 	}
 }
 
-func TestAgentRunCheckpointInspectionMatchesPythonContract(t *testing.T) {
+func TestAgentRunCheckpointInspectionMatchesGoGraphContract(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -603,9 +603,9 @@ func TestAgentRunCheckpointInspectionMatchesPythonContract(t *testing.T) {
 	}
 
 	inspection := getJSON(t, ts.URL+"/api/agents/runs/"+run["id"].(string)+"/checkpoint", "")
-	langgraph := inspection["langgraph"].(map[string]any)
-	if langgraph["runtime"] != "internal" || langgraph["inspectable"] != false || langgraph["checkpoint_count"].(float64) != 0 {
-		t.Fatalf("unexpected langgraph inspection: %#v", langgraph)
+	graphRuntime := inspection["graph_runtime"].(map[string]any)
+	if graphRuntime["runtime"] != "internal" || graphRuntime["inspectable"] != false || graphRuntime["checkpoint_count"].(float64) != 0 {
+		t.Fatalf("unexpected graph runtime inspection: %#v", graphRuntime)
 	}
 	if inspection["last_event"] != "run.finished" {
 		t.Fatalf("unexpected last event: %#v", inspection)
@@ -706,7 +706,7 @@ func TestAgentRunValidationReviewCancelAndResumeContracts(t *testing.T) {
 	}
 }
 
-func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
+func TestDirectMessageValidationMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -757,7 +757,7 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	}
 	emptyAttachmentFields := postJSON(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "", "name": "", "type": "", "kind": "", "size": 1}}}, aliceToken)
 	if len(emptyAttachmentFields["attachments"].([]any)) != 1 {
-		t.Fatalf("present empty attachment string fields should match Python schema: %#v", emptyAttachmentFields)
+		t.Fatalf("present empty attachment string fields should match legacy schema: %#v", emptyAttachmentFields)
 	}
 
 	attachments := []map[string]any{}
@@ -774,7 +774,7 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
-func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
+func TestAvatarUploadSniffsImageContentLikeLegacyBackend(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -799,7 +799,7 @@ func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
 		"data_base64":  "not-valid-base64!",
 	}, token)
 	if invalidBase64.StatusCode != http.StatusUnprocessableEntity || errorDetail(t, invalidBase64) != "Avatar data is invalid." {
-		t.Fatalf("invalid base64 should match Python error, got %d", invalidBase64.StatusCode)
+		t.Fatalf("invalid base64 should match legacy error, got %d", invalidBase64.StatusCode)
 	}
 
 	base64WithNewline := rawPost(t, ts.URL+"/api/auth/me/avatar", map[string]any{
@@ -808,7 +808,7 @@ func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
 		"data_base64":  base64.StdEncoding.EncodeToString([]byte("not an image")) + "\n",
 	}, token)
 	if base64WithNewline.StatusCode != http.StatusUnprocessableEntity || errorDetail(t, base64WithNewline) != "Avatar data is invalid." {
-		t.Fatalf("base64 with newline should match Python strict validation, got %d", base64WithNewline.StatusCode)
+		t.Fatalf("base64 with newline should match legacy strict validation, got %d", base64WithNewline.StatusCode)
 	}
 
 	validPNG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
@@ -822,7 +822,7 @@ func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
 	}
 }
 
-func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
+func TestImageGenerationUsesLegacySchemaDefaults(t *testing.T) {
 	var providerPayload map[string]any
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/images/generations" {
@@ -864,7 +864,7 @@ func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
 		t.Fatalf("explicit blank image payload should still reach provider: %#v", explicitBlank)
 	}
 	if providerPayload["model"] != "" || providerPayload["size"] != "" {
-		t.Fatalf("explicit blank model and size should match Python schema behavior: %#v", providerPayload)
+		t.Fatalf("explicit blank model and size should match legacy schema behavior: %#v", providerPayload)
 	}
 
 	blankProvider := rawPost(t, ts.URL+"/api/images/generate", map[string]any{
@@ -899,7 +899,7 @@ func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
 	}
 }
 
-func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
+func TestChatRequestValidationMatchesLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 
@@ -924,7 +924,7 @@ func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
-func TestProviderConnectionRejectsUnsupportedProviderLikePythonSchema(t *testing.T) {
+func TestProviderConnectionRejectsUnsupportedProviderLikeLegacySchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
 

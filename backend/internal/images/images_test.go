@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestProviderErrorDetailMatchesPythonBehavior(t *testing.T) {
+func TestProviderErrorDetailMatchesLegacyBehavior(t *testing.T) {
 	cases := []struct {
 		body   string
 		status int

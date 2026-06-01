@@ -9,28 +9,27 @@ import (
 )
 
 type Settings struct {
-	BaseDir                  string
-	AppName                  string
-	AppHost                  string
-	AppPort                  int
-	APIPrefix                string
-	AITimeoutSeconds         float64
-	MCPTimeoutSeconds        float64
-	MCPResultMaxChars        int
-	BigModelMCPLive          bool
-	AgentSynthesisProvider   string
-	AgentSynthesisBaseURL    string
-	AgentSynthesisAPIKey     string
-	AgentSynthesisModel      string
-	AgentSynthesisLive       bool
-	AgentGraphRuntime        string
-	AgentLanggraphCheckpoint string
-	DatabaseURL              string
-	MediaRoot                string
-	AvatarUploadDirname      string
-	TencentMapKey            string
-	TencentMapSignatureKey   string
-	CORSOrigins              []string
+	BaseDir                string
+	AppName                string
+	AppHost                string
+	AppPort                int
+	APIPrefix              string
+	AITimeoutSeconds       float64
+	MCPTimeoutSeconds      float64
+	MCPResultMaxChars      int
+	BigModelMCPLive        bool
+	AgentSynthesisProvider string
+	AgentSynthesisBaseURL  string
+	AgentSynthesisAPIKey   string
+	AgentSynthesisModel    string
+	AgentSynthesisLive     bool
+	AgentGraphRuntime      string
+	DatabaseURL            string
+	MediaRoot              string
+	AvatarUploadDirname    string
+	TencentMapKey          string
+	TencentMapSignatureKey string
+	CORSOrigins            []string
 }
 
 func Load() Settings {
@@ -44,28 +43,27 @@ func Load() Settings {
 	}
 
 	return Settings{
-		BaseDir:                  baseDir,
-		AppName:                  "4Ever Aggregation Platform",
-		AppHost:                  getenv("APP_HOST", "127.0.0.1"),
-		AppPort:                  getenvInt("APP_PORT", 7778),
-		APIPrefix:                "/api",
-		AITimeoutSeconds:         getenvFloat("AI_TIMEOUT_SECONDS", 120),
-		MCPTimeoutSeconds:        getenvFloat("MCP_TIMEOUT_SECONDS", 30),
-		MCPResultMaxChars:        getenvInt("MCP_RESULT_MAX_CHARS", 3000),
-		BigModelMCPLive:          getenvBool("BIGMODEL_MCP_LIVE"),
-		AgentSynthesisProvider:   strings.TrimSpace(strings.ToLower(os.Getenv("AGENT_SYNTHESIS_PROVIDER"))),
-		AgentSynthesisBaseURL:    strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_BASE_URL")),
-		AgentSynthesisAPIKey:     strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_API_KEY")),
-		AgentSynthesisModel:      strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_MODEL")),
-		AgentSynthesisLive:       getenvBool("AGENT_SYNTHESIS_LIVE"),
-		AgentGraphRuntime:        strings.TrimSpace(strings.ToLower(getenv("AGENT_GRAPH_RUNTIME", "auto"))),
-		AgentLanggraphCheckpoint: strings.TrimSpace(os.Getenv("AGENT_LANGGRAPH_CHECKPOINT_PATH")),
-		DatabaseURL:              getenv("DATABASE_URL", "sqlite:///./4ever.db"),
-		MediaRoot:                mediaRoot,
-		AvatarUploadDirname:      getenv("AVATAR_UPLOAD_DIRNAME", "avatars"),
-		TencentMapKey:            os.Getenv("TENCENT_MAP_KEY"),
-		TencentMapSignatureKey:   os.Getenv("TENCENT_MAP_SIGNATURE_KEY"),
-		CORSOrigins:              splitCSV(getenv("CORS_ORIGINS", "http://localhost:7777,http://127.0.0.1:7777")),
+		BaseDir:                baseDir,
+		AppName:                "4Ever Aggregation Platform",
+		AppHost:                getenv("APP_HOST", "127.0.0.1"),
+		AppPort:                getenvInt("APP_PORT", 7778),
+		APIPrefix:              "/api",
+		AITimeoutSeconds:       getenvFloat("AI_TIMEOUT_SECONDS", 120),
+		MCPTimeoutSeconds:      getenvFloat("MCP_TIMEOUT_SECONDS", 30),
+		MCPResultMaxChars:      getenvInt("MCP_RESULT_MAX_CHARS", 3000),
+		BigModelMCPLive:        getenvBool("BIGMODEL_MCP_LIVE"),
+		AgentSynthesisProvider: strings.TrimSpace(strings.ToLower(os.Getenv("AGENT_SYNTHESIS_PROVIDER"))),
+		AgentSynthesisBaseURL:  strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_BASE_URL")),
+		AgentSynthesisAPIKey:   strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_API_KEY")),
+		AgentSynthesisModel:    strings.TrimSpace(os.Getenv("AGENT_SYNTHESIS_MODEL")),
+		AgentSynthesisLive:     getenvBool("AGENT_SYNTHESIS_LIVE"),
+		AgentGraphRuntime:      strings.TrimSpace(strings.ToLower(getenv("AGENT_GRAPH_RUNTIME", "auto"))),
+		DatabaseURL:            getenv("DATABASE_URL", "sqlite:///./4ever.db"),
+		MediaRoot:              mediaRoot,
+		AvatarUploadDirname:    getenv("AVATAR_UPLOAD_DIRNAME", "avatars"),
+		TencentMapKey:          os.Getenv("TENCENT_MAP_KEY"),
+		TencentMapSignatureKey: os.Getenv("TENCENT_MAP_SIGNATURE_KEY"),
+		CORSOrigins:            splitCSV(getenv("CORS_ORIGINS", "http://localhost:7777,http://127.0.0.1:7777")),
 	}
 }
 

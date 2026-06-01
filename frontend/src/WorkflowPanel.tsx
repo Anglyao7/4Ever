@@ -88,6 +88,7 @@ const fallbackAgentCatalog: AgentCatalog = {
   workflow_templates: [
     { id: "agent-research-brief", name: "Agent 联网调研", execution_mode: "read_only", requires_review: false, side_effects: [], retry_limit: 1, timeout_seconds: 90, audit_level: "evidence" },
     { id: "agent-repo-brief", name: "Agent 仓库调研", execution_mode: "read_only", requires_review: false, side_effects: [], retry_limit: 1, timeout_seconds: 90, audit_level: "code_evidence" },
+    { id: "canvas-workflow", name: "画布流程执行", execution_mode: "canvas_orchestration", requires_review: true, side_effects: ["draft_plan", "reviewed_actions"], retry_limit: 1, timeout_seconds: 90, audit_level: "canvas_trace" },
     { id: "note-copy", name: "笔记整理成文案", execution_mode: "draft_only", requires_review: true, side_effects: ["draft_content"], retry_limit: 0, timeout_seconds: 60, audit_level: "standard" },
     { id: "note-message", name: "笔记发送给联系人", execution_mode: "draft_only", requires_review: true, side_effects: ["draft_message"], retry_limit: 0, timeout_seconds: 45, audit_level: "review_required" },
   ],
@@ -114,7 +115,7 @@ const fallbackAgentCatalog: AgentCatalog = {
       prompt_checksum: "local",
       system_prompt: "你是 4Ever 秩序 Agent。你把灵感、笔记和上下文整理成草稿或下一步建议，涉及发送和发布必须等待人工复核。",
       mcp_server_ids: ["bigmodel-web-reader", "bigmodel-zread"],
-      workflow_template_ids: ["note-copy", "note-message", "agent-research-brief", "agent-repo-brief"],
+      workflow_template_ids: ["canvas-workflow", "note-copy", "note-message", "agent-research-brief", "agent-repo-brief"],
     },
   ],
   mcp_servers: [
@@ -205,6 +206,23 @@ const templates: WorkflowTemplate[] = [
       { id: "repo_structure", type: "mcp", title: "ZRead 仓库结构", titleEn: "Repo structure", description: "调用 get_repo_structure 读取目录骨架", descriptionEn: "Call get_repo_structure" },
       { id: "read_file", type: "mcp", title: "ZRead 文件读取", titleEn: "Read file", description: "调用 read_file 读取目标文件或 README", descriptionEn: "Call read_file" },
       { id: "summary", type: "ai", title: "生成技术摘要", titleEn: "Summarize", description: "输出可追溯的仓库调研结论", descriptionEn: "Generate repo brief" },
+    ],
+  },
+  {
+    id: "canvas-workflow",
+    name: "画布流程执行",
+    nameEn: "Canvas workflow",
+    description: "从灵感画布接收节点与连线，按画布拓扑交给秩序 Agent 编排。",
+    descriptionEn: "Run an inspiration canvas as an ordered workflow.",
+    category: "灵感",
+    categoryEn: "Inspiration",
+    agentId: "workflow-agent",
+    mcpServerIds: [],
+    inputs: [{ key: "canvas", label: "画布摘要", labelEn: "Canvas", placeholder: "从灵感画布保存后会自动填入流程摘要。", placeholderEn: "Canvas summary", type: "textarea", required: true }],
+    nodes: [
+      { id: "canvas-source", type: "notes", title: "读取画布", titleEn: "Read canvas", description: "接收灵感画布节点、配置和连接", descriptionEn: "Read canvas nodes and connections", graphStep: "read_canvas" },
+      { id: "canvas-plan", type: "transform", title: "梳理拓扑", titleEn: "Plan topology", description: "按入口、分支和汇聚整理执行顺序", descriptionEn: "Plan topology", graphStep: "plan_canvas" },
+      { id: "canvas-agent", type: "agent", title: "秩序编排", titleEn: "Orchestrate", description: "交给秩序 Agent 输出可复核行动", descriptionEn: "Create reviewed actions", graphStep: "orchestrate_canvas" },
     ],
   },
   {
@@ -329,7 +347,7 @@ export default function WorkflowPanel() {
 
   useEffect(() => {
     if (!workflowHandoff) return;
-    setActiveId("note-copy");
+    setActiveId(workflowHandoff.canvas?.nodes.length ? "canvas-workflow" : "note-copy");
     setInput(workflowHandoff.content);
     if (workflowHandoff.noteId) {
       setSelectedNoteId(workflowHandoff.noteId);
@@ -460,8 +478,9 @@ export default function WorkflowPanel() {
 
   function applyProgressEvent(event: AgentRunEvent, template: WorkflowTemplate) {
     const graphStep = event.data.graph_step || graphStepForNode(event.data.node_id || "", event.data.type as WorkflowNodeType);
-    const stepIndex = graphStep ? template.nodes.findIndex((node) => graphStepForNode(node.id, node.type) === graphStep) : -1;
-    const nextGraphStep = stepIndex >= 0 ? graphStepForNode(template.nodes[Math.min(stepIndex + 1, template.nodes.length - 1)].id, template.nodes[Math.min(stepIndex + 1, template.nodes.length - 1)].type) : "";
+    const stepIndex = graphStep ? template.nodes.findIndex((node) => graphStepForWorkflowNode(node) === graphStep) : -1;
+    const nextNode = template.nodes[Math.min(stepIndex + 1, template.nodes.length - 1)];
+    const nextGraphStep = stepIndex >= 0 && nextNode ? graphStepForWorkflowNode(nextNode) : "";
     setLiveProgress((current) => nextProgressState(current, event, graphStep, nextGraphStep));
     if (stepIndex >= 0) {
       setRunningStepIndex(event.event === "node.finished" ? Math.min(stepIndex + 1, template.nodes.length - 1) : stepIndex);
@@ -1255,7 +1274,7 @@ function localRun(
       nodeId: node.id,
       type: node.type,
       title: node.title,
-      graphStep: graphStepForNode(node.id, node.type),
+      graphStep: graphStepForWorkflowNode(node),
       status: "success" as const,
       output: renderNodeOutput(node, source, index, agentId || "本地 Agent", activeMcpServers),
       startedAt,
@@ -1272,14 +1291,14 @@ function runProgressSteps(run: WorkflowRun | undefined, active: WorkflowTemplate
       id: node.id,
       title: node.title,
       type: node.type,
-      graphStep: graphStepForNode(node.id, node.type),
+      graphStep: graphStepForWorkflowNode(node),
       active: false,
       current: false,
       status: "pending",
     }));
   }
   return active.nodes.map((node) => {
-    const expectedGraphStep = graphStepForNode(node.id, node.type);
+    const expectedGraphStep = graphStepForWorkflowNode(node);
     const result = run.nodeResults.find((item) => item.nodeId === node.id || item.graphStep === expectedGraphStep);
     return {
       id: node.id,
@@ -1295,10 +1314,10 @@ function runProgressSteps(run: WorkflowRun | undefined, active: WorkflowTemplate
 
 function liveRunProgressSteps(active: WorkflowTemplate, progress: WorkflowProgressState, fallbackIndex: number): WorkflowProgressStep[] {
   const completed = new Set(progress.completedGraphSteps);
-  const currentIndex = active.nodes.findIndex((node) => graphStepForNode(node.id, node.type) === progress.currentGraphStep);
+  const currentIndex = active.nodes.findIndex((node) => graphStepForWorkflowNode(node) === progress.currentGraphStep);
   const effectiveCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(fallbackIndex, active.nodes.length - 1);
   return active.nodes.map((node, index) => {
-    const graphStep = graphStepForNode(node.id, node.type);
+    const graphStep = graphStepForWorkflowNode(node);
     const status = liveProgressStatus(graphStep, index, effectiveCurrentIndex, completed, progress);
     return {
       id: node.id,
@@ -1420,7 +1439,9 @@ function formatCancelError(error: unknown) {
 }
 
 function presentationTemplate(template: WorkflowTemplate, handoff: WorkflowHandoff | null): WorkflowTemplate {
-  if (!handoff || template.id !== "note-copy") return template;
+  if (!handoff) return template;
+  if (handoff.canvas?.nodes.length && template.id !== "canvas-workflow") return template;
+  if (!handoff.canvas?.nodes.length && template.id !== "note-copy") return template;
   const canvasNodes = handoff.canvas?.nodes.length ? workflowNodesFromCanvas(handoff.canvas) : null;
   return {
     ...template,
@@ -1430,7 +1451,7 @@ function presentationTemplate(template: WorkflowTemplate, handoff: WorkflowHando
     descriptionEn: "Turn an inspiration result into actionable steps.",
     category: "灵感",
     categoryEn: "Inspiration",
-    inputs: [{ ...template.inputs[0], label: "灵感内容", labelEn: "Inspiration", placeholder: "这里已接入灵感温室结果，可直接运行或继续改写。" }],
+    inputs: [{ ...template.inputs[0], label: canvasNodes ? "画布摘要" : "灵感内容", labelEn: canvasNodes ? "Canvas" : "Inspiration", placeholder: "这里已接入灵感温室结果，可直接运行或继续改写。" }],
     nodes: canvasNodes ?? [
       { id: "source", type: "notes", title: "读取灵感", titleEn: "Read inspiration", description: "接入灵感温室生成的方向和上下文", descriptionEn: "Read inspiration context" },
       { id: "transform", type: "transform", title: "拆解行动", titleEn: "Break into actions", description: "提炼下一步、依赖、风险和验证方式", descriptionEn: "Extract next actions and risks" },
@@ -1452,6 +1473,7 @@ function workflowNodesFromCanvas(canvas: WorkflowCanvas): WorkflowNode[] {
       titleEn: node.label,
       description: canvasNodeDescription(node, index, incoming.length, outgoing.length),
       descriptionEn: canvasNodeDescription(node, index, incoming.length, outgoing.length),
+      graphStep: canvasGraphStep(node.type, index),
     };
   });
 }
@@ -1459,34 +1481,46 @@ function workflowNodesFromCanvas(canvas: WorkflowCanvas): WorkflowNode[] {
 function orderedCanvasNodes(canvas: WorkflowCanvas) {
   if (!canvas.connections.length) return canvas.nodes;
   const nodeById = new Map(canvas.nodes.map((node) => [node.id, node]));
-  const targets = new Set(canvas.connections.map((connection) => connection.targetNodeId));
-  const startNodes = canvas.nodes.filter((node) => !targets.has(node.id));
-  const ordered = [] as WorkflowCanvas["nodes"];
-  const visited = new Set<string>();
-  const walk = (nodeId: string) => {
-    const node = nodeById.get(nodeId);
-    if (!node || visited.has(nodeId)) return;
-    visited.add(nodeId);
-    ordered.push(node);
-    canvas.connections
-      .filter((connection) => connection.sourceNodeId === nodeId)
-      .forEach((connection) => walk(connection.targetNodeId));
-  };
-  (startNodes.length ? startNodes : canvas.nodes.slice(0, 1)).forEach((node) => walk(node.id));
-  canvas.nodes.forEach((node) => walk(node.id));
-  return ordered;
+  const outgoing = new Map(canvas.nodes.map((node) => [node.id, [] as string[]]));
+  const indegree = new Map(canvas.nodes.map((node) => [node.id, 0]));
+  canvas.connections.forEach((connection) => {
+    if (!nodeById.has(connection.sourceNodeId) || !nodeById.has(connection.targetNodeId) || connection.sourceNodeId === connection.targetNodeId) return;
+    const targets = outgoing.get(connection.sourceNodeId) ?? [];
+    if (targets.includes(connection.targetNodeId)) return;
+    outgoing.set(connection.sourceNodeId, [...targets, connection.targetNodeId]);
+    indegree.set(connection.targetNodeId, (indegree.get(connection.targetNodeId) ?? 0) + 1);
+  });
+  const originalOrder = new Map(canvas.nodes.map((node, index) => [node.id, index]));
+  const sortByOriginalOrder = (items: string[]) => items.sort((first, second) => (originalOrder.get(first) ?? 0) - (originalOrder.get(second) ?? 0));
+  const queue = sortByOriginalOrder(canvas.nodes.filter((node) => (indegree.get(node.id) ?? 0) === 0).map((node) => node.id));
+  const orderedIds: string[] = [];
+  while (queue.length) {
+    const nodeId = queue.shift();
+    if (!nodeId) continue;
+    orderedIds.push(nodeId);
+    (outgoing.get(nodeId) ?? []).forEach((targetId) => {
+      indegree.set(targetId, Math.max(0, (indegree.get(targetId) ?? 0) - 1));
+      if ((indegree.get(targetId) ?? 0) === 0) {
+        queue.push(targetId);
+        sortByOriginalOrder(queue);
+      }
+    });
+  }
+  if (orderedIds.length !== canvas.nodes.length) return canvas.nodes;
+  return orderedIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
 }
 
 function workflowNodeTypeFromCanvas(type: string): WorkflowNodeType {
-  if (type === "trigger" || type === "workflow-trigger") return "source";
+  if (type === "trigger" || type === "workflow-trigger" || type === "webhook-ingress") return "source";
   if (type === "ai-chat") return "ai";
   if (type === "image-gen") return "image";
-  if (type === "send-message" || type === "chat-thread") return "chat";
-  if (type === "note-create" || type === "notes-query") return "notes";
+  if (type === "send-message" || type === "chat-thread" || type === "contact-profile" || type === "calendar-event" || type === "notification-send") return "chat";
+  if (type === "note-create" || type === "notes-query" || type === "knowledge-search" || type === "file-asset" || type === "database-query" || type === "email-inbox" || type === "cloud-drive" || type === "sheet-row") return "notes";
   if (type === "agent-run") return "agent";
   if (type === "image-studio") return "image";
-  if (type === "http-request" || type === "provider-models" || type === "memory-map" || type === "mcp-tool") return "mcp";
+  if (type === "http-request" || type === "provider-models" || type === "api-health" || type === "memory-map" || type === "mcp-tool") return "mcp";
   if (type === "condition" || type === "loop" || type === "delay" || type === "transform" || type === "token-usage" || type === "module-catalog" || type === "admin-audit") return "transform";
+  if (type === "cms-publish") return "chat";
   return "transform";
 }
 
@@ -1506,9 +1540,9 @@ function WorkflowCanvasHandoffPreview(props: { canvas: WorkflowCanvas }) {
         <strong>画布流程</strong>
         <small>{canvas.nodes.length} 个节点 · {canvas.connections.length} 条线</small>
       </div>
-      {summary.path.length > 0 ? (
+      {summary.executionNodes.length > 0 ? (
         <ol className="workflow-canvas-path">
-          {summary.path.map((item, index) => <li key={`${item}-${index}`}><span>{index + 1}</span><strong>{item}</strong></li>)}
+          {summary.executionNodes.map((item, index) => <li key={`${item.id}-${index}`}><span>{index + 1}</span><strong>{item.label}</strong><small>{item.meta}</small></li>)}
         </ol>
       ) : (
         <p className="workflow-canvas-empty">还没有可识别的连接路径，秩序将按输入内容直接拆解。</p>
@@ -1519,39 +1553,72 @@ function WorkflowCanvasHandoffPreview(props: { canvas: WorkflowCanvas }) {
           {summary.disconnectedLabels.length > 0 && <span>未接入：{summary.disconnectedLabels.join(" / ")}</span>}
         </div>
       )}
+      {summary.edges.length > 0 && (
+        <div className="workflow-canvas-edge-list" aria-label="画布连线">
+          {summary.edges.map((edge) => (
+            <span key={edge.id}>
+              <strong>{edge.source}</strong>
+              <small>{edge.sourceHandle}</small>
+              <i>→</i>
+              <strong>{edge.target}</strong>
+              <small>{edge.targetHandle}</small>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function workflowCanvasSummary(canvas: WorkflowCanvas) {
-  const empty = { path: [] as string[], branchLabels: [] as string[], disconnectedLabels: [] as string[] };
+  const empty = { executionNodes: [] as Array<{ id: string; label: string; meta: string }>, branchLabels: [] as string[], disconnectedLabels: [] as string[], edges: [] as Array<{ id: string; source: string; sourceHandle: string; target: string; targetHandle: string }> };
   if (!canvas.nodes.length) return empty;
   const nodeById = new Map(canvas.nodes.map((node) => [node.id, node]));
-  if (!canvas.connections.length) return { ...empty, disconnectedLabels: canvas.nodes.map((node) => node.label) };
+  const executionNodes = orderedCanvasNodes(canvas).map((node) => {
+    const incomingCount = canvas.connections.filter((connection) => connection.targetNodeId === node.id).length;
+    const outgoingCount = canvas.connections.filter((connection) => connection.sourceNodeId === node.id).length;
+    return {
+      id: node.id,
+      label: node.label,
+      meta: `${incomingCount} 入 / ${outgoingCount} 出`,
+    };
+  });
+  const edges = canvas.connections.flatMap((connection, index) => {
+    const source = nodeById.get(connection.sourceNodeId);
+    const target = nodeById.get(connection.targetNodeId);
+    if (!source || !target) return [];
+    return [{
+      id: connection.id || `${connection.sourceNodeId}-${connection.targetNodeId}-${index}`,
+      source: source.label,
+      sourceHandle: connection.sourceHandle || "output",
+      target: target.label,
+      targetHandle: connection.targetHandle || "input",
+    }];
+  });
+  if (!canvas.connections.length) return { ...empty, executionNodes, disconnectedLabels: canvas.nodes.map((node) => node.label) };
   const connectedNodeIds = new Set<string>();
   canvas.connections.forEach((connection) => {
     connectedNodeIds.add(connection.sourceNodeId);
     connectedNodeIds.add(connection.targetNodeId);
   });
-  const targets = new Set(canvas.connections.map((connection) => connection.targetNodeId));
-  const first = canvas.nodes.find((node) => !targets.has(node.id)) ?? canvas.nodes[0];
-  const path = [first.label];
-  const visited = new Set([first.id]);
-  let current = first.id;
-  while (true) {
-    const nextConnection = canvas.connections.find((connection) => connection.sourceNodeId === current && !visited.has(connection.targetNodeId));
-    if (!nextConnection) break;
-    const nextNode = nodeById.get(nextConnection.targetNodeId);
-    if (!nextNode) break;
-    path.push(nextNode.label);
-    visited.add(nextNode.id);
-    current = nextNode.id;
-  }
   const branchLabels = canvas.nodes
     .filter((node) => canvas.connections.filter((connection) => connection.sourceNodeId === node.id).length > 1)
     .map((node) => node.label);
   const disconnectedLabels = canvas.nodes.filter((node) => !connectedNodeIds.has(node.id)).map((node) => node.label);
-  return { path, branchLabels, disconnectedLabels };
+  return { executionNodes, branchLabels, disconnectedLabels, edges };
+}
+
+function graphStepForWorkflowNode(node: WorkflowNode) {
+  return node.graphStep || graphStepForNode(node.id, node.type);
+}
+
+function canvasGraphStep(nodeType: string, index: number) {
+  return `canvas_${index + 1}_${slugGraphStep(nodeType)}`;
+}
+
+function slugGraphStep(value: string) {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || "node";
 }
 
 function graphStepForNode(nodeId: string, type: WorkflowNodeType) {

@@ -12,6 +12,9 @@ The current application includes a Go backend, a React + Vite frontend, authenti
 - Chat interface with locally stored API profile selection.
 - Image generation panel with provider, model, size, and prompt controls.
 - Notes, city memories, workflow templates, and inspiration boards stored locally in the browser.
+- Agent/MCP catalog endpoint, workflow UI, and backend-gated BigModel MCP client foundation.
+- Backend-owned MCP `tools/list` inspection for workflow MCP server controls.
+- Admin MCP enablement controls with backend policy enforcement and audit logs.
 - Go service with SQLite by default and support for PostgreSQL URLs.
 
 ## TODO List
@@ -78,6 +81,10 @@ Backend configuration lives in `backend/.env` and can be based on `backend/.env.
 
 ```env
 DATABASE_URL=sqlite:///./4ever.db
+BIGMODEL_API_KEY=
+BIGMODEL_MCP_LIVE=0
+AGENT_SYNTHESIS_LIVE=0
+AGENT_GRAPH_RUNTIME=auto
 ```
 
 Frontend configuration lives in `frontend/.env` and can be based on `frontend/.env.example`.
@@ -98,6 +105,10 @@ go test ./...
 curl http://127.0.0.1:7778/health
 curl http://127.0.0.1:7778/api/database/health
 ```
+
+## Agent / MCP Workflow
+
+See [docs/agent-mcp-workflow.md](docs/agent-mcp-workflow.md) for the BigModel MCP, Agent, and Go graph workflow implementation.
 
 ## Git Notes
 

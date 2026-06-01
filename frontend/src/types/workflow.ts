@@ -23,6 +23,7 @@ export interface WorkflowNode {
   titleEn: string;
   description: string;
   descriptionEn: string;
+  graphStep?: string;
   prompt?: string;
   promptEn?: string;
 }
@@ -237,7 +238,7 @@ export interface AgentRunCheckpointInspection {
   event_count: number;
   last_event: string;
   steps: AgentCheckpointStep[];
-  langgraph: Record<string, unknown>;
+  graph_runtime: Record<string, unknown>;
 }
 
 export interface AgentCheckpointRecord {

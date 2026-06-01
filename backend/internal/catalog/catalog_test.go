@@ -2,7 +2,7 @@ package catalog
 
 import "testing"
 
-func TestGeminiEndpointMatchesPythonAdapterContract(t *testing.T) {
+func TestGeminiEndpointMatchesLegacyAdapterContract(t *testing.T) {
 	model := "models/gemini-2.5-flash"
 	cases := map[string]string{
 		"https://generativelanguage.googleapis.com/v1beta":                                      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -27,7 +27,7 @@ func TestOpenAIContentArrayIsFlattenedToText(t *testing.T) {
 	}
 }
 
-func TestChatProviderRequestUsesPythonSchemaGenerationDefaults(t *testing.T) {
+func TestChatProviderRequestUsesLegacySchemaGenerationDefaults(t *testing.T) {
 	req := ChatCompletionRequest{
 		Model:    "model-1",
 		Messages: []map[string]any{{"role": "user", "content": "hello"}},
@@ -35,22 +35,22 @@ func TestChatProviderRequestUsesPythonSchemaGenerationDefaults(t *testing.T) {
 
 	_, openAI, _ := buildChatProviderRequest("openai", req)
 	if openAI["temperature"] != 0.7 || openAI["max_tokens"] != 1024 {
-		t.Fatalf("openai defaults should match Python schema: %#v", openAI)
+		t.Fatalf("openai defaults should match legacy schema: %#v", openAI)
 	}
 
 	_, anthropic, _ := buildChatProviderRequest("anthropic", req)
 	if anthropic["temperature"] != 0.7 || anthropic["max_tokens"] != 1024 {
-		t.Fatalf("anthropic defaults should match Python schema: %#v", anthropic)
+		t.Fatalf("anthropic defaults should match legacy schema: %#v", anthropic)
 	}
 
 	_, gemini, _ := buildChatProviderRequest("gemini", req)
 	generation, ok := gemini["generationConfig"].(map[string]any)
 	if !ok || generation["temperature"] != 0.7 || generation["maxOutputTokens"] != 1024 {
-		t.Fatalf("gemini defaults should match Python schema: %#v", gemini)
+		t.Fatalf("gemini defaults should match legacy schema: %#v", gemini)
 	}
 }
 
-func TestAppendProviderPathMatchesPythonAdapter(t *testing.T) {
+func TestAppendProviderPathMatchesLegacyAdapter(t *testing.T) {
 	cases := map[string]string{
 		"https://api.example.com/v1":        "https://api.example.com/v1/models",
 		"https://api.example.com/v1/":       "https://api.example.com/v1/models",
@@ -63,7 +63,7 @@ func TestAppendProviderPathMatchesPythonAdapter(t *testing.T) {
 	}
 }
 
-func TestParseChatContentMatchesPythonAdapterErrors(t *testing.T) {
+func TestParseChatContentMatchesLegacyAdapterErrors(t *testing.T) {
 	cases := []struct {
 		provider string
 		payload  map[string]any
@@ -80,7 +80,7 @@ func TestParseChatContentMatchesPythonAdapterErrors(t *testing.T) {
 	}
 }
 
-func TestParseChatContentJoinsTextLikePythonAdapter(t *testing.T) {
+func TestParseChatContentJoinsTextLikeLegacyAdapter(t *testing.T) {
 	anthropic, detail := parseChatContent("anthropic", map[string]any{
 		"content": []any{
 			map[string]any{"type": "text", "text": "first"},
