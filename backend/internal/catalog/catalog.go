@@ -163,7 +163,10 @@ func CompleteChat(settings config.Settings, req ChatCompletionRequest) (ChatComp
 	if err := json.Unmarshal(respBody, &data); err != nil {
 		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider returned a non-JSON response."
 	}
-	content := parseChatContent(provider, data)
+	content, parseDetail := parseChatContent(provider, data)
+	if parseDetail != "" {
+		return ChatCompletionResponse{}, http.StatusBadGateway, parseDetail
+	}
 	if content == "" {
 		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider returned an empty response."
 	}
@@ -446,10 +449,20 @@ func chatMaxTokens(req ChatCompletionRequest) int {
 	return *req.MaxTokens
 }
 
-func parseChatContent(provider string, data map[string]any) string {
+func parseChatContent(provider string, data map[string]any) (string, string) {
 	switch provider {
 	case "anthropic":
-		items, _ := data["content"].([]any)
+		raw, exists := data["content"]
+		if !exists {
+			return "", ""
+		}
+		if text, ok := raw.(string); ok {
+			return text, ""
+		}
+		items, ok := raw.([]any)
+		if !ok {
+			return "", "Anthropic response did not include a valid content list."
+		}
 		parts := []string{}
 		for _, item := range items {
 			row, ok := item.(map[string]any)
@@ -457,29 +470,51 @@ func parseChatContent(provider string, data map[string]any) string {
 				parts = append(parts, stringValue(row["text"]))
 			}
 		}
-		return strings.Join(parts, "")
+		return strings.TrimSpace(strings.Join(parts, "\n")), ""
 	case "gemini":
-		candidates, _ := data["candidates"].([]any)
-		if len(candidates) == 0 {
-			return ""
+		candidates, ok := data["candidates"].([]any)
+		if !ok || len(candidates) == 0 {
+			return "", "Gemini response did not include candidates[0].content.parts."
 		}
-		candidate, _ := candidates[0].(map[string]any)
-		content, _ := candidate["content"].(map[string]any)
-		parts, _ := content["parts"].([]any)
+		candidate, ok := candidates[0].(map[string]any)
+		if !ok {
+			return "", "Gemini response did not include candidates[0].content.parts."
+		}
+		content, ok := candidate["content"].(map[string]any)
+		if !ok {
+			return "", "Gemini response did not include candidates[0].content.parts."
+		}
+		parts, ok := content["parts"].([]any)
+		if !ok {
+			return "", "Gemini response did not include candidates[0].content.parts."
+		}
 		out := []string{}
 		for _, part := range parts {
 			row, _ := part.(map[string]any)
-			out = append(out, stringValue(row["text"]))
+			text := stringValue(row["text"])
+			if text != "" {
+				out = append(out, text)
+			}
 		}
-		return strings.Join(out, "")
+		return strings.TrimSpace(strings.Join(out, "\n")), ""
 	default:
-		choices, _ := data["choices"].([]any)
-		if len(choices) == 0 {
-			return ""
+		choices, ok := data["choices"].([]any)
+		if !ok || len(choices) == 0 {
+			return "", "OpenAI-compatible response did not include choices[0].message.content."
 		}
-		choice, _ := choices[0].(map[string]any)
-		message, _ := choice["message"].(map[string]any)
-		return contentToText(message["content"])
+		choice, ok := choices[0].(map[string]any)
+		if !ok {
+			return "", "OpenAI-compatible response did not include choices[0].message.content."
+		}
+		message, ok := choice["message"].(map[string]any)
+		if !ok {
+			return "", "OpenAI-compatible response did not include choices[0].message.content."
+		}
+		content, exists := message["content"]
+		if !exists {
+			return "", "OpenAI-compatible response did not include choices[0].message.content."
+		}
+		return contentToText(content), ""
 	}
 }
 

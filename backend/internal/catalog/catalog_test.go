@@ -62,3 +62,44 @@ func TestAppendProviderPathMatchesPythonAdapter(t *testing.T) {
 		}
 	}
 }
+
+func TestParseChatContentMatchesPythonAdapterErrors(t *testing.T) {
+	cases := []struct {
+		provider string
+		payload  map[string]any
+		detail   string
+	}{
+		{"openai", map[string]any{}, "OpenAI-compatible response did not include choices[0].message.content."},
+		{"anthropic", map[string]any{"content": map[string]any{}}, "Anthropic response did not include a valid content list."},
+		{"gemini", map[string]any{}, "Gemini response did not include candidates[0].content.parts."},
+	}
+	for _, tc := range cases {
+		if _, detail := parseChatContent(tc.provider, tc.payload); detail != tc.detail {
+			t.Fatalf("%s malformed response detail mismatch: got %q want %q", tc.provider, detail, tc.detail)
+		}
+	}
+}
+
+func TestParseChatContentJoinsTextLikePythonAdapter(t *testing.T) {
+	anthropic, detail := parseChatContent("anthropic", map[string]any{
+		"content": []any{
+			map[string]any{"type": "text", "text": "first"},
+			map[string]any{"type": "tool_use", "text": "ignored"},
+			map[string]any{"type": "text", "text": "second"},
+		},
+	})
+	if detail != "" || anthropic != "first\nsecond" {
+		t.Fatalf("anthropic content mismatch: %q detail=%q", anthropic, detail)
+	}
+
+	gemini, detail := parseChatContent("gemini", map[string]any{
+		"candidates": []any{map[string]any{"content": map[string]any{"parts": []any{
+			map[string]any{"text": "first"},
+			map[string]any{"text": ""},
+			map[string]any{"text": "second"},
+		}}}},
+	})
+	if detail != "" || gemini != "first\nsecond" {
+		t.Fatalf("gemini content mismatch: %q detail=%q", gemini, detail)
+	}
+}
