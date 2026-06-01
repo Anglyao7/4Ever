@@ -95,7 +95,7 @@ func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
 	}
 	baseURL := providerBaseURL(provider, req.BaseURL)
 	headers := providerHeaders(provider, req.APIKey)
-	request, _ := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
+	request, _ := http.NewRequest(http.MethodGet, appendProviderPath(baseURL, "models"), nil)
 	for key, value := range headers {
 		request.Header.Set(key, value)
 	}
@@ -311,6 +311,15 @@ func providerHeaders(provider string, apiKey *string) map[string]string {
 		}
 	}
 	return headers
+}
+
+func appendProviderPath(baseURL string, suffix string) string {
+	base := strings.TrimRight(baseURL, "/")
+	suffix = strings.Trim(suffix, "/")
+	if strings.HasSuffix(base, "/"+suffix) {
+		return base
+	}
+	return base + "/" + suffix
 }
 
 func parseModels(provider string, payload map[string]any) []ProviderModel {

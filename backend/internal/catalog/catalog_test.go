@@ -49,3 +49,16 @@ func TestChatProviderRequestUsesPythonSchemaGenerationDefaults(t *testing.T) {
 		t.Fatalf("gemini defaults should match Python schema: %#v", gemini)
 	}
 }
+
+func TestAppendProviderPathMatchesPythonAdapter(t *testing.T) {
+	cases := map[string]string{
+		"https://api.example.com/v1":        "https://api.example.com/v1/models",
+		"https://api.example.com/v1/":       "https://api.example.com/v1/models",
+		"https://api.example.com/v1/models": "https://api.example.com/v1/models",
+	}
+	for baseURL, expected := range cases {
+		if got := appendProviderPath(baseURL, "models"); got != expected {
+			t.Fatalf("provider model path mismatch for %s: got %s want %s", baseURL, got, expected)
+		}
+	}
+}
