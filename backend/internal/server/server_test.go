@@ -801,6 +801,7 @@ func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
 
 	cases := []map[string]any{
 		{"provider": "bad", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
+		{"provider": "", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
 		{"provider": "openai", "model": "gpt", "messages": []any{}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": ""}}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "tool", "content": "hi"}}},
@@ -829,6 +830,14 @@ func TestProviderConnectionRejectsUnsupportedProviderLikePythonSchema(t *testing
 		t.Fatalf("unsupported provider should be rejected with 422, got %d", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+
+	blank := rawPost(t, ts.URL+"/api/catalog/provider/models", map[string]any{
+		"provider": "",
+	}, "")
+	if blank.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("blank provider should be rejected with 422, got %d", blank.StatusCode)
+	}
+	_ = blank.Body.Close()
 }
 
 func getJSON(t *testing.T, url string, token string) map[string]any {

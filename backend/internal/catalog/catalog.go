@@ -29,7 +29,7 @@ type ProviderInfo struct {
 }
 
 type ProviderConnectionRequest struct {
-	Provider string  `json:"provider"`
+	Provider *string `json:"provider"`
 	BaseURL  *string `json:"base_url"`
 	APIKey   *string `json:"api_key"`
 }
@@ -120,7 +120,7 @@ func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
 }
 
 type ChatCompletionRequest struct {
-	Provider     string           `json:"provider"`
+	Provider     *string          `json:"provider"`
 	BaseURL      *string          `json:"base_url"`
 	APIKey       *string          `json:"api_key"`
 	Model        string           `json:"model" binding:"required"`
@@ -226,12 +226,11 @@ func StreamChat(settings config.Settings, req ChatCompletionRequest, onChunk fun
 	return http.StatusOK, ""
 }
 
-func normalizeProvider(provider string) string {
-	provider = strings.TrimSpace(strings.ToLower(provider))
-	if provider == "" {
+func normalizeProvider(provider *string) string {
+	if provider == nil {
 		return "openai"
 	}
-	return provider
+	return strings.TrimSpace(strings.ToLower(*provider))
 }
 
 func isSupportedProvider(provider string) bool {
