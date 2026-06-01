@@ -376,17 +376,11 @@ func buildChatProviderRequest(provider string, req ChatCompletionRequest) (strin
 			}
 			messages = append(messages, map[string]any{"role": role, "content": content})
 		}
-		maxTokens := 1024
-		if req.MaxTokens != nil {
-			maxTokens = *req.MaxTokens
-		}
-		payload := map[string]any{"model": req.Model, "max_tokens": maxTokens, "messages": messages}
+		payload := map[string]any{"model": req.Model, "max_tokens": chatMaxTokens(req), "messages": messages}
 		if systemPrompt != "" {
 			payload["system"] = systemPrompt
 		}
-		if req.Temperature != nil {
-			payload["temperature"] = *req.Temperature
-		}
+		payload["temperature"] = chatTemperature(req)
 		return strings.TrimRight(baseURL, "/") + "/messages", payload, headers
 	case "gemini":
 		contents := []map[string]any{}
@@ -411,16 +405,7 @@ func buildChatProviderRequest(provider string, req ChatCompletionRequest) (strin
 			contents = append(contents, map[string]any{"role": geminiRole, "parts": []map[string]string{{"text": content}}})
 		}
 		payload := map[string]any{"contents": contents}
-		generation := map[string]any{}
-		if req.Temperature != nil {
-			generation["temperature"] = *req.Temperature
-		}
-		if req.MaxTokens != nil {
-			generation["maxOutputTokens"] = *req.MaxTokens
-		}
-		if len(generation) > 0 {
-			payload["generationConfig"] = generation
-		}
+		payload["generationConfig"] = map[string]any{"temperature": chatTemperature(req), "maxOutputTokens": chatMaxTokens(req)}
 		if systemPrompt != "" {
 			payload["systemInstruction"] = map[string]any{"parts": []map[string]string{{"text": systemPrompt}}}
 		}
@@ -432,14 +417,24 @@ func buildChatProviderRequest(provider string, req ChatCompletionRequest) (strin
 		}
 		messages = append(messages, req.Messages...)
 		payload := map[string]any{"model": req.Model, "messages": messages, "stream": false}
-		if req.Temperature != nil {
-			payload["temperature"] = *req.Temperature
-		}
-		if req.MaxTokens != nil {
-			payload["max_tokens"] = *req.MaxTokens
-		}
+		payload["temperature"] = chatTemperature(req)
+		payload["max_tokens"] = chatMaxTokens(req)
 		return strings.TrimRight(baseURL, "/") + "/chat/completions", payload, headers
 	}
+}
+
+func chatTemperature(req ChatCompletionRequest) float64 {
+	if req.Temperature == nil {
+		return 0.7
+	}
+	return *req.Temperature
+}
+
+func chatMaxTokens(req ChatCompletionRequest) int {
+	if req.MaxTokens == nil {
+		return 1024
+	}
+	return *req.MaxTokens
 }
 
 func parseChatContent(provider string, data map[string]any) string {

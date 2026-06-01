@@ -26,3 +26,26 @@ func TestOpenAIContentArrayIsFlattenedToText(t *testing.T) {
 		t.Fatalf("unexpected flattened content: %q", content)
 	}
 }
+
+func TestChatProviderRequestUsesPythonSchemaGenerationDefaults(t *testing.T) {
+	req := ChatCompletionRequest{
+		Model:    "model-1",
+		Messages: []map[string]any{{"role": "user", "content": "hello"}},
+	}
+
+	_, openAI, _ := buildChatProviderRequest("openai", req)
+	if openAI["temperature"] != 0.7 || openAI["max_tokens"] != 1024 {
+		t.Fatalf("openai defaults should match Python schema: %#v", openAI)
+	}
+
+	_, anthropic, _ := buildChatProviderRequest("anthropic", req)
+	if anthropic["temperature"] != 0.7 || anthropic["max_tokens"] != 1024 {
+		t.Fatalf("anthropic defaults should match Python schema: %#v", anthropic)
+	}
+
+	_, gemini, _ := buildChatProviderRequest("gemini", req)
+	generation, ok := gemini["generationConfig"].(map[string]any)
+	if !ok || generation["temperature"] != 0.7 || generation["maxOutputTokens"] != 1024 {
+		t.Fatalf("gemini defaults should match Python schema: %#v", gemini)
+	}
+}
