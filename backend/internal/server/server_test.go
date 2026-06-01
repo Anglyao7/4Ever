@@ -299,10 +299,11 @@ func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
 	}
 	_ = tooLong.Body.Close()
 
-	blank := getJSON(t, ts.URL+"/api/maps/tencent/city-search?q=%20%20", "")
-	if len(blank["results"].([]any)) != 0 {
-		t.Fatalf("blank q should return empty results: %#v", blank)
+	blank := rawGet(t, ts.URL+"/api/maps/tencent/city-search?q=%20%20", "")
+	if blank.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("blank q should check map key before returning empty results, got %d", blank.StatusCode)
 	}
+	_ = blank.Body.Close()
 }
 
 func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
