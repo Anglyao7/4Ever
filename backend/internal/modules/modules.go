@@ -24,7 +24,7 @@ type PlatformModule struct {
 }
 
 type ModuleUpdateRequest struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled" binding:"required"`
 }
 
 var Blueprints = []PlatformModule{

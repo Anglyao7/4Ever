@@ -212,6 +212,31 @@ func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
 	}
 }
 
+func TestAdminBooleanUpdatesRequireExplicitFieldsLikePythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "booladmin", "email": "booladmin@example.com", "password": "password123", "display_name": "Bool Admin",
+	}, "")
+	token := auth["token"].(string)
+	userID := auth["user"].(map[string]any)["id"].(string)
+	getJSON(t, ts.URL+"/api/admin/overview", token)
+
+	cases := []string{
+		ts.URL + "/api/admin/users/" + userID + "/risk",
+		ts.URL + "/api/admin/modules/chat",
+		ts.URL + "/api/admin/mcp-servers/bigmodel-web-search",
+	}
+	for _, url := range cases {
+		resp := rawPatch(t, url, map[string]any{}, token)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("empty bool update should return 422 for %s, got %d", url, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+}
+
 func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()

@@ -53,7 +53,7 @@ type RoleUpdate struct {
 }
 
 type RiskUpdate struct {
-	RiskFlagged bool    `json:"risk_flagged"`
+	RiskFlagged *bool   `json:"risk_flagged" binding:"required"`
 	Note        *string `json:"note"`
 }
 
@@ -63,7 +63,7 @@ type AgentPromptUpdate struct {
 }
 
 type MCPServerUpdate struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled" binding:"required"`
 }
 
 type AuditLog struct {
@@ -192,15 +192,15 @@ func (h Handler) UpdateUserRisk(c *gin.Context) {
 	}
 	flag := models.AdminUserFlag{UserID: user.ID}
 	h.DB.FirstOrInit(&flag, "user_id = ?", user.ID)
-	flag.RiskFlagged = req.RiskFlagged
-	if req.RiskFlagged {
+	flag.RiskFlagged = *req.RiskFlagged
+	if *req.RiskFlagged {
 		flag.Note = note
 	} else {
 		flag.Note = nil
 	}
 	flag.UpdatedBy = &current.ID
 	detailText := fmt.Sprintf("%s: risk cleared", user.Username)
-	if req.RiskFlagged {
+	if *req.RiskFlagged {
 		detailText = fmt.Sprintf("%s: risk flagged", user.Username)
 		if note != nil && *note != "" {
 			detailText += " · " + *note
@@ -243,7 +243,7 @@ func (h Handler) UpdateModule(c *gin.Context) {
 	if !ok {
 		return
 	}
-	updated, ok, detail := modules.UpdateModule(h.DB, c.Param("module_id"), req.Enabled)
+	updated, ok, detail := modules.UpdateModule(h.DB, c.Param("module_id"), *req.Enabled)
 	if !ok {
 		status := http.StatusNotFound
 		if detail == "This module cannot be disabled." {
@@ -252,7 +252,7 @@ func (h Handler) UpdateModule(c *gin.Context) {
 		httputil.Error(c, status, detail)
 		return
 	}
-	logDetail := fmt.Sprintf("%s: %s", updated.Name, map[bool]string{true: "enabled", false: "disabled"}[req.Enabled])
+	logDetail := fmt.Sprintf("%s: %s", updated.Name, map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
 	h.DB.Create(&models.AdminAuditLog{ActorID: current.ID, Action: "module.status.update", TargetType: "module", TargetID: updated.ID, Detail: &logDetail})
 	c.JSON(http.StatusOK, updated)
 }
@@ -280,13 +280,13 @@ func (h Handler) UpdateMCPServer(c *gin.Context) {
 	}
 	record := models.MCPServerSetting{ServerID: server.ID}
 	h.DB.FirstOrInit(&record, "server_id = ?", server.ID)
-	record.Enabled = req.Enabled
-	logDetail := fmt.Sprintf("%s: %s", server.Name, map[bool]string{true: "enabled", false: "disabled"}[req.Enabled])
+	record.Enabled = *req.Enabled
+	logDetail := fmt.Sprintf("%s: %s", server.Name, map[bool]string{true: "enabled", false: "disabled"}[*req.Enabled])
 	h.DB.Transaction(func(tx *gorm.DB) error {
 		tx.Exec(
 			"INSERT INTO mcp_server_settings (server_id, enabled, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT(server_id) DO UPDATE SET enabled = excluded.enabled, updated_at = CURRENT_TIMESTAMP",
 			server.ID,
-			req.Enabled,
+			*req.Enabled,
 		)
 		tx.Create(&models.AdminAuditLog{ActorID: current.ID, Action: "mcp.status.update", TargetType: "mcp_server", TargetID: server.ID, Detail: &logDetail})
 		return nil
