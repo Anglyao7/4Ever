@@ -200,6 +200,9 @@ func (h Handler) MCPToolCall(c *gin.Context) {
 		httputil.Error(c, http.StatusBadRequest, "Tool is not allowlisted for this MCP server.")
 		return
 	}
+	if req.Arguments == nil {
+		req.Arguments = map[string]any{}
+	}
 	result := h.callMCPTool(server, req.ToolName, req.Arguments)
 	c.JSON(http.StatusOK, ToolCallResponse{
 		ServerID: server.ID, ServerName: server.Name, ToolName: req.ToolName, Enabled: server.Enabled, Configured: server.Configured,

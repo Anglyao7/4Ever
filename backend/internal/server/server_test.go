@@ -449,6 +449,13 @@ func TestAgentQueryAndToolValidationMatchesPythonSchema(t *testing.T) {
 		t.Fatalf("too-long tool_name should return 422, got %d", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+
+	toolCall := postJSON(t, ts.URL+"/api/agents/mcp/bigmodel-web-search/tools/call", map[string]any{
+		"tool_name": "webSearchPrime",
+	}, "")
+	if arguments, ok := toolCall["arguments"].(map[string]any); !ok || len(arguments) != 0 {
+		t.Fatalf("omitted mcp arguments should default to empty object: %#v", toolCall)
+	}
 }
 
 func TestAgentCatalogReportsInternalRuntimeLikePythonBackend(t *testing.T) {
