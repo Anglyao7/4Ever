@@ -372,12 +372,12 @@ func (h Handler) Ingest(c *gin.Context) {
 }
 
 func (h Handler) Dashboard(c *gin.Context) {
-	user, ok := auth.ResolveUser(c, h.DB)
+	rangeValue := c.DefaultQuery("range", "30d")
+	start, end, ok := usageRange(c, rangeValue, c.Query("custom_start"), c.Query("custom_end"))
 	if !ok {
 		return
 	}
-	rangeValue := c.DefaultQuery("range", "30d")
-	start, end, ok := usageRange(c, rangeValue, c.Query("custom_start"), c.Query("custom_end"))
+	user, ok := auth.ResolveUser(c, h.DB)
 	if !ok {
 		return
 	}
@@ -413,12 +413,12 @@ func (h Handler) Dashboard(c *gin.Context) {
 }
 
 func (h Handler) Leaderboard(c *gin.Context) {
-	if _, ok := auth.ResolveUser(c, h.DB); !ok {
-		return
-	}
 	rangeValue := c.DefaultQuery("range", "30d")
 	start, end, ok := usageRange(c, rangeValue, c.Query("custom_start"), c.Query("custom_end"))
 	if !ok {
+		return
+	}
+	if _, ok := auth.ResolveUser(c, h.DB); !ok {
 		return
 	}
 	type row struct {

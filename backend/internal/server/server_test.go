@@ -281,6 +281,11 @@ func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
 		t.Fatalf("too-long auth search q should return 422, got %d", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+	resp = rawGet(t, ts.URL+"/api/auth/users/search?q="+strings.Repeat("x", 161), "")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long auth search q should return 422 before auth, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
 
 	for _, url := range []string{
 		ts.URL + "/api/token-usage/dashboard?range=bad",
@@ -289,6 +294,11 @@ func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
 		resp = rawGet(t, url, token)
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Fatalf("invalid token usage range should return 422 for %s, got %d", url, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+		resp = rawGet(t, url, "")
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("invalid token usage range should return 422 before auth for %s, got %d", url, resp.StatusCode)
 		}
 		_ = resp.Body.Close()
 	}

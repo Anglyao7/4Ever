@@ -182,10 +182,6 @@ func (h Handler) Me(c *gin.Context) {
 }
 
 func (h Handler) SearchUsers(c *gin.Context) {
-	current, ok := ResolveUser(c, h.DB)
-	if !ok {
-		return
-	}
 	rawQuery, exists := c.GetQuery("q")
 	if !exists {
 		httputil.Error(c, http.StatusUnprocessableEntity, "q is required")
@@ -198,6 +194,10 @@ func (h Handler) SearchUsers(c *gin.Context) {
 	}
 	if len([]rune(query)) > 160 {
 		httputil.Error(c, http.StatusUnprocessableEntity, "q must be 160 characters or fewer.")
+		return
+	}
+	current, ok := ResolveUser(c, h.DB)
+	if !ok {
 		return
 	}
 	pattern := "%" + query + "%"
