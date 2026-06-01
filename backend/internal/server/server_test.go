@@ -707,6 +707,8 @@ func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
 		{"provider": "openai", "model": "gpt", "messages": []any{}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": ""}}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "tool", "content": "hi"}}},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]any{{"role": 123, "content": "hi"}}},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]any{{"role": "user", "content": 123}}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}, "temperature": 2.1},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}, "max_tokens": 0},
 	}

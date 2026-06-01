@@ -252,11 +252,19 @@ func validateChatRequest(req ChatCompletionRequest) (string, int, string) {
 		return provider, http.StatusUnprocessableEntity, "At least one message is required."
 	}
 	for _, message := range req.Messages {
-		role := strings.TrimSpace(stringValue(message["role"]))
+		role, ok := message["role"].(string)
+		role = strings.TrimSpace(role)
+		if !ok {
+			return provider, http.StatusUnprocessableEntity, "Message role must be system, user, or assistant."
+		}
 		if role != "system" && role != "user" && role != "assistant" {
 			return provider, http.StatusUnprocessableEntity, "Message role must be system, user, or assistant."
 		}
-		if strings.TrimSpace(stringValue(message["content"])) == "" {
+		content, ok := message["content"].(string)
+		if !ok {
+			return provider, http.StatusUnprocessableEntity, "Message content is required."
+		}
+		if strings.TrimSpace(content) == "" {
 			return provider, http.StatusUnprocessableEntity, "Message content is required."
 		}
 	}
