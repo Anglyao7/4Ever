@@ -217,17 +217,31 @@ func (h Handler) StreamRun(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("X-Accel-Buffering", "no")
 	c.Header("Content-Type", "text/event-stream")
+	writeSSE(c, "run.started", map[string]string{"run_id": run.ID, "template_id": run.TemplateID, "agent_id": run.AgentID, "started_at": run.StartedAt})
 	for _, result := range run.NodeResults {
-		event := map[string]string{"run_id": run.ID, "node_id": result.NodeID, "status": result.Status, "output": result.Output}
-		writeSSE(c, "node.completed", event)
+		event := map[string]string{
+			"run_id": run.ID, "node_id": result.NodeID, "graph_step": result.GraphStep,
+			"status": result.Status, "output": result.Output, "ended_at": result.EndedAt,
+		}
+		writeSSE(c, "node.finished", event)
 	}
-	writeSSE(c, "run.completed", map[string]string{"run_id": run.ID, "status": run.Status})
+	if run.Status == "failed" {
+		writeSSE(c, "run.failed", map[string]string{"run_id": run.ID, "status": run.Status, "ended_at": run.EndedAt})
+		return
+	}
+	writeSSE(c, "run.finished", map[string]string{"run_id": run.ID, "status": run.Status, "ended_at": run.EndedAt})
 }
 
 func (h Handler) ListRuns(c *gin.Context) {
 	limit := 30
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed >= 1 && parsed <= 100 {
+			limit = parsed
+		}
+	}
 	var records []models.WorkflowAgentRun
-	h.DB.Order("created_at DESC").Limit(limit).Find(&records)
+	h.DB.Order("started_at DESC").Limit(limit).Find(&records)
 	out := make([]RunResponse, 0, len(records))
 	for _, record := range records {
 		out = append(out, runFromRecord(record))
@@ -477,7 +491,7 @@ func (h Handler) saveRun(run RunResponse, ended *time.Time) {
 	input, _ := json.Marshal(run.Input)
 	canvas, _ := json.Marshal(run.Canvas)
 	results, _ := json.Marshal(run.NodeResults)
-	events, _ := json.Marshal([]map[string]any{{"event": "run.finished", "data": map[string]string{"run_id": run.ID, "status": run.Status, "ended_at": run.EndedAt}}})
+	events, _ := json.Marshal(eventsForRun(run))
 	started, _ := time.Parse(time.RFC3339, run.StartedAt)
 	record := models.WorkflowAgentRun{ID: run.ID, ThreadID: run.ThreadID, CheckpointID: run.CheckpointID, TemplateID: run.TemplateID, AgentID: run.AgentID, AgentPromptVersion: run.AgentPromptVersion, AgentPromptChecksum: run.AgentPromptChecksum, Status: run.Status, GraphStepsJSON: string(graphSteps), EventsJSON: string(events), MCPServerIDsJSON: string(servers), InputJSON: string(input), CanvasJSON: string(canvas), NodeResultsJSON: string(results), ReviewStatus: run.ReviewStatus, ReviewNote: run.ReviewNote, StartedAt: started, EndedAt: ended}
 	h.DB.Save(&record)
@@ -486,6 +500,28 @@ func (h Handler) saveRun(run RunResponse, ended *time.Time) {
 		checkpointID := checkpointID(run.ThreadID, run.GraphSteps[:index+1])
 		h.DB.Create(&models.WorkflowAgentCheckpoint{RunID: run.ID, ThreadID: run.ThreadID, CheckpointID: checkpointID, GraphStep: step, NodeID: step, Status: "success", StateJSON: string(state), NodeResultJSON: "{}", EventsJSON: "[]"})
 	}
+}
+
+func eventsForRun(run RunResponse) []map[string]any {
+	events := []map[string]any{{
+		"event": "run.started",
+		"data":  map[string]string{"run_id": run.ID, "template_id": run.TemplateID, "agent_id": run.AgentID, "started_at": run.StartedAt},
+	}}
+	for _, result := range run.NodeResults {
+		events = append(events, map[string]any{
+			"event": "node.finished",
+			"data": map[string]string{
+				"run_id": run.ID, "node_id": result.NodeID, "graph_step": result.GraphStep,
+				"status": result.Status, "output": result.Output, "ended_at": result.EndedAt,
+			},
+		})
+	}
+	finalEvent := "run.finished"
+	if run.Status == "failed" {
+		finalEvent = "run.failed"
+	}
+	events = append(events, map[string]any{"event": finalEvent, "data": map[string]string{"run_id": run.ID, "status": run.Status, "ended_at": run.EndedAt}})
+	return events
 }
 
 func runFromRecord(record models.WorkflowAgentRun) RunResponse {

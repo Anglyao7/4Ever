@@ -3,9 +3,11 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +114,33 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	}, "")
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("disabled mcp run should be forbidden, got %d", resp.StatusCode)
+	}
+}
+
+func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	resp := rawPost(t, ts.URL+"/api/agents/runs/stream", map[string]any{
+		"template_id":    "note-message",
+		"agent_id":       "workflow-agent",
+		"mcp_server_ids": []string{},
+		"input":          map[string]string{"note": "hello"},
+		"source":         "manual",
+	}, "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream returned %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+	for _, expected := range []string{"event: run.started", "event: node.finished", "event: run.finished"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing %s in stream:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "node.completed") || strings.Contains(text, "run.completed") {
+		t.Fatalf("stream used obsolete event names:\n%s", text)
 	}
 }
 
