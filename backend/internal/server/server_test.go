@@ -190,6 +190,28 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
+func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	missing := rawGet(t, ts.URL+"/api/maps/tencent/city-search", "")
+	if missing.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("missing q should return 422 before map key check, got %d", missing.StatusCode)
+	}
+	_ = missing.Body.Close()
+
+	tooLong := rawGet(t, ts.URL+"/api/maps/tencent/city-search?q="+strings.Repeat("x", 81), "")
+	if tooLong.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long q should return 422 before map key check, got %d", tooLong.StatusCode)
+	}
+	_ = tooLong.Body.Close()
+
+	blank := getJSON(t, ts.URL+"/api/maps/tencent/city-search?q=%20%20", "")
+	if len(blank["results"].([]any)) != 0 {
+		t.Fatalf("blank q should return empty results: %#v", blank)
+	}
+}
+
 func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
@@ -556,6 +578,19 @@ func getJSONList(t *testing.T, url string, token string) []any {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func rawGet(t *testing.T, url string, token string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 func postJSON(t *testing.T, url string, payload map[string]any, token string) map[string]any {

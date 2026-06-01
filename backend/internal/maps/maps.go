@@ -46,13 +46,22 @@ func (h Handler) Config(c *gin.Context) {
 }
 
 func (h Handler) CitySearch(c *gin.Context) {
-	if h.Settings.TencentMapKey == "" {
-		httputil.Error(c, http.StatusServiceUnavailable, "Tencent map key is not configured.")
+	rawQuery, exists := c.GetQuery("q")
+	if !exists {
+		httputil.Error(c, http.StatusUnprocessableEntity, "q is required.")
 		return
 	}
-	keyword := strings.TrimSpace(c.Query("q"))
+	if len([]rune(rawQuery)) > 80 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "q must be 80 characters or fewer.")
+		return
+	}
+	keyword := strings.TrimSpace(rawQuery)
 	if keyword == "" {
 		c.JSON(http.StatusOK, gin.H{"results": []CityResult{}})
+		return
+	}
+	if h.Settings.TencentMapKey == "" {
+		httputil.Error(c, http.StatusServiceUnavailable, "Tencent map key is not configured.")
 		return
 	}
 	params := map[string]string{
