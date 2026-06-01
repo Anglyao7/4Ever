@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,12 +16,12 @@ import (
 type Handler struct{}
 
 type GenerationRequest struct {
-	Provider string  `json:"provider" binding:"required"`
+	Provider string  `json:"provider"`
 	BaseURL  *string `json:"base_url"`
 	APIKey   *string `json:"api_key"`
-	Model    string  `json:"model" binding:"required"`
+	Model    string  `json:"model"`
 	Prompt   string  `json:"prompt" binding:"required"`
-	Size     string  `json:"size" binding:"required"`
+	Size     string  `json:"size"`
 }
 
 type GeneratedImage struct {
@@ -47,8 +48,15 @@ func (Handler) Generate(c *gin.Context) {
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if provider == "" {
+		provider = "openai"
+	}
 	if provider != "openai" && provider != "custom" {
 		httputil.Error(c, http.StatusNotImplemented, "Image provider '"+req.Provider+"' is not supported yet.")
+		return
+	}
+	if len([]rune(req.Prompt)) > 4000 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Prompt must be 4000 characters or fewer.")
 		return
 	}
 	apiKey := ""
@@ -63,7 +71,15 @@ func (Handler) Generate(c *gin.Context) {
 	if req.BaseURL != nil && strings.TrimSpace(*req.BaseURL) != "" {
 		baseURL = strings.TrimSpace(*req.BaseURL)
 	}
-	payload := map[string]any{"model": req.Model, "prompt": req.Prompt, "size": req.Size}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		model = "gpt-image-1"
+	}
+	size := strings.TrimSpace(req.Size)
+	if size == "" {
+		size = "1024x1024"
+	}
+	payload := map[string]any{"model": model, "prompt": req.Prompt, "size": size}
 	body, _ := json.Marshal(payload)
 	httpReq, _ := http.NewRequest(http.MethodPost, strings.TrimRight(baseURL, "/")+"/images/generations", bytes.NewReader(body))
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
@@ -77,7 +93,7 @@ func (Handler) Generate(c *gin.Context) {
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		httputil.Error(c, http.StatusBadGateway, providerErrorDetail(respBody, resp.Status))
+		httputil.Error(c, http.StatusBadGateway, providerErrorDetail(respBody, resp.StatusCode))
 		return
 	}
 	var data map[string]any
@@ -102,10 +118,10 @@ func (Handler) Generate(c *gin.Context) {
 	if len(images) == 1 {
 		suffix = ""
 	}
-	c.JSON(http.StatusOK, GenerationResponse{Status: "success", Message: "Generated " + strconvItoa(len(images)) + " image" + suffix + ".", Images: images, Prompt: req.Prompt})
+	c.JSON(http.StatusOK, GenerationResponse{Status: "success", Message: "Generated " + strconv.Itoa(len(images)) + " image" + suffix + ".", Images: images, Prompt: req.Prompt})
 }
 
-func providerErrorDetail(body []byte, status string) string {
+func providerErrorDetail(body []byte, statusCode int) string {
 	var payload map[string]any
 	if json.Unmarshal(body, &payload) == nil {
 		if errorValue, ok := payload["error"].(map[string]any); ok {
@@ -122,17 +138,5 @@ func providerErrorDetail(body []byte, status string) string {
 	if len(body) > 0 {
 		return string(body)
 	}
-	return "Image provider returned HTTP " + status + "."
-}
-
-func strconvItoa(value int) string {
-	if value == 0 {
-		return "0"
-	}
-	out := ""
-	for value > 0 {
-		out = string(rune('0'+value%10)) + out
-		value /= 10
-	}
-	return out
+	return "Image provider returned HTTP " + strconv.Itoa(statusCode) + "."
 }

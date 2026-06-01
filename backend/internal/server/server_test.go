@@ -341,6 +341,45 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	}
 }
 
+func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
+	var providerPayload map[string]any
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/images/generations" {
+			t.Fatalf("unexpected image path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-image-key" {
+			t.Fatalf("unexpected auth header: %s", r.Header.Get("Authorization"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&providerPayload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"url":"https://example.com/image.png","revised_prompt":"draw"}]}`))
+	}))
+	defer provider.Close()
+	ts := testRouter(t)
+	defer ts.Close()
+
+	response := postJSON(t, ts.URL+"/api/images/generate", map[string]any{
+		"prompt":   "draw",
+		"api_key":  "test-image-key",
+		"base_url": provider.URL,
+	}, "")
+	if response["status"] != "success" || response["message"] != "Generated 1 image." {
+		t.Fatalf("unexpected image response: %#v", response)
+	}
+	if providerPayload["model"] != "gpt-image-1" || providerPayload["size"] != "1024x1024" || providerPayload["prompt"] != "draw" {
+		t.Fatalf("image defaults were not sent to provider: %#v", providerPayload)
+	}
+	tooLong := rawPost(t, ts.URL+"/api/images/generate", map[string]any{
+		"prompt":  strings.Repeat("x", 4001),
+		"api_key": "test-image-key",
+	}, "")
+	if tooLong.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long prompt should be rejected, got %d", tooLong.StatusCode)
+	}
+}
+
 func getJSON(t *testing.T, url string, token string) map[string]any {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
