@@ -735,9 +735,21 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	if tooLong.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("too-long direct message should be rejected, got %d", tooLong.StatusCode)
 	}
+	nullContent := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"content": nil}, aliceToken)
+	if nullContent.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("null direct message content should be rejected, got %d", nullContent.StatusCode)
+	}
+	nullAttachments := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": nil}, aliceToken)
+	if nullAttachments.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("null direct message attachments should be rejected, got %d", nullAttachments.StatusCode)
+	}
 	badAttachment := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "a1", "name": "bad", "type": "text/plain", "kind": "file", "size": -1}}}, aliceToken)
 	if badAttachment.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("negative attachment size should be rejected, got %d", badAttachment.StatusCode)
+	}
+	nullAttachmentSize := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "a1", "name": "bad", "type": "text/plain", "kind": "file", "size": nil}}}, aliceToken)
+	if nullAttachmentSize.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("null attachment size should be rejected, got %d", nullAttachmentSize.StatusCode)
 	}
 	missingAttachmentField := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "a1", "name": "bad", "type": "text/plain", "size": 1}}}, aliceToken)
 	if missingAttachmentField.StatusCode != http.StatusUnprocessableEntity {

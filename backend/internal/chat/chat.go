@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -30,6 +31,24 @@ type DirectAttachment struct {
 	DataURL *string `json:"data_url"`
 }
 
+func (attachment *DirectAttachment) UnmarshalJSON(data []byte) error {
+	type alias DirectAttachment
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	size, ok := raw["size"]
+	if !ok || string(size) == "null" {
+		return fmt.Errorf("attachment size is required")
+	}
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*attachment = DirectAttachment(decoded)
+	return nil
+}
+
 type DirectReplyReference struct {
 	ID         *uint      `json:"id"`
 	AuthorName *string    `json:"author_name"`
@@ -42,6 +61,32 @@ type DirectMessageCreate struct {
 	Content          string             `json:"content"`
 	Attachments      []DirectAttachment `json:"attachments"`
 	ReplyToMessageID *uint              `json:"reply_to_message_id"`
+}
+
+func (req *DirectMessageCreate) UnmarshalJSON(data []byte) error {
+	type alias DirectMessageCreate
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw struct {
+		Content     json.RawMessage `json:"content"`
+		Attachments json.RawMessage `json:"attachments"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.Content != nil && string(raw.Content) == "null" {
+		return fmt.Errorf("content cannot be null")
+	}
+	if raw.Attachments != nil && string(raw.Attachments) == "null" {
+		return fmt.Errorf("attachments cannot be null")
+	}
+	*req = DirectMessageCreate(decoded)
+	if req.Attachments == nil {
+		req.Attachments = []DirectAttachment{}
+	}
+	return nil
 }
 
 type DirectMessageResponse struct {
