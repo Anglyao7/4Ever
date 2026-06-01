@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -15,7 +16,7 @@ from app.services.agents.catalog import (
     find_mcp_server,
     find_workflow_policy,
 )
-from app.services.agents.graph import AgentGraphNode, build_agent_graph, graph_execution_plan
+from app.services.agents.graph import AgentGraphNode, build_canvas_agent_graph, canvas_graph_execution_plan
 from app.services.agents.langgraph_adapter import execute_agent_graph_runtime, langgraph_checkpoint_for_step
 from app.services.agents.mcp_client import build_mcp_call_plan, call_mcp_tool
 from app.services.ai.adapters import ProviderError
@@ -65,8 +66,8 @@ async def execute_agent_workflow(
     events: list[AgentRunEventRecord] = []
     source_text = first_input_value(request.input)
     mcp_servers = [configured_server(server_id, db) for server_id in request.mcp_server_ids]
-    graph = build_agent_graph(request.template_id)
-    graph_nodes = graph_execution_plan(request.template_id)
+    graph = build_canvas_agent_graph(request.template_id, request.canvas)
+    graph_nodes = canvas_graph_execution_plan(request.template_id, request.canvas)
     langgraph_checkpoint_id = langgraph_checkpoint_for_step(thread_id, resume_after) if resume_after else ""
     if on_prepared:
         on_prepared(prepared or AgentRunPrepared(run_id=run_id, thread_id=thread_id, started_at=started_at, request=request), agent, policy)
@@ -77,6 +78,7 @@ async def execute_agent_workflow(
         "template_id": request.template_id,
         "agent_id": agent.id,
         "input": request.input,
+        "canvas": request.canvas,
         "status": "running",
         "trace": initial_trace,
         "retry_limit": policy.retry_limit if policy else 0,
@@ -120,6 +122,7 @@ async def execute_agent_workflow(
         status=run_status,
         graph_steps=state.get("trace", []),
         input={**request.input, "source": request.source},
+        canvas=request.canvas,
         node_results=node_results,
         review_status=resume_from.review_status if resume_from else initial_review_status(request.template_id),
         review_note=resume_from.review_note if resume_from else "",
@@ -142,6 +145,7 @@ async def resume_agent_workflow(previous_run: AgentRunResponse, event_handler=No
         mcp_server_ids=previous_run.mcp_server_ids,
         input={key: value for key, value in previous_run.input.items() if key != "source"},
         source=previous_run.input.get("source", "resume"),
+        canvas=previous_run.canvas,
     )
     return await execute_agent_workflow(
         request,
@@ -256,7 +260,7 @@ async def render_graph_node(
     mcp_servers: list[McpServer],
     graph_nodes: list[str],
 ) -> dict:
-    rendered = await render_node_output(node.id, node.type, source, index, agent, mcp_servers, graph_nodes, state.get("trace", []))
+    rendered = await render_node_output(node.id, node.type, source, index, agent, mcp_servers, graph_nodes, state.get("trace", []), state.get("canvas"))
     return {
         "node_id": node.id,
         "type": node.type,
@@ -277,7 +281,9 @@ async def render_node_output(
     mcp_servers: list[McpServer],
     graph_nodes: list[str],
     trace: list[str],
+    canvas: Optional[dict[str, object]] = None,
 ) -> NodeRender:
+    canvas_note = canvas_node_note(node_id, canvas)
     if node_type == "agent":
         return NodeRender(
             "\n".join(
@@ -285,33 +291,52 @@ async def render_node_output(
                     f"{agent.name} 已加载。模型建议：{agent.model_hint}。",
                     f"LangGraph plan: {' -> '.join(graph_nodes)}",
                     f"Graph trace: {' -> '.join(trace)}",
+                    canvas_note,
                     "密钥由后端环境变量托管。",
                 ]
             )
         )
     if not source and node_type != "agent":
-        return NodeRender("等待输入内容。")
+        return NodeRender("\n".join([canvas_note, "等待输入内容。"]).strip())
     if node_type == "mcp":
         server_index = max(index - 1, 0)
         server = mcp_servers[server_index] if server_index < len(mcp_servers) else (mcp_servers[0] if mcp_servers else None)
         if not server:
-            return NodeRender("没有绑定 MCP Server。")
+            return NodeRender("\n".join([canvas_note, "没有绑定 MCP Server。"]).strip())
         plan = build_mcp_call_plan(server)
         tool_name = tool_for_node(node_id, server)
         arguments = arguments_for_tool(tool_name, source)
         result = await call_mcp_tool(server, tool_name, arguments)
         status = "failed" if result.get("status") == "failed" else "success"
-        return NodeRender(render_mcp_output(plan, result), status=status)
+        return NodeRender("\n".join([canvas_note, render_mcp_output(plan, result)]).strip(), status=status)
     if node_type == "notes":
-        return NodeRender(source[:120])
+        return NodeRender("\n".join([canvas_note, source[:120]]).strip())
     if node_type == "transform":
         points = " / ".join([part for part in split_sentences(source)[:3] if part])
-        return NodeRender(f"标题：{source[:18]}...\n要点：{points}")
+        return NodeRender("\n".join([canvas_note, f"标题：{source[:18]}...\n要点：{points}"]).strip())
     if node_type == "chat":
-        return NodeRender(f"我整理了一段内容，想同步给你：{source[:160]}")
+        return NodeRender("\n".join([canvas_note, f"我整理了一段内容，想同步给你：{source[:160]}"]).strip())
     if node_type == "ai":
-        return await synthesize_with_model_or_plan(node_id, source, agent, trace)
-    return NodeRender(f"基于内容生成：{source[:180]}")
+        return await synthesize_with_model_or_plan(node_id, "\n".join([canvas_note, source]).strip(), agent, trace)
+    return NodeRender("\n".join([canvas_note, f"基于内容生成：{source[:180]}"]).strip())
+
+
+def canvas_node_note(node_id: str, canvas: Optional[dict[str, object]]) -> str:
+    if not isinstance(canvas, dict):
+        return ""
+    raw_nodes = canvas.get("nodes")
+    raw_connections = canvas.get("connections")
+    nodes = raw_nodes if isinstance(raw_nodes, list) else []
+    connections = raw_connections if isinstance(raw_connections, list) else []
+    canvas_node_id = node_id.removeprefix("canvas-")
+    node = next((item for item in nodes if isinstance(item, dict) and str(item.get("id")) == canvas_node_id), None)
+    if not isinstance(node, dict):
+        return ""
+    incoming = [connection for connection in connections if isinstance(connection, dict) and str(connection.get("targetNodeId")) == canvas_node_id]
+    outgoing = [connection for connection in connections if isinstance(connection, dict) and str(connection.get("sourceNodeId")) == canvas_node_id]
+    config = node.get("config") if isinstance(node.get("config"), dict) else {}
+    config_keys = "、".join(str(key) for key, value in config.items() if str(value).strip())
+    return f"Canvas node: {node.get('label', node_id)} ({node.get('type', 'node')}) · {len(incoming)} 入 / {len(outgoing)} 出" + (f" · 配置：{config_keys}" if config_keys else "")
 
 
 async def synthesize_with_model_or_plan(node_id: str, source: str, agent: AgentBlueprint, trace: list[str]) -> NodeRender:

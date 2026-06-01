@@ -2,8 +2,10 @@ import asyncio
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 import httpx
+from sqlalchemy import create_engine, inspect, text
 
 
 db_file = tempfile.NamedTemporaryFile(prefix="4ever-agent-tests-", suffix=".db", delete=False)
@@ -16,16 +18,18 @@ os.environ["AGENT_GRAPH_RUNTIME"] = "internal"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.api.routes.token_usage import build_heatmap, build_trend  # noqa: E402
+from app.db.models import TokenUsageBucketRecord, TokenUsageSessionRecord  # noqa: E402
 from app.schemas.agents import McpServer  # noqa: E402
 from app.schemas.agents import AgentRunCreate  # noqa: E402
 from app.schemas.ai import ChatCompletionResponse, ProviderFormat  # noqa: E402
 from app.services.agents.active_runs import register_active_run, unregister_active_run  # noqa: E402
-from app.services.agents.graph import build_agent_graph  # noqa: E402
+from app.services.agents.graph import AgentGraph, AgentGraphNode, build_agent_graph, build_canvas_agent_graph, graph_execution_nodes  # noqa: E402
 from app.services.agents.langgraph_adapter import compile_langgraph_state_graph, execute_agent_graph_runtime, langgraph_plan, langgraph_runtime_status  # noqa: E402
 from app.services.agents.mcp_client import call_mcp_tool, list_mcp_tools  # noqa: E402
-from app.services.agents.runner import arguments_for_tool, execute_agent_workflow, prepare_agent_run, run_agent_workflow, tool_for_node  # noqa: E402
+from app.services.agents.runner import AgentRunError, arguments_for_tool, execute_agent_workflow, prepare_agent_run, run_agent_workflow, tool_for_node  # noqa: E402
 from app.services.agents.storage import cancel_agent_run  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import SessionLocal, ensure_token_usage_schema_updates  # noqa: E402
 
 
 def run_async(coro):
@@ -50,8 +54,10 @@ class AgentApiTest(unittest.TestCase):
             self.assertEqual(policies["agent-research-brief"]["execution_mode"], "read_only")
             self.assertFalse(policies["agent-research-brief"]["requires_review"])
             self.assertEqual(policies["agent-repo-brief"]["audit_level"], "code_evidence")
+            self.assertEqual(policies["canvas-workflow"]["audit_level"], "canvas_trace")
             self.assertIn("agent-repo-brief", agents["research-agent"]["workflow_template_ids"])
             self.assertIn("bigmodel-zread", agents["research-agent"]["mcp_server_ids"])
+            self.assertIn("canvas-workflow", agents["workflow-agent"]["workflow_template_ids"])
             self.assertTrue(policies["note-message"]["requires_review"])
             self.assertIn("draft_message", policies["note-message"]["side_effects"])
 
@@ -798,6 +804,195 @@ class McpClientTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_canvas_payload_builds_runtime_graph_from_connections(self) -> None:
+        canvas = {
+            "id": "canvas-test",
+            "nodes": [
+                {"id": "trigger", "type": "trigger", "label": "手动触发", "config": {}, "inputs": [], "outputs": ["output"]},
+                {"id": "models", "type": "provider-models", "label": "获取模型列表", "config": {"provider": "openai"}, "inputs": ["api_config"], "outputs": ["models"]},
+                {"id": "agent", "type": "agent-run", "label": "秩序 Agent", "config": {"agentId": "workflow-agent"}, "inputs": ["task"], "outputs": ["summary"]},
+            ],
+            "connections": [
+                {"sourceNodeId": "trigger", "sourceHandle": "output", "targetNodeId": "models", "targetHandle": "api_config"},
+                {"sourceNodeId": "models", "sourceHandle": "models", "targetNodeId": "agent", "targetHandle": "task"},
+            ],
+        }
+
+        execution = await execute_agent_workflow(
+            AgentRunCreate(
+                template_id="canvas-workflow",
+                agent_id="workflow-agent",
+                mcp_server_ids=[],
+                input={"canvas": "从灵感画布进入秩序"},
+                source="inspiration",
+                canvas=canvas,
+            )
+        )
+
+        self.assertEqual(execution.run.status, "success")
+        self.assertEqual(execution.run.canvas, canvas)
+        self.assertEqual([node.node_id for node in execution.run.node_results], ["canvas-trigger", "canvas-models", "canvas-agent"])
+        self.assertEqual([node.graph_step for node in execution.run.node_results], ["canvas_1_trigger", "canvas_2_provider_models", "canvas_3_agent_run"])
+        self.assertIn("Canvas node: 获取模型列表", execution.run.node_results[1].output)
+
+    async def test_canvas_workflow_requires_connected_nodes_before_run(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "trigger", "type": "trigger", "label": "手动触发"},
+                {"id": "agent", "type": "agent-run", "label": "秩序 Agent"},
+            ],
+            "connections": [],
+        }
+
+        with self.assertRaises(AgentRunError) as context:
+            await execute_agent_workflow(
+                AgentRunCreate(
+                    template_id="canvas-workflow",
+                    agent_id="workflow-agent",
+                    mcp_server_ids=[],
+                    input={"canvas": "从灵感画布进入秩序"},
+                    source="inspiration",
+                    canvas=canvas,
+                )
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("connected", context.exception.detail)
+
+    async def test_canvas_workflow_rejects_cycles_before_run(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "trigger", "type": "trigger", "label": "手动触发"},
+                {"id": "audit", "type": "admin-audit", "label": "管理审计"},
+                {"id": "agent", "type": "agent-run", "label": "秩序 Agent"},
+            ],
+            "connections": [
+                {"sourceNodeId": "trigger", "targetNodeId": "audit"},
+                {"sourceNodeId": "audit", "targetNodeId": "agent"},
+                {"sourceNodeId": "agent", "targetNodeId": "trigger"},
+            ],
+        }
+
+        with self.assertRaises(AgentRunError) as context:
+            await execute_agent_workflow(
+                AgentRunCreate(
+                    template_id="canvas-workflow",
+                    agent_id="workflow-agent",
+                    mcp_server_ids=[],
+                    input={"canvas": "从灵感画布进入秩序"},
+                    source="inspiration",
+                    canvas=canvas,
+                )
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("cycle", context.exception.detail)
+
+    async def test_canvas_graph_preserves_connection_edges(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "a", "type": "trigger", "label": "开始"},
+                {"id": "b", "type": "token-usage", "label": "Token 统计"},
+                {"id": "c", "type": "memory-map", "label": "地图记忆"},
+            ],
+            "connections": [
+                {"sourceNodeId": "a", "targetNodeId": "b"},
+                {"sourceNodeId": "a", "targetNodeId": "c"},
+            ],
+        }
+
+        graph = build_canvas_agent_graph("note-copy", canvas)
+
+        self.assertIn(("canvas_1_trigger", "canvas_2_token_usage"), graph.edges)
+        self.assertIn(("canvas_1_trigger", "canvas_3_memory_map"), graph.edges)
+        self.assertNotIn(("canvas_2_token_usage", "canvas_3_memory_map"), graph.edges)
+
+    async def test_canvas_graph_connects_all_branch_sinks_to_persist(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "a", "type": "webhook-ingress", "label": "Webhook 入口"},
+                {"id": "b", "type": "api-health", "label": "接口健康检查"},
+                {"id": "c", "type": "knowledge-search", "label": "知识检索"},
+                {"id": "d", "type": "agent-run", "label": "秩序 Agent"},
+            ],
+            "connections": [
+                {"sourceNodeId": "a", "targetNodeId": "b"},
+                {"sourceNodeId": "a", "targetNodeId": "c"},
+                {"sourceNodeId": "b", "targetNodeId": "d"},
+                {"sourceNodeId": "c", "targetNodeId": "d"},
+            ],
+        }
+
+        graph = build_canvas_agent_graph("note-copy", canvas)
+
+        self.assertEqual([node.type for node in graph.nodes], ["source", "mcp", "notes", "agent"])
+        self.assertIn(("canvas_4_agent_run", "persist"), graph.edges)
+        self.assertEqual(graph.edges.count(("canvas_4_agent_run", "persist")), 1)
+
+    async def test_canvas_graph_maps_more_system_interface_nodes(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "a", "type": "trigger", "label": "开始"},
+                {"id": "b", "type": "contact-profile", "label": "联系人档案"},
+                {"id": "c", "type": "calendar-event", "label": "日程事件"},
+                {"id": "d", "type": "database-query", "label": "数据库查询"},
+                {"id": "e", "type": "email-inbox", "label": "邮件收件箱"},
+                {"id": "f", "type": "cloud-drive", "label": "云盘文件"},
+                {"id": "g", "type": "sheet-row", "label": "表格数据"},
+                {"id": "h", "type": "cms-publish", "label": "内容发布"},
+                {"id": "i", "type": "notification-send", "label": "通知发送"},
+            ],
+            "connections": [
+                {"sourceNodeId": "a", "targetNodeId": "b"},
+                {"sourceNodeId": "b", "targetNodeId": "c"},
+                {"sourceNodeId": "c", "targetNodeId": "d"},
+                {"sourceNodeId": "d", "targetNodeId": "e"},
+                {"sourceNodeId": "e", "targetNodeId": "f"},
+                {"sourceNodeId": "f", "targetNodeId": "g"},
+                {"sourceNodeId": "g", "targetNodeId": "h"},
+                {"sourceNodeId": "h", "targetNodeId": "i"},
+            ],
+        }
+
+        graph = build_canvas_agent_graph("note-copy", canvas)
+
+        self.assertEqual([node.type for node in graph.nodes], ["source", "chat", "chat", "notes", "notes", "notes", "notes", "chat", "chat"])
+        self.assertIn(("canvas_9_notification_send", "persist"), graph.edges)
+
+    async def test_canvas_graph_falls_back_to_linear_edges_for_cycles(self) -> None:
+        canvas = {
+            "nodes": [
+                {"id": "a", "type": "trigger", "label": "开始"},
+                {"id": "b", "type": "token-usage", "label": "Token 统计"},
+                {"id": "c", "type": "agent-run", "label": "秩序 Agent"},
+            ],
+            "connections": [
+                {"sourceNodeId": "a", "targetNodeId": "b"},
+                {"sourceNodeId": "b", "targetNodeId": "c"},
+                {"sourceNodeId": "c", "targetNodeId": "a"},
+            ],
+        }
+
+        graph = build_canvas_agent_graph("note-copy", canvas)
+
+        self.assertIn(("canvas_1_trigger", "canvas_2_token_usage"), graph.edges)
+        self.assertIn(("canvas_2_token_usage", "canvas_3_agent_run"), graph.edges)
+        self.assertNotIn(("canvas_3_agent_run", "canvas_1_trigger"), graph.edges)
+        self.assertIn(("canvas_3_agent_run", "persist"), graph.edges)
+
+    async def test_internal_executor_uses_edge_topology_order(self) -> None:
+        graph = AgentGraph(
+            template_id="custom",
+            nodes=[
+                AgentGraphNode("second", "transform", "第二步", "second"),
+                AgentGraphNode("first", "source", "第一步", "first"),
+                AgentGraphNode("third", "ai", "第三步", "third"),
+            ],
+            edges=[("first", "second"), ("second", "third"), ("third", "persist")],
+        )
+
+        self.assertEqual([node.graph_step for node in graph_execution_nodes(graph)], ["first", "second", "third"])
+
     async def test_ai_node_uses_planned_synthesis_by_default(self) -> None:
         execution = await execute_agent_workflow(
             AgentRunCreate(
@@ -1458,6 +1653,40 @@ class McpToolExtractionTest(unittest.TestCase):
 
 
 class TokenUsageApiTest(unittest.TestCase):
+    def test_token_usage_schema_update_adds_missing_release_columns(self) -> None:
+        db_file = tempfile.NamedTemporaryFile(prefix="4ever-token-schema-", suffix=".db", delete=False)
+        db_file.close()
+        test_engine = create_engine(f"sqlite:///{db_file.name}", connect_args={"check_same_thread": False})
+        try:
+            with test_engine.begin() as connection:
+                connection.execute(text("CREATE TABLE token_usage_api_keys (id VARCHAR(80) PRIMARY KEY, user_id VARCHAR(64) NOT NULL)"))
+                connection.execute(text("CREATE TABLE token_usage_buckets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id VARCHAR(64) NOT NULL, device_id VARCHAR(120) NOT NULL, source VARCHAR(80) NOT NULL, bucket_start DATETIME NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)"))
+                connection.execute(text("CREATE TABLE token_usage_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id VARCHAR(64) NOT NULL, device_id VARCHAR(120) NOT NULL, source VARCHAR(80) NOT NULL, project_key VARCHAR(160) NOT NULL, session_hash VARCHAR(120) NOT NULL, first_message_at DATETIME NOT NULL, last_message_at DATETIME NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)"))
+
+            ensure_token_usage_schema_updates(test_engine)
+
+            inspector = inspect(test_engine)
+            key_columns = {column["name"] for column in inspector.get_columns("token_usage_api_keys")}
+            bucket_columns = {column["name"] for column in inspector.get_columns("token_usage_buckets")}
+            session_columns = {column["name"] for column in inspector.get_columns("token_usage_sessions")}
+            bucket_indexes = {index["name"] for index in inspector.get_indexes("token_usage_buckets")}
+            session_indexes = {index["name"] for index in inspector.get_indexes("token_usage_sessions")}
+
+            self.assertIn("key_hash", key_columns)
+            self.assertIn("raw_key", key_columns)
+            self.assertIn("last_used_at", key_columns)
+            self.assertIn("model", bucket_columns)
+            self.assertIn("project_key", bucket_columns)
+            self.assertIn("reasoning_tokens", bucket_columns)
+            self.assertIn("estimated_cost_usd", bucket_columns)
+            self.assertIn("active_seconds", session_columns)
+            self.assertIn("model_usages_json", session_columns)
+            self.assertIn("ix_token_usage_buckets_project_key", bucket_indexes)
+            self.assertIn("ix_token_usage_sessions_last_message_at", session_indexes)
+        finally:
+            test_engine.dispose()
+            os.unlink(db_file.name)
+
     def test_token_usage_ingest_dashboard_and_leaderboard_bind_current_user(self) -> None:
         with TestClient(app) as client:
             auth = client.post(
@@ -1475,7 +1704,21 @@ class TokenUsageApiTest(unittest.TestCase):
             key_response = client.post("/api/token-usage/keys", json={"name": "Local CLI"}, headers=headers)
             self.assertEqual(key_response.status_code, 200)
             raw_key = key_response.json()["raw_key"]
+            first_key_id = key_response.json()["key"]["id"]
             self.assertTrue(raw_key.startswith("4ev_tok_"))
+
+            reveal_response = client.get(f"/api/token-usage/keys/{first_key_id}/reveal", headers=headers)
+            self.assertEqual(reveal_response.status_code, 200)
+            self.assertEqual(reveal_response.json()["raw_key"], raw_key)
+
+            renamed_response = client.patch(f"/api/token-usage/keys/{first_key_id}", json={"name": "Home Mac"}, headers=headers)
+            self.assertEqual(renamed_response.status_code, 200)
+            self.assertEqual(renamed_response.json()["name"], "Home Mac")
+
+            second_key_response = client.post("/api/token-usage/keys", json={"name": "Office Mac"}, headers=headers)
+            self.assertEqual(second_key_response.status_code, 200)
+            second_raw_key = second_key_response.json()["raw_key"]
+            second_key_id = second_key_response.json()["key"]["id"]
 
             ingest = client.post(
                 "/api/token-usage/ingest",
@@ -1522,19 +1765,70 @@ class TokenUsageApiTest(unittest.TestCase):
             self.assertEqual(ingest.json()["bucketCount"], 1)
             self.assertEqual(ingest.json()["sessionCount"], 1)
 
+            second_ingest = client.post(
+                "/api/token-usage/ingest",
+                headers={"Authorization": f"Bearer {second_raw_key}"},
+                json={
+                    "schemaVersion": 2,
+                    "device": {"deviceId": "office-device", "hostname": "office-host"},
+                    "buckets": [
+                        {
+                            "source": "codex",
+                            "model": "gpt-5",
+                            "projectKey": "project-hash",
+                            "projectLabel": "4Ever",
+                            "bucketStart": "2026-05-30T08:00:00Z",
+                            "inputTokens": 60,
+                            "outputTokens": 40,
+                            "reasoningTokens": 20,
+                            "cachedTokens": 0,
+                        }
+                    ],
+                    "sessions": [
+                        {
+                            "source": "codex",
+                            "projectKey": "project-hash",
+                            "projectLabel": "4Ever",
+                            "sessionHash": "session-two",
+                            "firstMessageAt": "2026-05-30T08:10:00Z",
+                            "lastMessageAt": "2026-05-30T08:18:00Z",
+                            "durationSeconds": 480,
+                            "activeSeconds": 180,
+                            "messageCount": 6,
+                            "userMessageCount": 3,
+                            "inputTokens": 60,
+                            "outputTokens": 40,
+                            "reasoningTokens": 20,
+                            "cachedTokens": 0,
+                            "primaryModel": "gpt-5",
+                            "modelUsages": [{"model": "gpt-5", "totalTokens": 120}],
+                        }
+                    ],
+                },
+            )
+            self.assertEqual(second_ingest.status_code, 200)
+
             dashboard = client.get("/api/token-usage/dashboard?range=all", headers=headers)
             self.assertEqual(dashboard.status_code, 200)
             payload = dashboard.json()
-            self.assertEqual(payload["overview"]["total_tokens"], 180)
-            self.assertEqual(payload["overview"]["active_seconds"], 120)
-            self.assertEqual(payload["overview"]["sessions"], 1)
+            self.assertEqual(payload["overview"]["total_tokens"], 300)
+            self.assertEqual(payload["overview"]["active_seconds"], 300)
+            self.assertEqual(payload["overview"]["sessions"], 2)
             self.assertEqual(payload["by_source"][0]["key"], "codex")
             self.assertEqual(payload["by_model"][0]["key"], "gpt-5")
             self.assertEqual(payload["by_project"][0]["label"], "4Ever")
-            self.assertEqual(payload["heatmap"][0]["hour"], 8)
-            self.assertEqual(payload["devices"][0]["device_id"], "test-device")
-            self.assertEqual(payload["devices"][0]["hostname"], "test-host")
-            self.assertEqual(payload["devices"][0]["total_tokens"], 180)
+            self.assertEqual(payload["heatmap"][0]["hour"], 16)
+            self.assertEqual(payload["heatmap"][0]["total_tokens"], 300)
+            key_breakdown = {item["key_id"]: item for item in payload["heatmap"][0]["key_breakdown"]}
+            self.assertEqual(key_breakdown[first_key_id]["key_name"], "Home Mac")
+            self.assertEqual(key_breakdown[first_key_id]["total_tokens"], 180)
+            self.assertEqual(key_breakdown[second_key_id]["key_name"], "Office Mac")
+            self.assertEqual(key_breakdown[second_key_id]["total_tokens"], 120)
+            devices_by_id = {item["device_id"]: item for item in payload["devices"]}
+            self.assertEqual(devices_by_id["test-device"]["hostname"], "test-host")
+            self.assertEqual(devices_by_id["test-device"]["total_tokens"], 180)
+            self.assertEqual(devices_by_id["office-device"]["hostname"], "office-host")
+            self.assertEqual(devices_by_id["office-device"]["total_tokens"], 120)
 
             keys = client.get("/api/token-usage/keys", headers=headers)
             self.assertEqual(keys.status_code, 200)
@@ -1544,8 +1838,60 @@ class TokenUsageApiTest(unittest.TestCase):
             self.assertEqual(leaderboard.status_code, 200)
             top = leaderboard.json()["entries"][0]
             self.assertEqual(top["username"], "tokenuser")
-            self.assertEqual(top["total_tokens"], 180)
-            self.assertEqual(top["active_seconds"], 120)
+            self.assertEqual(top["total_tokens"], 300)
+            self.assertEqual(top["active_seconds"], 300)
+
+            disabled_response = client.patch(f"/api/token-usage/keys/{second_key_id}", json={"status": "disabled"}, headers=headers)
+            self.assertEqual(disabled_response.status_code, 200)
+            self.assertEqual(disabled_response.json()["status"], "disabled")
+            disabled_ingest = client.post(
+                "/api/token-usage/ingest",
+                headers={"Authorization": f"Bearer {second_raw_key}"},
+                json={"schemaVersion": 2, "device": {"deviceId": "office-device", "hostname": "office-host"}, "buckets": [], "sessions": []},
+            )
+            self.assertEqual(disabled_ingest.status_code, 401)
+
+    def test_token_usage_hourly_stats_use_display_timezone(self) -> None:
+        bucket = TokenUsageBucketRecord(
+            user_id="user",
+            device_id="device",
+            source="codex",
+            model="gpt-5",
+            project_key="project",
+            project_label="Project",
+            bucket_start=datetime(2026, 5, 30, 23, 30),
+            input_tokens=10,
+            output_tokens=20,
+            reasoning_tokens=0,
+            cached_tokens=5,
+            total_tokens=35,
+        )
+        session = TokenUsageSessionRecord(
+            user_id="user",
+            device_id="device",
+            source="codex",
+            project_key="project",
+            project_label="Project",
+            session_hash="session",
+            first_message_at=datetime(2026, 5, 30, 23, 40),
+            last_message_at=datetime(2026, 5, 30, 23, 50),
+            active_seconds=90,
+            message_count=2,
+            user_message_count=1,
+            input_tokens=10,
+            output_tokens=20,
+            cached_tokens=5,
+            total_tokens=35,
+        )
+
+        heatmap = build_heatmap([bucket], [session])
+        trend = build_trend([bucket], [session])
+
+        self.assertEqual(heatmap[0].day, "2026-05-31")
+        self.assertEqual(heatmap[0].hour, 7)
+        self.assertEqual(heatmap[0].total_tokens, 35)
+        self.assertEqual(heatmap[0].active_seconds, 90)
+        self.assertEqual(trend[0].date, "2026-05-31")
 
 
 def live_server() -> McpServer:

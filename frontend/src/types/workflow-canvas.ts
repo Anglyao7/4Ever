@@ -6,6 +6,16 @@ export type NodeType =
   | "image-gen"        // 图片生成
   | "send-message"     // 发送消息
   | "http-request"     // HTTP 请求
+  | "provider-models"  // 获取接口模型
+  | "token-usage"      // Token 用量
+  | "memory-map"       // 地图记忆
+  | "chat-thread"      // 会话线程
+  | "image-studio"     // 绘影接口
+  | "notes-query"      // 笔记读取
+  | "module-catalog"   // 模块目录
+  | "mcp-tool"         // MCP 工具
+  | "admin-audit"      // 管理审计
+  | "agent-run"        // 秩序 Agent
   | "condition"        // 条件判断
   | "loop"             // 循环
   | "delay"            // 延迟

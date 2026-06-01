@@ -4,7 +4,7 @@ import hashlib
 import json
 import secrets
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -18,9 +18,12 @@ from app.schemas.token_usage import (
     TokenUsageApiKey,
     TokenUsageApiKeyCreate,
     TokenUsageApiKeyCreateResponse,
+    TokenUsageApiKeyRevealResponse,
+    TokenUsageApiKeyUpdate,
     TokenUsageDashboard,
     TokenUsageDeviceSummary,
     TokenUsageHeatmapCell,
+    TokenUsageHeatmapKeyBreakdown,
     TokenUsageIngestRequest,
     TokenUsageIngestResponse,
     TokenUsageLeaderboard,
@@ -32,6 +35,7 @@ from app.schemas.token_usage import (
 
 
 router = APIRouter(prefix="/token-usage", tags=["token-usage"])
+TOKEN_USAGE_DISPLAY_TZ = timezone(timedelta(hours=8))
 
 
 @router.get("/keys", response_model=list[TokenUsageApiKey])
@@ -59,12 +63,40 @@ async def create_key(
         name=request.name.strip() or "本机 CLI",
         prefix=raw_key[:14],
         key_hash=hash_usage_key(raw_key),
+        raw_key=raw_key,
         status="active",
     )
     db.add(record)
     db.commit()
     db.refresh(record)
     return TokenUsageApiKeyCreateResponse(key=to_api_key(record), raw_key=raw_key)
+
+
+@router.get("/keys/{key_id}/reveal", response_model=TokenUsageApiKeyRevealResponse)
+async def reveal_key(
+    key_id: str,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> TokenUsageApiKeyRevealResponse:
+    record = resolve_owned_key(key_id, authorization, db)
+    return TokenUsageApiKeyRevealResponse(raw_key=record.raw_key)
+
+
+@router.patch("/keys/{key_id}", response_model=TokenUsageApiKey)
+async def update_key(
+    key_id: str,
+    request: TokenUsageApiKeyUpdate,
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> TokenUsageApiKey:
+    record = resolve_owned_key(key_id, authorization, db)
+    if request.name is not None:
+        record.name = request.name.strip()
+    if request.status is not None:
+        record.status = request.status
+    db.commit()
+    db.refresh(record)
+    return to_api_key(record)
 
 
 @router.post("/ingest", response_model=TokenUsageIngestResponse)
@@ -82,15 +114,17 @@ async def ingest_usage(
     bucket_count = 0
     for bucket in request.buckets:
       bucket_device_id = bucket.deviceId or device_id
+      bucket_start = to_utc_naive(bucket.bucketStart)
       existing = db.scalar(
           select(TokenUsageBucketRecord).where(
               and_(
                   TokenUsageBucketRecord.user_id == api_key.user_id,
+                  TokenUsageBucketRecord.api_key_id == api_key.id,
                   TokenUsageBucketRecord.device_id == bucket_device_id,
                   TokenUsageBucketRecord.source == bucket.source,
                   TokenUsageBucketRecord.model == (bucket.model or "unknown"),
                   TokenUsageBucketRecord.project_key == (bucket.projectKey or "unknown"),
-                  TokenUsageBucketRecord.bucket_start == bucket.bucketStart,
+                  TokenUsageBucketRecord.bucket_start == bucket_start,
               ),
           ),
       )
@@ -115,7 +149,7 @@ async def ingest_usage(
               source=bucket.source,
               model=bucket.model or "unknown",
               project_key=bucket.projectKey or "unknown",
-              bucket_start=bucket.bucketStart,
+              bucket_start=bucket_start,
               **values,
           ))
       bucket_count += 1
@@ -123,10 +157,13 @@ async def ingest_usage(
     session_count = 0
     for session in request.sessions:
       session_device_id = session.deviceId or device_id
+      first_message_at = to_utc_naive(session.firstMessageAt)
+      last_message_at = to_utc_naive(session.lastMessageAt)
       existing = db.scalar(
           select(TokenUsageSessionRecord).where(
               and_(
                   TokenUsageSessionRecord.user_id == api_key.user_id,
+                  TokenUsageSessionRecord.api_key_id == api_key.id,
                   TokenUsageSessionRecord.device_id == session_device_id,
                   TokenUsageSessionRecord.source == session.source,
                   TokenUsageSessionRecord.session_hash == session.sessionHash,
@@ -139,8 +176,8 @@ async def ingest_usage(
           "hostname": session.hostname or hostname,
           "project_key": session.projectKey or "unknown",
           "project_label": session.projectLabel or session.projectKey or "unknown",
-          "first_message_at": session.firstMessageAt,
-          "last_message_at": session.lastMessageAt,
+          "first_message_at": first_message_at,
+          "last_message_at": last_message_at,
           "duration_seconds": session.durationSeconds,
           "active_seconds": session.activeSeconds,
           "message_count": session.messageCount,
@@ -182,12 +219,13 @@ async def dashboard(
     start, end = usage_range(range, custom_start, custom_end)
     buckets = db.scalars(bucket_query(user.id, start, end).order_by(TokenUsageBucketRecord.bucket_start.asc())).all()
     sessions = db.scalars(session_query(user.id, start, end).order_by(TokenUsageSessionRecord.last_message_at.desc())).all()
+    api_key_names = usage_key_names(user.id, db)
     last_synced = db.scalar(select(func.max(TokenUsageBucketRecord.updated_at)).where(TokenUsageBucketRecord.user_id == user.id))
     return TokenUsageDashboard(
         range=range,
         overview=build_overview(buckets, sessions),
         token_trend=build_trend(buckets, sessions),
-        heatmap=build_heatmap(buckets, sessions),
+        heatmap=build_heatmap(buckets, sessions, api_key_names),
         by_source=rank_buckets(buckets, "source", session_counts=rank_session_counts(sessions, "source")),
         by_model=rank_buckets(buckets, "model", session_counts=rank_model_session_counts(sessions)),
         by_project=rank_buckets(buckets, "project_key", label_attr="project_label", session_counts=rank_session_counts(sessions, "project_key")),
@@ -247,43 +285,77 @@ def resolve_usage_key(authorization: Optional[str], db: Session) -> TokenUsageAp
     return api_key
 
 
+def resolve_owned_key(key_id: str, authorization: Optional[str], db: Session) -> TokenUsageApiKeyRecord:
+    user = resolve_user(authorization, db)
+    record = db.scalar(
+        select(TokenUsageApiKeyRecord).where(
+            and_(
+                TokenUsageApiKeyRecord.id == key_id,
+                TokenUsageApiKeyRecord.user_id == user.id,
+            ),
+        ),
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Token usage API key not found.")
+    return record
+
+
 def to_api_key(record: TokenUsageApiKeyRecord) -> TokenUsageApiKey:
     return TokenUsageApiKey(id=record.id, name=record.name, prefix=record.prefix, status=record.status, last_used_at=record.last_used_at, created_at=record.created_at)
 
 
 def range_start(value: str) -> Optional[datetime]:
-    now = datetime.utcnow()
-    if value == "1d":
-        return now - timedelta(days=1)
-    if value == "7d":
-        return now - timedelta(days=7)
-    if value == "30d":
-        return now - timedelta(days=30)
-    return None
+    start, _end = relative_display_range(value)
+    return start
+
+
+def relative_display_range(value: str) -> tuple[Optional[datetime], Optional[datetime]]:
+    if value == "all":
+        return None, None
+    days_by_range = {"1d": 1, "7d": 7, "30d": 30}
+    days = days_by_range.get(value)
+    if not days:
+        return None, None
+    now_local = datetime.now(timezone.utc).astimezone(TOKEN_USAGE_DISPLAY_TZ)
+    end_local = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_local = end_local.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    return to_utc_naive(start_local), to_utc_naive(end_local)
+
+
+def to_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def to_display_time(value: datetime) -> datetime:
+    source = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return source.astimezone(TOKEN_USAGE_DISPLAY_TZ)
+
+
+def parse_display_date_boundary(value: str, *, end: bool) -> datetime:
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid custom range date.") from exc
+    local = parsed.replace(tzinfo=TOKEN_USAGE_DISPLAY_TZ)
+    if end:
+        local = local.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return to_utc_naive(local)
 
 
 def usage_range(value: str, custom_start: Optional[str], custom_end: Optional[str]) -> tuple[Optional[datetime], Optional[datetime]]:
     if custom_start or custom_end:
         if not custom_start or not custom_end:
             raise HTTPException(status_code=422, detail="Custom range requires both custom_start and custom_end.")
-        start = parse_date_boundary(custom_start, end=False)
-        end = parse_date_boundary(custom_end, end=True)
+        start = parse_display_date_boundary(custom_start, end=False)
+        end = parse_display_date_boundary(custom_end, end=True)
         if start > end:
             raise HTTPException(status_code=422, detail="custom_start cannot be later than custom_end.")
-        if end > parse_date_boundary(custom_start, end=True) + timedelta(days=31 * 6):
+        if end > parse_display_date_boundary(custom_start, end=True) + timedelta(days=31 * 6):
             raise HTTPException(status_code=422, detail="Custom range cannot exceed 6 months.")
         return start, end
-    return range_start(value), None
-
-
-def parse_date_boundary(value: str, *, end: bool) -> datetime:
-    try:
-        parsed = datetime.strptime(value, "%Y-%m-%d")
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid custom range date.") from exc
-    if end:
-        return parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
-    return parsed
+    return relative_display_range(value)
 
 
 def bucket_query(user_id: str, start: Optional[datetime], end: Optional[datetime] = None):
@@ -302,6 +374,11 @@ def session_query(user_id: str, start: Optional[datetime], end: Optional[datetim
     if end is not None:
         query = query.where(TokenUsageSessionRecord.first_message_at <= end)
     return query
+
+
+def usage_key_names(user_id: str, db: Session) -> dict[str, str]:
+    records = db.scalars(select(TokenUsageApiKeyRecord).where(TokenUsageApiKeyRecord.user_id == user_id)).all()
+    return {record.id: record.name for record in records}
 
 
 def build_overview(buckets: list[TokenUsageBucketRecord], sessions: list[TokenUsageSessionRecord]) -> TokenUsageOverview:
@@ -324,24 +401,57 @@ def build_overview(buckets: list[TokenUsageBucketRecord], sessions: list[TokenUs
 def build_trend(buckets: list[TokenUsageBucketRecord], sessions: list[TokenUsageSessionRecord]) -> list[TokenUsageTrendPoint]:
     by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"total_tokens": 0, "active_seconds": 0, "sessions": 0})
     for bucket in buckets:
-        key = bucket.bucket_start.date().isoformat()
+        key = to_display_time(bucket.bucket_start).date().isoformat()
         by_day[key]["total_tokens"] += bucket.total_tokens
     for session in sessions:
-        key = session.first_message_at.date().isoformat()
+        key = to_display_time(session.first_message_at).date().isoformat()
         by_day[key]["active_seconds"] += session.active_seconds
         by_day[key]["sessions"] += 1
     return [TokenUsageTrendPoint(date=day, **values) for day, values in sorted(by_day.items())]
 
 
-def build_heatmap(buckets: list[TokenUsageBucketRecord], sessions: list[TokenUsageSessionRecord]) -> list[TokenUsageHeatmapCell]:
-    by_slot: dict[tuple[str, int], dict[str, int]] = defaultdict(lambda: {"total_tokens": 0, "active_seconds": 0})
+def build_heatmap(
+    buckets: list[TokenUsageBucketRecord],
+    sessions: list[TokenUsageSessionRecord],
+    api_key_names: Optional[dict[str, str]] = None,
+) -> list[TokenUsageHeatmapCell]:
+    key_names = api_key_names or {}
+    by_slot: dict[tuple[str, int], dict[str, object]] = defaultdict(lambda: {"total_tokens": 0, "active_seconds": 0, "key_tokens": Counter()})
     for bucket in buckets:
-        key = (bucket.bucket_start.date().isoformat(), bucket.bucket_start.hour)
-        by_slot[key]["total_tokens"] += bucket.total_tokens
+        local_time = to_display_time(bucket.bucket_start)
+        key = (local_time.date().isoformat(), local_time.hour)
+        by_slot[key]["total_tokens"] = int(by_slot[key]["total_tokens"]) + bucket.total_tokens
+        key_id = bucket.api_key_id or "unknown"
+        key_tokens = by_slot[key]["key_tokens"]
+        if isinstance(key_tokens, Counter):
+            key_tokens[key_id] += bucket.total_tokens
     for session in sessions:
-        key = (session.first_message_at.date().isoformat(), session.first_message_at.hour)
-        by_slot[key]["active_seconds"] += session.active_seconds
-    return [TokenUsageHeatmapCell(day=day, hour=hour, **values) for (day, hour), values in sorted(by_slot.items())]
+        local_time = to_display_time(session.first_message_at)
+        key = (local_time.date().isoformat(), local_time.hour)
+        by_slot[key]["active_seconds"] = int(by_slot[key]["active_seconds"]) + session.active_seconds
+    cells: list[TokenUsageHeatmapCell] = []
+    for (day, hour), values in sorted(by_slot.items()):
+        raw_key_tokens = values["key_tokens"]
+        key_tokens = raw_key_tokens if isinstance(raw_key_tokens, Counter) else Counter()
+        key_breakdown = [
+            TokenUsageHeatmapKeyBreakdown(
+                key_id=str(key_id),
+                key_name=key_names.get(str(key_id), "未知 Key" if key_id == "unknown" else str(key_id)),
+                total_tokens=int(total_tokens),
+            )
+            for key_id, total_tokens in sorted(key_tokens.items(), key=lambda item: (-int(item[1]), key_names.get(str(item[0]), str(item[0]))))
+            if int(total_tokens) > 0
+        ]
+        cells.append(
+            TokenUsageHeatmapCell(
+                day=day,
+                hour=hour,
+                total_tokens=int(values["total_tokens"]),
+                active_seconds=int(values["active_seconds"]),
+                key_breakdown=key_breakdown,
+            ),
+        )
+    return cells
 
 
 def build_device_summaries(buckets: list[TokenUsageBucketRecord], sessions: list[TokenUsageSessionRecord]) -> list[TokenUsageDeviceSummary]:

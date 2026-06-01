@@ -26,7 +26,7 @@ import type {
 } from "../types/auth";
 import type { ImageGenerationConfig, ImageGenerationResponse } from "../types/images";
 import type { AdminModule, PlatformModule, TencentCitySearchResult, TencentMapConfig } from "../types/platform";
-import type { TokenUsageApiKey, TokenUsageDashboard, TokenUsageKeyCreateResponse, TokenUsageLeaderboard } from "../types/tokenUsage";
+import type { TokenUsageApiKey, TokenUsageDashboard, TokenUsageKeyCreateResponse, TokenUsageKeyRevealResponse, TokenUsageLeaderboard } from "../types/tokenUsage";
 import type { AgentBlueprint, AgentCatalog, AgentCheckpointListResponse, AgentPromptAdminUpdate, AgentRunCheckpointInspection, AgentRunCreate, AgentRunEvent, AgentRunListResponse, AgentRunResponse, AgentRunReviewUpdate, McpServer, McpToolCallRequest, McpToolCallResponse, McpToolListResponse } from "../types/workflow";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -610,6 +610,31 @@ export async function createTokenUsageKey(token: string, name: string): Promise<
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function revealTokenUsageKey(token: string, keyId: string): Promise<TokenUsageKeyRevealResponse> {
+  const response = await fetch(apiUrl(`/api/token-usage/keys/${encodeURIComponent(keyId)}/reveal`), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function updateTokenUsageKey(token: string, keyId: string, payload: { name?: string; status?: "active" | "disabled" }): Promise<TokenUsageApiKey> {
+  const response = await fetch(apiUrl(`/api/token-usage/keys/${encodeURIComponent(keyId)}`), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error(await readError(response));

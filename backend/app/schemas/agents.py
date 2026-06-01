@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -141,6 +143,7 @@ class AgentRunCreate(BaseModel):
     mcp_server_ids: list[str] = Field(default_factory=list)
     input: dict[str, str] = Field(default_factory=dict)
     source: str = "manual"
+    canvas: Optional[dict[str, object]] = None
 
 
 class AgentRunReviewUpdate(BaseModel):
@@ -171,6 +174,7 @@ class AgentRunResponse(BaseModel):
     status: str = "success"
     graph_steps: list[str] = Field(default_factory=list)
     input: dict[str, str]
+    canvas: Optional[dict[str, object]] = None
     node_results: list[AgentRunNodeResult]
     review_status: str = "not_required"
     review_note: str = ""

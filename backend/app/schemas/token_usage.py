@@ -17,9 +17,18 @@ class TokenUsageApiKeyCreate(BaseModel):
     name: str = Field(default="本机 CLI", min_length=1, max_length=120)
 
 
+class TokenUsageApiKeyUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    status: Optional[Literal["active", "disabled"]] = None
+
+
 class TokenUsageApiKeyCreateResponse(BaseModel):
     key: TokenUsageApiKey
     raw_key: str
+
+
+class TokenUsageApiKeyRevealResponse(BaseModel):
+    raw_key: Optional[str] = None
 
 
 class TokenUsageDevice(BaseModel):
@@ -111,11 +120,18 @@ class TokenUsageRankItem(BaseModel):
     sessions: int = 0
 
 
+class TokenUsageHeatmapKeyBreakdown(BaseModel):
+    key_id: str
+    key_name: str
+    total_tokens: int
+
+
 class TokenUsageHeatmapCell(BaseModel):
     day: str
     hour: int
     total_tokens: int
     active_seconds: int = 0
+    key_breakdown: list[TokenUsageHeatmapKeyBreakdown] = Field(default_factory=list)
 
 
 class TokenUsageDeviceSummary(BaseModel):
