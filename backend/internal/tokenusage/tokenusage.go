@@ -615,7 +615,8 @@ func usageRange(c *gin.Context, value string, customStart string, customEnd stri
 	}
 	days := map[string]int{"1d": 1, "7d": 7, "30d": 30}[value]
 	if days == 0 {
-		days = 30
+		httputil.Error(c, http.StatusUnprocessableEntity, "range must be 1d, 7d, 30d, or all.")
+		return nil, nil, false
 	}
 	nowLocal := time.Now().UTC().In(displayTZ)
 	endLocal := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 23, 59, 59, int(time.Second-time.Nanosecond), displayTZ)

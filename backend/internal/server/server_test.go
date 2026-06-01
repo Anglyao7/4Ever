@@ -267,6 +267,33 @@ func TestTencentCitySearchQueryValidationMatchesPythonRoute(t *testing.T) {
 	}
 }
 
+func TestQueryValidationMatchesPythonRoutes(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "queryadmin", "email": "queryadmin@example.com", "password": "password123", "display_name": "Query Admin",
+	}, "")
+	token := auth["token"].(string)
+
+	resp := rawGet(t, ts.URL+"/api/auth/users/search?q="+strings.Repeat("x", 161), token)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long auth search q should return 422, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	for _, url := range []string{
+		ts.URL + "/api/token-usage/dashboard?range=bad",
+		ts.URL + "/api/token-usage/leaderboard?range=bad",
+	} {
+		resp = rawGet(t, url, token)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("invalid token usage range should return 422 for %s, got %d", url, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+}
+
 func TestAdminBooleanUpdatesRequireExplicitFieldsLikePythonSchema(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()

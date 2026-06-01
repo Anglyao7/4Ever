@@ -186,9 +186,18 @@ func (h Handler) SearchUsers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	query := NormalizeEmail(c.Query("q"))
+	rawQuery, exists := c.GetQuery("q")
+	if !exists {
+		httputil.Error(c, http.StatusUnprocessableEntity, "q is required")
+		return
+	}
+	query := NormalizeEmail(rawQuery)
 	if query == "" {
 		httputil.Error(c, http.StatusUnprocessableEntity, "q is required")
+		return
+	}
+	if len([]rune(query)) > 160 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "q must be 160 characters or fewer.")
 		return
 	}
 	pattern := "%" + query + "%"
