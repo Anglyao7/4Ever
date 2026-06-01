@@ -121,6 +121,9 @@ func (h Handler) SignUp(c *gin.Context) {
 	if req.DisplayName != nil {
 		displayName = strings.TrimSpace(*req.DisplayName)
 	}
+	if displayName == "" {
+		displayName = strings.TrimSpace(req.Username)
+	}
 	user := models.User{
 		ID:           uuid.NewString(),
 		Username:     username,

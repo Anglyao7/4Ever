@@ -46,6 +46,19 @@ func testRouter(t *testing.T) *httptest.Server {
 	return httptest.NewServer(server.New(settings, db))
 }
 
+func TestSignUpDisplayNameDefaultMatchesPythonRoute(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "namedefault", "email": "namedefault@example.com", "password": "password123", "display_name": "   ",
+	}, "")
+	user := auth["user"].(map[string]any)
+	if user["display_name"] != "namedefault" {
+		t.Fatalf("blank display_name should fall back to username: %#v", user)
+	}
+}
+
 func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
