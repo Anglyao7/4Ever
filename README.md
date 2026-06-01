@@ -2,7 +2,7 @@
 
 4Ever is a modular multi-model workspace. It starts with a clean AI workbench and grows toward one place for chat, image generation, provider aggregation, automation, and personal account space.
 
-The current application includes a FastAPI backend, a React + Vite frontend, authentication, provider management, chat, image generation, notes, memory map, workflow, inspiration, and admin modules.
+The current application includes a Go backend, a React + Vite frontend, authentication, provider management, chat, image generation, notes, memory map, workflow, inspiration, and admin modules.
 
 ## Features
 
@@ -12,7 +12,7 @@ The current application includes a FastAPI backend, a React + Vite frontend, aut
 - Chat interface with locally stored API profile selection.
 - Image generation panel with provider, model, size, and prompt controls.
 - Notes, city memories, workflow templates, and inspiration boards stored locally in the browser.
-- FastAPI service with SQLite by default and support for PostgreSQL/MySQL URLs.
+- Go service with SQLite by default and support for PostgreSQL URLs.
 
 ## TODO List
 
@@ -25,16 +25,11 @@ The current application includes a FastAPI backend, a React + Vite frontend, aut
 
 ```text
 .
-├── backend/                    # FastAPI backend service
-│   ├── app/
-│   │   ├── api/routes/         # HTTP route modules: auth, chat, catalog, images, modules, health
-│   │   ├── core/               # Runtime configuration
-│   │   ├── db/                 # SQLAlchemy base, session, and database models
-│   │   ├── schemas/            # Pydantic request/response schemas
-│   │   ├── services/           # Auth helpers and AI provider client/adapters
-│   │   └── main.py             # FastAPI app entrypoint
+├── backend/                    # Go backend service
+│   ├── cmd/server              # Go app entrypoint
+│   ├── internal/               # API routes, services, configuration, and database models
 │   ├── .env.example            # Backend environment example
-│   ├── requirements.txt        # Python dependencies
+│   ├── go.mod                  # Go module dependencies
 │   └── README.md               # Backend-specific notes
 ├── frontend/                   # React + Vite frontend
 │   ├── src/
@@ -58,10 +53,7 @@ Run the backend:
 
 ```bash
 cd backend
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-python run.py
+go run ./cmd/server
 ```
 
 Run the frontend:
@@ -99,7 +91,7 @@ npm run build
 
 ```bash
 cd backend
-python3 -m compileall app
+go test ./...
 ```
 
 ```bash

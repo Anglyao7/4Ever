@@ -1,0 +1,465 @@
+package catalog
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"4ever/backend/internal/config"
+	"4ever/backend/internal/httputil"
+	"github.com/gin-gonic/gin"
+)
+
+type Handler struct {
+	Settings config.Settings
+}
+
+type ProviderInfo struct {
+	ID             string `json:"id"`
+	Label          string `json:"label"`
+	DefaultBaseURL string `json:"default_base_url"`
+	DefaultModel   string `json:"default_model"`
+	AuthLabel      string `json:"auth_label"`
+	Endpoint       string `json:"endpoint"`
+}
+
+type ProviderConnectionRequest struct {
+	Provider string  `json:"provider"`
+	BaseURL  *string `json:"base_url"`
+	APIKey   *string `json:"api_key"`
+}
+
+type ProviderModel struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type ProviderConnectionResponse struct {
+	OK         bool            `json:"ok"`
+	Message    string          `json:"message"`
+	ModelCount int             `json:"model_count"`
+	Models     []ProviderModel `json:"models"`
+}
+
+type ProviderModelsResponse struct {
+	Models []ProviderModel `json:"models"`
+}
+
+var Providers = []ProviderInfo{
+	{ID: "openai", Label: "OpenAI Compatible", DefaultBaseURL: "https://api.openai.com/v1", DefaultModel: "gpt-4.1-mini", AuthLabel: "Authorization: Bearer", Endpoint: "POST /chat/completions"},
+	{ID: "anthropic", Label: "Anthropic Messages", DefaultBaseURL: "https://api.anthropic.com/v1", DefaultModel: "claude-sonnet-4-20250514", AuthLabel: "x-api-key", Endpoint: "POST /messages"},
+	{ID: "gemini", Label: "Gemini GenerateContent", DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", DefaultModel: "gemini-2.5-flash", AuthLabel: "x-goog-api-key", Endpoint: "POST /models/{model}:generateContent"},
+}
+
+func Register(group *gin.RouterGroup, h Handler) {
+	r := group.Group("/catalog")
+	r.GET("/providers", h.Providers)
+	r.POST("/provider/test", h.TestProvider)
+	r.POST("/provider/models", h.ProviderModels)
+}
+
+func (h Handler) Providers(c *gin.Context) {
+	c.JSON(http.StatusOK, Providers)
+}
+
+func (h Handler) TestProvider(c *gin.Context) {
+	models, ok := h.fetchModels(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, ProviderConnectionResponse{OK: true, Message: "连接正常，模型列表可访问。", ModelCount: len(models), Models: models})
+}
+
+func (h Handler) ProviderModels(c *gin.Context) {
+	models, ok := h.fetchModels(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, ProviderModelsResponse{Models: models})
+}
+
+func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
+	var req ProviderConnectionRequest
+	if !httputil.BindJSON(c, &req) {
+		return nil, false
+	}
+	provider := normalizeProvider(req.Provider)
+	baseURL := providerBaseURL(provider, req.BaseURL)
+	headers := providerHeaders(provider, req.APIKey)
+	request, _ := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+	client := http.Client{Timeout: time.Duration(h.Settings.AITimeoutSeconds * float64(time.Second))}
+	resp, err := client.Do(request)
+	if err != nil {
+		httputil.Error(c, http.StatusBadGateway, "Provider model request failed: "+err.Error())
+		return nil, false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		httputil.Error(c, http.StatusBadGateway, "Provider returned HTTP "+resp.Status+": "+string(body))
+		return nil, false
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		httputil.Error(c, http.StatusBadGateway, "Provider returned a non-JSON model response.")
+		return nil, false
+	}
+	return parseModels(provider, payload), true
+}
+
+type ChatCompletionRequest struct {
+	Provider     string           `json:"provider"`
+	BaseURL      *string          `json:"base_url"`
+	APIKey       *string          `json:"api_key"`
+	Model        string           `json:"model" binding:"required"`
+	Messages     []map[string]any `json:"messages" binding:"required"`
+	SystemPrompt *string          `json:"system_prompt"`
+	Temperature  *float64         `json:"temperature"`
+	MaxTokens    *int             `json:"max_tokens"`
+}
+
+type ChatCompletionResponse struct {
+	Provider string         `json:"provider"`
+	Model    string         `json:"model"`
+	Content  string         `json:"content"`
+	Usage    map[string]any `json:"usage,omitempty"`
+	Raw      map[string]any `json:"raw,omitempty"`
+}
+
+func CompleteChat(settings config.Settings, req ChatCompletionRequest) (ChatCompletionResponse, int, string) {
+	provider := normalizeProvider(req.Provider)
+	url, payload, headers := buildChatProviderRequest(provider, req)
+	body, _ := json.Marshal(payload)
+	httpReq, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	for key, value := range headers {
+		httpReq.Header.Set(key, value)
+	}
+	client := http.Client{Timeout: time.Duration(settings.AITimeoutSeconds * float64(time.Second))}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider request failed: " + err.Error()
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider returned HTTP " + resp.Status + ": " + string(respBody)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider returned a non-JSON response."
+	}
+	content := parseChatContent(provider, data)
+	if content == "" {
+		return ChatCompletionResponse{}, http.StatusBadGateway, "Provider returned an empty response."
+	}
+	usage := mapValue(data["usage"])
+	if provider == "gemini" {
+		usage = mapValue(data["usageMetadata"])
+	}
+	return ChatCompletionResponse{Provider: provider, Model: req.Model, Content: content, Usage: usage, Raw: data}, http.StatusOK, ""
+}
+
+func StreamChat(settings config.Settings, req ChatCompletionRequest, onChunk func(string) error) (int, string) {
+	provider := normalizeProvider(req.Provider)
+	if provider != "openai" {
+		resp, status, detail := CompleteChat(settings, req)
+		if status >= 400 {
+			return status, detail
+		}
+		if err := onChunk(resp.Content); err != nil {
+			return http.StatusInternalServerError, err.Error()
+		}
+		return http.StatusOK, ""
+	}
+
+	url, payload, headers := buildChatProviderRequest(provider, req)
+	payload["stream"] = true
+	body, _ := json.Marshal(payload)
+	httpReq, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	for key, value := range headers {
+		httpReq.Header.Set(key, value)
+	}
+	client := http.Client{Timeout: time.Duration(settings.AITimeoutSeconds * float64(time.Second))}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return http.StatusBadGateway, "Provider stream request failed: " + err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return http.StatusBadGateway, "Provider returned HTTP " + resp.Status + ": " + string(respBody)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		chunk := parseOpenAIStreamLine(scanner.Text())
+		if chunk == "" {
+			continue
+		}
+		if err := onChunk(chunk); err != nil {
+			return http.StatusInternalServerError, err.Error()
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return http.StatusBadGateway, "Provider stream request failed: " + err.Error()
+	}
+	return http.StatusOK, ""
+}
+
+func normalizeProvider(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if provider == "" {
+		return "openai"
+	}
+	return provider
+}
+
+func providerBaseURL(provider string, value *string) string {
+	if value != nil && strings.TrimSpace(*value) != "" {
+		return strings.TrimRight(strings.TrimSpace(*value), "/")
+	}
+	for _, item := range Providers {
+		if item.ID == provider {
+			return item.DefaultBaseURL
+		}
+	}
+	return Providers[0].DefaultBaseURL
+}
+
+func providerHeaders(provider string, apiKey *string) map[string]string {
+	headers := map[string]string{"Content-Type": "application/json"}
+	key := ""
+	if apiKey != nil {
+		key = strings.TrimSpace(*apiKey)
+	}
+	switch provider {
+	case "openai":
+		if key != "" {
+			headers["Authorization"] = "Bearer " + key
+		}
+	case "anthropic":
+		headers["anthropic-version"] = "2023-06-01"
+		if key != "" {
+			headers["x-api-key"] = key
+		}
+	case "gemini":
+		if key != "" {
+			headers["x-goog-api-key"] = key
+		}
+	}
+	return headers
+}
+
+func parseModels(provider string, payload map[string]any) []ProviderModel {
+	models := []ProviderModel{}
+	var raw any
+	if provider == "gemini" {
+		raw = payload["models"]
+	} else {
+		raw = payload["data"]
+	}
+	items, _ := raw.([]any)
+	for _, item := range items {
+		row, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := stringValue(row["id"])
+		label := id
+		if provider == "anthropic" {
+			label = stringValue(row["display_name"])
+			if label == "" {
+				label = id
+			}
+		}
+		if provider == "gemini" {
+			id = strings.TrimPrefix(stringValue(row["name"]), "models/")
+			label = stringValue(row["displayName"])
+			if label == "" {
+				label = id
+			}
+		}
+		if id != "" {
+			models = append(models, ProviderModel{ID: id, Label: label})
+		}
+	}
+	return models
+}
+
+func buildChatProviderRequest(provider string, req ChatCompletionRequest) (string, map[string]any, map[string]string) {
+	baseURL := providerBaseURL(provider, req.BaseURL)
+	headers := providerHeaders(provider, req.APIKey)
+	switch provider {
+	case "anthropic":
+		messages := []map[string]any{}
+		systemPrompt := ""
+		if req.SystemPrompt != nil {
+			systemPrompt = strings.TrimSpace(*req.SystemPrompt)
+		}
+		for _, message := range req.Messages {
+			role := stringValue(message["role"])
+			content := stringValue(message["content"])
+			if role == "system" {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n"
+				}
+				systemPrompt += content
+				continue
+			}
+			if role == "assistant" {
+				role = "assistant"
+			} else {
+				role = "user"
+			}
+			messages = append(messages, map[string]any{"role": role, "content": content})
+		}
+		maxTokens := 1024
+		if req.MaxTokens != nil {
+			maxTokens = *req.MaxTokens
+		}
+		payload := map[string]any{"model": req.Model, "max_tokens": maxTokens, "messages": messages}
+		if systemPrompt != "" {
+			payload["system"] = systemPrompt
+		}
+		if req.Temperature != nil {
+			payload["temperature"] = *req.Temperature
+		}
+		return strings.TrimRight(baseURL, "/") + "/messages", payload, headers
+	case "gemini":
+		contents := []map[string]any{}
+		systemPrompt := ""
+		if req.SystemPrompt != nil {
+			systemPrompt = strings.TrimSpace(*req.SystemPrompt)
+		}
+		for _, message := range req.Messages {
+			role := stringValue(message["role"])
+			content := stringValue(message["content"])
+			if role == "system" {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n"
+				}
+				systemPrompt += content
+				continue
+			}
+			geminiRole := "user"
+			if role == "assistant" {
+				geminiRole = "model"
+			}
+			contents = append(contents, map[string]any{"role": geminiRole, "parts": []map[string]string{{"text": content}}})
+		}
+		payload := map[string]any{"contents": contents}
+		generation := map[string]any{}
+		if req.Temperature != nil {
+			generation["temperature"] = *req.Temperature
+		}
+		if req.MaxTokens != nil {
+			generation["maxOutputTokens"] = *req.MaxTokens
+		}
+		if len(generation) > 0 {
+			payload["generationConfig"] = generation
+		}
+		if systemPrompt != "" {
+			payload["systemInstruction"] = map[string]any{"parts": []map[string]string{{"text": systemPrompt}}}
+		}
+		return strings.TrimRight(baseURL, "/") + "/models/" + req.Model + ":generateContent", payload, headers
+	default:
+		messages := []map[string]any{}
+		if req.SystemPrompt != nil && strings.TrimSpace(*req.SystemPrompt) != "" {
+			messages = append(messages, map[string]any{"role": "system", "content": strings.TrimSpace(*req.SystemPrompt)})
+		}
+		messages = append(messages, req.Messages...)
+		payload := map[string]any{"model": req.Model, "messages": messages, "stream": false}
+		if req.Temperature != nil {
+			payload["temperature"] = *req.Temperature
+		}
+		if req.MaxTokens != nil {
+			payload["max_tokens"] = *req.MaxTokens
+		}
+		return strings.TrimRight(baseURL, "/") + "/chat/completions", payload, headers
+	}
+}
+
+func parseChatContent(provider string, data map[string]any) string {
+	switch provider {
+	case "anthropic":
+		items, _ := data["content"].([]any)
+		parts := []string{}
+		for _, item := range items {
+			row, ok := item.(map[string]any)
+			if ok && stringValue(row["type"]) == "text" {
+				parts = append(parts, stringValue(row["text"]))
+			}
+		}
+		return strings.Join(parts, "")
+	case "gemini":
+		candidates, _ := data["candidates"].([]any)
+		if len(candidates) == 0 {
+			return ""
+		}
+		candidate, _ := candidates[0].(map[string]any)
+		content, _ := candidate["content"].(map[string]any)
+		parts, _ := content["parts"].([]any)
+		out := []string{}
+		for _, part := range parts {
+			row, _ := part.(map[string]any)
+			out = append(out, stringValue(row["text"]))
+		}
+		return strings.Join(out, "")
+	default:
+		choices, _ := data["choices"].([]any)
+		if len(choices) == 0 {
+			return ""
+		}
+		choice, _ := choices[0].(map[string]any)
+		message, _ := choice["message"].(map[string]any)
+		return stringValue(message["content"])
+	}
+}
+
+func parseOpenAIStreamLine(line string) string {
+	if !strings.HasPrefix(line, "data:") {
+		return ""
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	if raw == "" || raw == "[DONE]" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return ""
+	}
+	choices, _ := payload["choices"].([]any)
+	if len(choices) == 0 {
+		return ""
+	}
+	choice, _ := choices[0].(map[string]any)
+	delta, _ := choice["delta"].(map[string]any)
+	return stringValue(delta["content"])
+}
+
+func mapValue(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	row, _ := value.(map[string]any)
+	return row
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return fmt.Sprint(typed)
+	}
+}

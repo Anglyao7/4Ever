@@ -1,2 +1,0 @@
-"""Pydantic schemas."""
-
