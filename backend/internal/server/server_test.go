@@ -175,6 +175,61 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 			payload["sessions"] = make([]map[string]any, 1001)
 			return payload
 		}(),
+		func() map[string]any {
+			payload := base()
+			payload["device"] = map[string]any{"deviceId": "validator-device", "hostname": strings.Repeat("x", 161)}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "model": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "projectKey": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "projectLabel": strings.Repeat("x", 241)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "deviceId": strings.Repeat("x", 121)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "hostname": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "projectKey": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "projectLabel": strings.Repeat("x", 241)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "deviceId": strings.Repeat("x", 121)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "hostname": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "primaryModel": strings.Repeat("x", 161)}}
+			return payload
+		}(),
 	}
 	for _, payload := range cases {
 		resp := rawPost(t, ts.URL+"/api/token-usage/ingest", payload, rawKey)

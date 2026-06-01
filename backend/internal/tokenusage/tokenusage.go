@@ -53,17 +53,17 @@ type APIKeyUpdateRequest struct {
 
 type DeviceIn struct {
 	DeviceID string `json:"deviceId" binding:"required,max=120"`
-	Hostname string `json:"hostname"`
+	Hostname string `json:"hostname" binding:"max=160"`
 }
 
 type BucketIn struct {
 	Source          string    `json:"source" binding:"required,max=80"`
-	Model           string    `json:"model"`
-	ProjectKey      string    `json:"projectKey"`
-	ProjectLabel    string    `json:"projectLabel"`
+	Model           string    `json:"model" binding:"max=160"`
+	ProjectKey      string    `json:"projectKey" binding:"max=160"`
+	ProjectLabel    string    `json:"projectLabel" binding:"max=240"`
 	BucketStart     time.Time `json:"bucketStart" binding:"required"`
-	DeviceID        *string   `json:"deviceId"`
-	Hostname        *string   `json:"hostname"`
+	DeviceID        *string   `json:"deviceId" binding:"omitempty,max=120"`
+	Hostname        *string   `json:"hostname" binding:"omitempty,max=160"`
 	InputTokens     int       `json:"inputTokens"`
 	OutputTokens    int       `json:"outputTokens"`
 	ReasoningTokens int       `json:"reasoningTokens"`
@@ -73,11 +73,11 @@ type BucketIn struct {
 
 type SessionIn struct {
 	Source           string           `json:"source" binding:"required,max=80"`
-	ProjectKey       string           `json:"projectKey"`
-	ProjectLabel     string           `json:"projectLabel"`
+	ProjectKey       string           `json:"projectKey" binding:"max=160"`
+	ProjectLabel     string           `json:"projectLabel" binding:"max=240"`
 	SessionHash      string           `json:"sessionHash" binding:"required,max=120"`
-	DeviceID         *string          `json:"deviceId"`
-	Hostname         *string          `json:"hostname"`
+	DeviceID         *string          `json:"deviceId" binding:"omitempty,max=120"`
+	Hostname         *string          `json:"hostname" binding:"omitempty,max=160"`
 	FirstMessageAt   time.Time        `json:"firstMessageAt" binding:"required"`
 	LastMessageAt    time.Time        `json:"lastMessageAt" binding:"required"`
 	DurationSeconds  int              `json:"durationSeconds"`
@@ -89,15 +89,15 @@ type SessionIn struct {
 	ReasoningTokens  int              `json:"reasoningTokens"`
 	CachedTokens     int              `json:"cachedTokens"`
 	TotalTokens      int              `json:"totalTokens"`
-	PrimaryModel     string           `json:"primaryModel"`
+	PrimaryModel     string           `json:"primaryModel" binding:"max=160"`
 	ModelUsages      []map[string]any `json:"modelUsages"`
 }
 
 type IngestRequest struct {
 	SchemaVersion *int        `json:"schemaVersion"`
 	Device        DeviceIn    `json:"device" binding:"required"`
-	Buckets       []BucketIn  `json:"buckets"`
-	Sessions      []SessionIn `json:"sessions"`
+	Buckets       []BucketIn  `json:"buckets" binding:"dive"`
+	Sessions      []SessionIn `json:"sessions" binding:"dive"`
 }
 
 type IngestResponse struct {
