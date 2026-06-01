@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -8,6 +9,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -263,6 +267,10 @@ func (h Handler) UploadAvatar(c *gin.Context) {
 		httputil.Error(c, http.StatusRequestEntityTooLarge, "Avatar must be 3 MB or smaller.")
 		return
 	}
+	if !isSupportedAvatarImage(data, contentType) {
+		httputil.Error(c, http.StatusUnsupportedMediaType, "Avatar content is not a supported image.")
+		return
+	}
 	avatarDir := filepath.Join(h.Settings.MediaRoot, h.Settings.AvatarUploadDirname)
 	if err := os.MkdirAll(avatarDir, 0o755); err != nil {
 		httputil.Error(c, http.StatusInternalServerError, err.Error())
@@ -398,6 +406,25 @@ func BuildPublicAvatarURL(path *string) *string {
 	}
 	value := "/api/media/" + strings.TrimLeft(*path, "/")
 	return &value
+}
+
+func isSupportedAvatarImage(data []byte, contentType string) bool {
+	reader := bytes.NewReader(data)
+	switch contentType {
+	case "image/jpeg":
+		_, err := jpeg.DecodeConfig(reader)
+		return err == nil
+	case "image/png":
+		_, err := png.DecodeConfig(reader)
+		return err == nil
+	case "image/gif":
+		_, err := gif.DecodeConfig(reader)
+		return err == nil
+	case "image/webp":
+		return len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP"
+	default:
+		return false
+	}
 }
 
 func randomHex(bytes int) string {

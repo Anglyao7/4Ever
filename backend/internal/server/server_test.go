@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -338,6 +339,36 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	messages := getJSONList(t, ts.URL+"/api/chat/direct/"+aliceID, bobToken)
 	if len(messages) != 1 || messages[0].(map[string]any)["sender_id"] != aliceID {
 		t.Fatalf("bob should see alice's message: %#v", messages)
+	}
+}
+
+func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "avataruser", "email": "avatar@example.com", "password": "password123", "display_name": "Avatar",
+	}, "")
+	token := auth["token"].(string)
+
+	invalid := rawPost(t, ts.URL+"/api/auth/me/avatar", map[string]any{
+		"filename":     "avatar.jpg",
+		"content_type": "image/jpeg",
+		"data_base64":  base64.StdEncoding.EncodeToString([]byte("not an image")),
+	}, token)
+	if invalid.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("fake jpeg content should be rejected, got %d", invalid.StatusCode)
+	}
+	_ = invalid.Body.Close()
+
+	validPNG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+	updated := postJSON(t, ts.URL+"/api/auth/me/avatar", map[string]any{
+		"filename":     "avatar.png",
+		"content_type": "image/png",
+		"data_base64":  validPNG,
+	}, token)
+	if updated["avatar_url"] == nil || !strings.Contains(updated["avatar_url"].(string), "/api/media/avatars/") {
+		t.Fatalf("valid png avatar should be saved: %#v", updated)
 	}
 }
 
