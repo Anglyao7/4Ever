@@ -121,7 +121,7 @@ func GetCatalog(db *gorm.DB, settings config.Settings) Catalog {
 	return Catalog{
 		Agents: ListConfiguredAgents(db), MCPServers: ListConfiguredMCPServers(db, settings), WorkflowTemplates: WorkflowPolicies,
 		SecurityNote: "MCP API keys must stay on the backend. The frontend only selects agents and server ids.",
-		GraphRuntime: map[string]any{"runtime": "internal", "requested": settings.AgentGraphRuntime, "available": true, "reason": "Go backend internal runtime"},
+		GraphRuntime: map[string]any{"runtime": "internal", "requested": settings.AgentGraphRuntime, "available": false, "reason": "Go backend internal runtime"},
 	}
 }
 

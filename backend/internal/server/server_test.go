@@ -144,6 +144,92 @@ func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	}
 }
 
+func TestAgentCatalogReportsInternalRuntimeLikePythonBackend(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	catalog := getJSON(t, ts.URL+"/api/agents/catalog", "")
+	runtime := catalog["graph_runtime"].(map[string]any)
+	if runtime["runtime"] != "internal" || runtime["requested"] != "internal" || runtime["available"] != false {
+		t.Fatalf("unexpected graph runtime status: %#v", runtime)
+	}
+}
+
+func TestAgentRunCheckpointInspectionMatchesPythonContract(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	run := postJSON(t, ts.URL+"/api/agents/runs", map[string]any{
+		"template_id":    "agent-research-brief",
+		"agent_id":       "research-agent",
+		"mcp_server_ids": []string{"bigmodel-web-search", "bigmodel-web-reader"},
+		"input":          map[string]string{"topic": "测试持久化 MCP 工作流 https://example.com"},
+		"source":         "test",
+	}, "")
+	if got := stringSlice(run["graph_steps"]); strings.Join(got, ",") != "load_agent,mcp_search,mcp_read,synthesize,persist" {
+		t.Fatalf("unexpected graph steps: %#v", got)
+	}
+	results := run["node_results"].([]any)
+	first := results[0].(map[string]any)
+	if first["node_id"] != "agent" || first["graph_step"] != "load_agent" {
+		t.Fatalf("node id and graph step should be distinct: %#v", first)
+	}
+
+	checkpoints := getJSON(t, ts.URL+"/api/agents/runs/"+run["id"].(string)+"/checkpoints", "")
+	rows := checkpoints["checkpoints"].([]any)
+	if got := checkpointSteps(rows); strings.Join(got, ",") != "load_agent,mcp_search,mcp_read,synthesize" {
+		t.Fatalf("unexpected durable checkpoint steps: %#v", got)
+	}
+	state := rows[1].(map[string]any)["state"].(map[string]any)
+	if got := stringSlice(state["trace"]); strings.Join(got, ",") != "load_agent,mcp_search" {
+		t.Fatalf("checkpoint state should include trace, got %#v", state)
+	}
+	if rows[1].(map[string]any)["event_count"].(float64) < 1 {
+		t.Fatalf("checkpoint should include event count: %#v", rows[1])
+	}
+
+	inspection := getJSON(t, ts.URL+"/api/agents/runs/"+run["id"].(string)+"/checkpoint", "")
+	langgraph := inspection["langgraph"].(map[string]any)
+	if langgraph["runtime"] != "internal" || langgraph["inspectable"] != false || langgraph["checkpoint_count"].(float64) != 0 {
+		t.Fatalf("unexpected langgraph inspection: %#v", langgraph)
+	}
+	if inspection["last_event"] != "run.finished" {
+		t.Fatalf("unexpected last event: %#v", inspection)
+	}
+}
+
+func TestCanvasWorkflowUsesCanvasGraphNodes(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	canvas := map[string]any{
+		"nodes": []map[string]any{
+			{"id": "a", "type": "trigger", "label": "入口", "config": map[string]any{"topic": "go"}},
+			{"id": "b", "type": "mcp-tool", "label": "工具", "config": map[string]any{"tool": "reader"}},
+			{"id": "c", "type": "agent-run", "label": "Agent", "config": map[string]any{}},
+		},
+		"connections": []map[string]any{
+			{"sourceNodeId": "a", "targetNodeId": "b"},
+			{"sourceNodeId": "b", "targetNodeId": "c"},
+		},
+	}
+	run := postJSON(t, ts.URL+"/api/agents/runs", map[string]any{
+		"template_id":    "canvas-workflow",
+		"agent_id":       "workflow-agent",
+		"mcp_server_ids": []string{"bigmodel-web-reader"},
+		"input":          map[string]string{"note": "https://example.com"},
+		"source":         "canvas",
+		"canvas":         canvas,
+	}, "")
+	if got := stringSlice(run["graph_steps"]); strings.Join(got, ",") != "canvas_1_trigger,canvas_2_mcp_tool,canvas_3_agent_run,persist" {
+		t.Fatalf("unexpected canvas graph steps: %#v", got)
+	}
+	results := run["node_results"].([]any)
+	if results[1].(map[string]any)["type"] != "mcp" || !strings.Contains(results[1].(map[string]any)["output"].(string), "Canvas node: 工具") {
+		t.Fatalf("canvas mcp node was not rendered with canvas context: %#v", results[1])
+	}
+}
+
 func getJSON(t *testing.T, url string, token string) map[string]any {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
@@ -215,4 +301,21 @@ func rawPost(t *testing.T, url string, payload map[string]any, token string) *ht
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func stringSlice(value any) []string {
+	items, _ := value.([]any)
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.(string))
+	}
+	return out
+}
+
+func checkpointSteps(rows []any) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.(map[string]any)["graph_step"].(string))
+	}
+	return out
 }
