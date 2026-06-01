@@ -172,7 +172,7 @@ func (h Handler) listMCPTools(server MCPServer) map[string]any {
 	if err != nil {
 		return map[string]any{"status": "failed", "error": err.Error()}
 	}
-	return map[string]any{"status": "success", "result": result}
+	return map[string]any{"status": "success", "result": redactAndTrim(result, h.Settings.MCPResultMaxChars)}
 }
 
 func (h Handler) MCPToolCall(c *gin.Context) {
@@ -1001,7 +1001,7 @@ func (h Handler) callMCPTool(server MCPServer, toolName string, arguments map[st
 	if err != nil {
 		return map[string]any{"status": "failed", "tool_name": toolName, "arguments": arguments, "error": truncate(err.Error(), 600)}
 	}
-	return map[string]any{"status": "success", "tool_name": toolName, "arguments": arguments, "result": result}
+	return map[string]any{"status": "success", "tool_name": toolName, "arguments": arguments, "result": redactAndTrim(result, h.Settings.MCPResultMaxChars)}
 }
 
 func plannedMCPResult(server MCPServer, toolName string, arguments map[string]any, reason string) map[string]any {
@@ -1063,7 +1063,11 @@ func parseMCPPayload(contentType string, data []byte) (map[string]any, error) {
 			if raw == "" {
 				continue
 			}
-			return unwrapJSONRPC([]byte(raw))
+			result, err := unwrapJSONRPC([]byte(raw))
+			if err != nil && strings.Contains(err.Error(), "non-JSON") {
+				return nil, fmt.Errorf("MCP server returned invalid SSE JSON")
+			}
+			return result, err
 		}
 		return map[string]any{}, nil
 	}
@@ -1080,6 +1084,9 @@ func unwrapJSONRPC(data []byte) (map[string]any, error) {
 	}
 	if result, ok := payload["result"].(map[string]any); ok {
 		return result, nil
+	}
+	if result, ok := payload["result"]; ok {
+		return map[string]any{"value": result}, nil
 	}
 	return payload, nil
 }
@@ -1266,6 +1273,29 @@ func mapValue(value any) map[string]any {
 		return row
 	}
 	return map[string]any{}
+}
+
+func redactAndTrim(payload map[string]any, maxChars int) map[string]any {
+	if maxChars <= 0 {
+		maxChars = 3000
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return map[string]any{"text": fmt.Sprintf("%v", payload)}
+	}
+	text := string(raw)
+	for _, key := range []string{"authorization", "api_key", "token", "secret"} {
+		text = strings.ReplaceAll(text, key, key[:2]+"***")
+	}
+	if len([]rune(text)) > maxChars {
+		runes := []rune(text)
+		text = string(runes[:maxChars]) + "... [trimmed]"
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(text), &out); err == nil {
+		return out
+	}
+	return map[string]any{"text": text}
 }
 
 func stringMapValue(value any) map[string]string {

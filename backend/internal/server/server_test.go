@@ -230,6 +230,68 @@ func TestCanvasWorkflowUsesCanvasGraphNodes(t *testing.T) {
 	}
 }
 
+func TestAgentRunValidationReviewCancelAndResumeContracts(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	invalid := rawPost(t, ts.URL+"/api/agents/runs", map[string]any{
+		"template_id":    "note-copy",
+		"agent_id":       "research-agent",
+		"mcp_server_ids": []string{},
+		"input":          map[string]string{"note": "not allowed"},
+	}, "")
+	if invalid.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid template/agent pair should be rejected, got %d", invalid.StatusCode)
+	}
+	listing := getJSON(t, ts.URL+"/api/agents/runs?limit=10", "")
+	if len(listing["runs"].([]any)) != 0 {
+		t.Fatalf("validation errors must not persist runs: %#v", listing)
+	}
+
+	reviewable := postJSON(t, ts.URL+"/api/agents/runs", map[string]any{
+		"template_id":    "note-copy",
+		"agent_id":       "workflow-agent",
+		"mcp_server_ids": []string{},
+		"input":          map[string]string{"note": "review me"},
+		"source":         "test",
+	}, "")
+	if reviewable["review_status"] != "pending" {
+		t.Fatalf("note-copy should require review: %#v", reviewable)
+	}
+	reviewed := patchJSON(t, ts.URL+"/api/agents/runs/"+reviewable["id"].(string)+"/review", map[string]any{"status": "approved", "note": "looks good"}, "")
+	if reviewed["review_status"] != "approved" || reviewed["review_note"] != "looks good" || reviewed["reviewed_at"] == "" {
+		t.Fatalf("review update did not persist: %#v", reviewed)
+	}
+
+	readOnly := postJSON(t, ts.URL+"/api/agents/runs", map[string]any{
+		"template_id":    "agent-research-brief",
+		"agent_id":       "research-agent",
+		"mcp_server_ids": []string{},
+		"input":          map[string]string{"topic": "read only"},
+		"source":         "test",
+	}, "")
+	if readOnly["review_status"] != "not_required" {
+		t.Fatalf("research brief should be read-only/no review: %#v", readOnly)
+	}
+	readOnlyReview := rawPatch(t, ts.URL+"/api/agents/runs/"+readOnly["id"].(string)+"/review", map[string]any{"status": "approved"}, "")
+	if readOnlyReview.StatusCode != http.StatusBadRequest {
+		t.Fatalf("read-only review should be rejected, got %d", readOnlyReview.StatusCode)
+	}
+
+	missingCancel := rawPost(t, ts.URL+"/api/agents/runs/missing-run/cancel", map[string]any{}, "")
+	if missingCancel.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing cancel should return 404, got %d", missingCancel.StatusCode)
+	}
+	finishedCancel := rawPost(t, ts.URL+"/api/agents/runs/"+reviewable["id"].(string)+"/cancel", map[string]any{}, "")
+	if finishedCancel.StatusCode != http.StatusConflict {
+		t.Fatalf("finished cancel should return 409, got %d", finishedCancel.StatusCode)
+	}
+	finishedResume := rawPost(t, ts.URL+"/api/agents/runs/"+reviewable["id"].(string)+"/resume", map[string]any{}, "")
+	if finishedResume.StatusCode != http.StatusConflict {
+		t.Fatalf("finished resume should return 409, got %d", finishedResume.StatusCode)
+	}
+}
+
 func getJSON(t *testing.T, url string, token string) map[string]any {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
@@ -292,6 +354,21 @@ func rawPost(t *testing.T, url string, payload map[string]any, token string) *ht
 	t.Helper()
 	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func rawPatch(t *testing.T, url string, payload map[string]any, token string) *http.Response {
+	t.Helper()
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
