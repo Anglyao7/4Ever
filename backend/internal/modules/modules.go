@@ -2,6 +2,7 @@ package modules
 
 import (
 	"net/http"
+	"strings"
 
 	"4ever/backend/internal/auth"
 	"4ever/backend/internal/httputil"
@@ -48,15 +49,7 @@ func Register(group *gin.RouterGroup, h Handler) {
 func (h Handler) List(c *gin.Context) {
 	EnsureInitialSettings(h.DB)
 	enabledMap := EnabledMap(h.DB)
-	isAdmin := false
-	if c.GetHeader("Authorization") != "" {
-		if user, ok := auth.ResolveUser(c, h.DB); ok {
-			isAdmin = user.Role == "admin"
-		} else {
-			c.Abort()
-			return
-		}
-	}
+	isAdmin := h.optionalAdmin(c)
 	result := []PlatformModule{}
 	for _, blueprint := range Blueprints {
 		if blueprint.ID == "admin" && !isAdmin {
@@ -74,6 +67,26 @@ func (h Handler) List(c *gin.Context) {
 		result = append(result, item)
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func (h Handler) optionalAdmin(c *gin.Context) bool {
+	header := c.GetHeader("Authorization")
+	if !strings.HasPrefix(header, "Bearer ") {
+		return false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	if token == "" {
+		return false
+	}
+	var session models.AuthSession
+	if err := h.DB.Where("token_hash = ?", auth.HashToken(token)).First(&session).Error; err != nil {
+		return false
+	}
+	var user models.User
+	if err := h.DB.First(&user, "id = ?", session.UserID).Error; err != nil {
+		return false
+	}
+	return user.Role == "admin"
 }
 
 func EnsureInitialSettings(db *gorm.DB) {

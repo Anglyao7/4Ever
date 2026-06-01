@@ -59,6 +59,26 @@ func TestSignUpDisplayNameDefaultMatchesPythonRoute(t *testing.T) {
 	}
 }
 
+func TestModulesTreatInvalidAuthAsNonAdminLikePythonRoute(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	resp := rawGet(t, ts.URL+"/api/modules", "not-a-real-token")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("modules should ignore invalid optional auth, got %d", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+	var modules []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&modules); err != nil {
+		t.Fatal(err)
+	}
+	for _, module := range modules {
+		if module["id"] == "admin" {
+			t.Fatalf("invalid auth should not expose admin module: %#v", modules)
+		}
+	}
+}
+
 func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
