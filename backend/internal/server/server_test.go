@@ -73,11 +73,11 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 			"device":        map[string]any{"deviceId": "device-1", "hostname": "host"},
 			"buckets": []map[string]any{{
 				"source": "codex", "model": "gpt", "projectKey": "proj", "projectLabel": "Project",
-				"bucketStart": now.Format(time.RFC3339), "inputTokens": total, "totalTokens": total,
+				"bucketStart": now.Format(time.RFC3339), "hostname": "", "inputTokens": total, "totalTokens": total,
 			}},
 			"sessions": []map[string]any{{
 				"source": "codex", "projectKey": "proj", "projectLabel": "Project", "sessionHash": "s",
-				"firstMessageAt": now.Format(time.RFC3339), "lastMessageAt": now.Add(time.Minute).Format(time.RFC3339),
+				"hostname": "", "firstMessageAt": now.Format(time.RFC3339), "lastMessageAt": now.Add(time.Minute).Format(time.RFC3339),
 				"activeSeconds": 30, "messageCount": 2, "inputTokens": total, "totalTokens": total,
 			}},
 		}
@@ -95,6 +95,15 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	heatmap := dashboard["heatmap"].([]any)
 	if len(heatmap) == 0 || len(heatmap[0].(map[string]any)["key_breakdown"].([]any)) != 2 {
 		t.Fatalf("expected two-key heatmap breakdown, got %#v", heatmap)
+	}
+	devices := dashboard["devices"].([]any)
+	devicesByID := map[string]map[string]any{}
+	for _, item := range devices {
+		device := item.(map[string]any)
+		devicesByID[device["device_id"].(string)] = device
+	}
+	if devicesByID["device-1"]["hostname"] != "host" {
+		t.Fatalf("device hostname should use ingest device hostname: %#v", devicesByID["device-1"])
 	}
 
 	patchJSON(t, ts.URL+"/api/token-usage/keys/"+keyTwoID, map[string]any{"status": "disabled"}, token)

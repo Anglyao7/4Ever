@@ -294,7 +294,7 @@ func (h Handler) Ingest(c *gin.Context) {
 			deviceID = strings.TrimSpace(*bucket.DeviceID)
 		}
 		hostname := req.Device.Hostname
-		if bucket.Hostname != nil {
+		if bucket.Hostname != nil && strings.TrimSpace(*bucket.Hostname) != "" {
 			hostname = *bucket.Hostname
 		}
 		modelName := defaultString(bucket.Model, "unknown")
@@ -332,7 +332,7 @@ func (h Handler) Ingest(c *gin.Context) {
 			deviceID = strings.TrimSpace(*session.DeviceID)
 		}
 		hostname := req.Device.Hostname
-		if session.Hostname != nil {
+		if session.Hostname != nil && strings.TrimSpace(*session.Hostname) != "" {
 			hostname = *session.Hostname
 		}
 		projectKey := defaultString(session.ProjectKey, "unknown")
