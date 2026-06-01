@@ -786,6 +786,19 @@ func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
 	}
 	_ = blankProvider.Body.Close()
 
+	nullStringFields := []map[string]any{
+		{"prompt": "draw", "api_key": "test-image-key", "provider": nil},
+		{"prompt": "draw", "api_key": "test-image-key", "model": nil},
+		{"prompt": "draw", "api_key": "test-image-key", "size": nil},
+	}
+	for _, payload := range nullStringFields {
+		resp := rawPost(t, ts.URL+"/api/images/generate", payload, "")
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("explicit null image string field should be rejected with 422, got %d for %#v", resp.StatusCode, payload)
+		}
+		_ = resp.Body.Close()
+	}
+
 	tooLong := rawPost(t, ts.URL+"/api/images/generate", map[string]any{
 		"prompt":  strings.Repeat("x", 4001),
 		"api_key": "test-image-key",
@@ -802,6 +815,7 @@ func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
 	cases := []map[string]any{
 		{"provider": "bad", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
 		{"provider": "", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
+		{"provider": nil, "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
 		{"provider": "openai", "model": "gpt", "messages": []any{}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": ""}}},
 		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "tool", "content": "hi"}}},
@@ -838,6 +852,14 @@ func TestProviderConnectionRejectsUnsupportedProviderLikePythonSchema(t *testing
 		t.Fatalf("blank provider should be rejected with 422, got %d", blank.StatusCode)
 	}
 	_ = blank.Body.Close()
+
+	nullProvider := rawPost(t, ts.URL+"/api/catalog/provider/models", map[string]any{
+		"provider": nil,
+	}, "")
+	if nullProvider.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("null provider should be rejected with 422, got %d", nullProvider.StatusCode)
+	}
+	_ = nullProvider.Body.Close()
 }
 
 func getJSON(t *testing.T, url string, token string) map[string]any {

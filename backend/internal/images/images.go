@@ -15,13 +15,35 @@ import (
 
 type Handler struct{}
 
+type optionalString struct {
+	Set   bool
+	Valid bool
+	Value string
+}
+
+func (value *optionalString) UnmarshalJSON(data []byte) error {
+	value.Set = true
+	if string(data) == "null" {
+		value.Valid = false
+		value.Value = ""
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	value.Valid = true
+	value.Value = text
+	return nil
+}
+
 type GenerationRequest struct {
-	Provider *string `json:"provider"`
-	BaseURL  *string `json:"base_url"`
-	APIKey   *string `json:"api_key"`
-	Model    *string `json:"model"`
-	Prompt   string  `json:"prompt" binding:"required"`
-	Size     *string `json:"size"`
+	Provider optionalString `json:"provider"`
+	BaseURL  *string        `json:"base_url"`
+	APIKey   *string        `json:"api_key"`
+	Model    optionalString `json:"model"`
+	Prompt   string         `json:"prompt" binding:"required"`
+	Size     optionalString `json:"size"`
 }
 
 type GeneratedImage struct {
@@ -47,9 +69,13 @@ func (Handler) Generate(c *gin.Context) {
 	if !httputil.BindJSON(c, &req) {
 		return
 	}
+	if !validOptionalStrings(map[string]optionalString{"provider": req.Provider, "model": req.Model, "size": req.Size}) {
+		httputil.Error(c, http.StatusUnprocessableEntity, "provider, model, and size must be strings when provided.")
+		return
+	}
 	rawProvider := "openai"
-	if req.Provider != nil {
-		rawProvider = *req.Provider
+	if req.Provider.Set {
+		rawProvider = req.Provider.Value
 	}
 	provider := strings.ToLower(strings.TrimSpace(rawProvider))
 	if provider != "openai" && provider != "custom" {
@@ -73,12 +99,12 @@ func (Handler) Generate(c *gin.Context) {
 		baseURL = strings.TrimSpace(*req.BaseURL)
 	}
 	model := "gpt-image-1"
-	if req.Model != nil {
-		model = *req.Model
+	if req.Model.Set {
+		model = req.Model.Value
 	}
 	size := "1024x1024"
-	if req.Size != nil {
-		size = *req.Size
+	if req.Size.Set {
+		size = req.Size.Value
 	}
 	payload := map[string]any{"model": model, "prompt": req.Prompt, "size": size}
 	body, _ := json.Marshal(payload)
@@ -120,6 +146,15 @@ func (Handler) Generate(c *gin.Context) {
 		suffix = ""
 	}
 	c.JSON(http.StatusOK, GenerationResponse{Status: "success", Message: "Generated " + strconv.Itoa(len(images)) + " image" + suffix + ".", Images: images, Prompt: req.Prompt})
+}
+
+func validOptionalStrings(values map[string]optionalString) bool {
+	for _, value := range values {
+		if value.Set && !value.Valid {
+			return false
+		}
+	}
+	return true
 }
 
 func providerErrorDetail(body []byte, statusCode int) string {

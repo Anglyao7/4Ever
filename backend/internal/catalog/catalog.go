@@ -28,10 +28,32 @@ type ProviderInfo struct {
 	Endpoint       string `json:"endpoint"`
 }
 
+type optionalString struct {
+	Set   bool
+	Valid bool
+	Value string
+}
+
+func (value *optionalString) UnmarshalJSON(data []byte) error {
+	value.Set = true
+	if string(data) == "null" {
+		value.Valid = false
+		value.Value = ""
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	value.Valid = true
+	value.Value = text
+	return nil
+}
+
 type ProviderConnectionRequest struct {
-	Provider *string `json:"provider"`
-	BaseURL  *string `json:"base_url"`
-	APIKey   *string `json:"api_key"`
+	Provider optionalString `json:"provider"`
+	BaseURL  *string        `json:"base_url"`
+	APIKey   *string        `json:"api_key"`
 }
 
 type ProviderModel struct {
@@ -88,6 +110,10 @@ func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
 	if !httputil.BindJSON(c, &req) {
 		return nil, false
 	}
+	if req.Provider.Set && !req.Provider.Valid {
+		httputil.Error(c, http.StatusUnprocessableEntity, "provider must be a valid provider string.")
+		return nil, false
+	}
 	provider := normalizeProvider(req.Provider)
 	if !isSupportedProvider(provider) {
 		httputil.Error(c, http.StatusUnprocessableEntity, "Unsupported provider format: "+provider)
@@ -120,7 +146,7 @@ func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
 }
 
 type ChatCompletionRequest struct {
-	Provider     *string          `json:"provider"`
+	Provider     optionalString   `json:"provider"`
 	BaseURL      *string          `json:"base_url"`
 	APIKey       *string          `json:"api_key"`
 	Model        string           `json:"model" binding:"required"`
@@ -226,11 +252,11 @@ func StreamChat(settings config.Settings, req ChatCompletionRequest, onChunk fun
 	return http.StatusOK, ""
 }
 
-func normalizeProvider(provider *string) string {
-	if provider == nil {
+func normalizeProvider(provider optionalString) string {
+	if !provider.Set {
 		return "openai"
 	}
-	return strings.TrimSpace(strings.ToLower(*provider))
+	return strings.TrimSpace(strings.ToLower(provider.Value))
 }
 
 func isSupportedProvider(provider string) bool {
@@ -243,6 +269,9 @@ func isSupportedProvider(provider string) bool {
 }
 
 func validateChatRequest(req ChatCompletionRequest) (string, int, string) {
+	if req.Provider.Set && !req.Provider.Valid {
+		return "", http.StatusUnprocessableEntity, "provider must be a valid provider string."
+	}
 	provider := normalizeProvider(req.Provider)
 	if !isSupportedProvider(provider) {
 		return provider, http.StatusUnprocessableEntity, "Unsupported provider format: " + provider
