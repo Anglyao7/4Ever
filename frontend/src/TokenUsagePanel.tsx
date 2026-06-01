@@ -109,6 +109,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const [loadingLabel, setLoadingLabel] = useState("");
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<TooltipData>(null);
+  const trendControlsRef = useRef<HTMLDivElement | null>(null);
   const apiBaseUrl = getApiBaseUrl();
   const installCommand = "npm install -g @anglyaoy/token-usage";
   const initCommand = "forever-token init";
@@ -142,6 +143,18 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       // Ignore storage failures; the first-visit guide still renders for this session.
     }
   }, [props.authToken, props.currentUser]);
+
+  useEffect(() => {
+    if (trendMode !== "custom") return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (trendControlsRef.current?.contains(target)) return;
+      setTrendMode("month");
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [trendMode]);
 
   async function refresh() {
     setLoading(true);
@@ -269,6 +282,10 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     }
   }
 
+  function selectTrendMode(mode: TrendMode) {
+    setTrendMode((current) => current === "custom" && mode === "custom" ? "month" : mode);
+  }
+
   async function copyText(value: string, label: string) {
     if (!value) return;
     try {
@@ -390,9 +407,9 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
                 <small>{trendRangeLabel(trendMode, customStart, customEnd)} · {dashboard.last_synced_at ? `最近同步 ${formatDate(dashboard.last_synced_at)}` : "等待 CLI 上传数据"}</small>
               </div>
             </div>
-            <div className="token-trend-controls-shell">
+            <div className="token-trend-controls-shell" ref={trendControlsRef}>
               <div className="token-trend-controls" role="group" aria-label="趋势统计方式">
-                {(["day", "week", "month", "custom"] as TrendMode[]).map((mode) => <button key={mode} type="button" className={trendMode === mode ? "active" : ""} aria-pressed={trendMode === mode} onClick={() => setTrendMode(mode)}>{trendModeLabel(mode)}</button>)}
+                {(["day", "week", "month", "custom"] as TrendMode[]).map((mode) => <button key={mode} type="button" className={trendMode === mode ? "active" : ""} aria-pressed={trendMode === mode} onClick={() => selectTrendMode(mode)}>{trendModeLabel(mode)}</button>)}
               </div>
               {trendMode === "custom" && <div className="token-trend-custom" aria-label="自定义趋势范围">
                 <label><span>开始</span><input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label>
