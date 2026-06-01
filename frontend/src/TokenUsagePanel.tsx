@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, BarChart3, Check, Clipboard, Clock3, Eye, EyeOff, Flame, KeyRound, LoaderCircle, Medal, Package, Pencil, RefreshCw, TerminalSquare, Trophy, XCircle, Zap } from "lucide-react";
+import { Activity, BarChart3, Check, Clipboard, Clock3, Eye, EyeOff, Flame, KeyRound, Medal, Package, Pencil, RefreshCw, TerminalSquare, Trophy, XCircle, Zap } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { createTokenUsageKey, fetchTokenUsageDashboard, fetchTokenUsageKeys, fetchTokenUsageLeaderboard, getApiBaseUrl, revealTokenUsageKey, updateTokenUsageKey } from "./services/api";
@@ -106,7 +106,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const [keyDialog, setKeyDialog] = useState<{ mode: KeyDialogMode; key?: TokenUsageApiKey; name: string } | null>(null);
   const [copied, setCopied] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState("");
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<TooltipData>(null);
   const trendControlsRef = useRef<HTMLDivElement | null>(null);
@@ -127,7 +126,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setKeyDialog(null);
       setCopied("");
       setLoading(false);
-      setLoadingLabel("");
       return;
     }
     void refresh();
@@ -158,7 +156,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
 
   async function refresh() {
     setLoading(true);
-    setLoadingLabel("正在同步 Token 统计数据");
     setError("");
     try {
       const queryRange = rangeFromTrendMode(trendMode, customStart, customEnd);
@@ -180,14 +177,12 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setError(cause instanceof Error ? cause.message : "Token 统计加载失败");
     } finally {
       setLoading(false);
-      setLoadingLabel("");
     }
   }
 
   async function createKey(name: string) {
     if (!props.authToken) return;
     setLoading(true);
-    setLoadingLabel("正在生成 CLI Key");
     setError("");
     try {
       const result = await createTokenUsageKey(props.authToken, name.trim() || defaultKeyName(props.currentUser));
@@ -198,14 +193,12 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setError(cause instanceof Error ? cause.message : "CLI Key 创建失败");
     } finally {
       setLoading(false);
-      setLoadingLabel("");
     }
   }
 
   async function renameKey(key: TokenUsageApiKey, name: string) {
     if (!props.authToken) return;
     setLoading(true);
-    setLoadingLabel("正在修改 CLI Key 名称");
     setError("");
     try {
       const updated = await updateTokenUsageKey(props.authToken, key.id, { name: name.trim() });
@@ -215,7 +208,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setError(cause instanceof Error ? cause.message : "CLI Key 修改失败");
     } finally {
       setLoading(false);
-      setLoadingLabel("");
     }
   }
 
@@ -223,7 +215,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     if (!props.authToken) return;
     if (!window.confirm(`停用 "${key.name}" 后，这个 Key 将不能继续上传数据。确定停用吗？`)) return;
     setLoading(true);
-    setLoadingLabel("正在停用 CLI Key");
     setError("");
     try {
       const updated = await updateTokenUsageKey(props.authToken, key.id, { status: "disabled" });
@@ -232,7 +223,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setError(cause instanceof Error ? cause.message : "CLI Key 停用失败");
     } finally {
       setLoading(false);
-      setLoadingLabel("");
     }
   }
 
@@ -247,7 +237,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     }
     if (!props.authToken) return;
     setLoading(true);
-    setLoadingLabel("正在读取 CLI Key");
     setError("");
     try {
       const result = await revealTokenUsageKey(props.authToken, key.id);
@@ -256,7 +245,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setError(cause instanceof Error ? cause.message : "CLI Key 读取失败");
     } finally {
       setLoading(false);
-      setLoadingLabel("");
     }
   }
 
@@ -355,7 +343,6 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       </div>
 
       {error && <p className="react-error-line" role="alert">{error}</p>}
-      {loading && <p className="react-status-line pending" role="status" aria-live="polite"><LoaderCircle className="spin" size={14} />{loadingLabel || "正在处理 Token 统计数据"}</p>}
 
       {view === "dashboard" ? <div className="token-dashboard-layout" aria-busy={loading}>
         <article className="token-chart-card token-heatmap-card">
