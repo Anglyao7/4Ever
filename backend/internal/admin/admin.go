@@ -49,17 +49,17 @@ type AdminUser struct {
 }
 
 type RoleUpdate struct {
-	Role string `json:"role" binding:"required"`
+	Role string `json:"role" binding:"required,max=40"`
 }
 
 type RiskUpdate struct {
 	RiskFlagged *bool   `json:"risk_flagged" binding:"required"`
-	Note        *string `json:"note"`
+	Note        *string `json:"note" binding:"omitempty,max=240"`
 }
 
 type AgentPromptUpdate struct {
-	PromptVersion string `json:"prompt_version" binding:"required"`
-	SystemPrompt  string `json:"system_prompt" binding:"required"`
+	PromptVersion string `json:"prompt_version" binding:"required,max=80"`
+	SystemPrompt  string `json:"system_prompt" binding:"required,min=20,max=6000"`
 }
 
 type MCPServerUpdate struct {

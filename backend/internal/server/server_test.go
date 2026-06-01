@@ -237,6 +237,62 @@ func TestAdminBooleanUpdatesRequireExplicitFieldsLikePythonSchema(t *testing.T) 
 	}
 }
 
+func TestAdminRequestLengthValidationMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "lengthadmin", "email": "lengthadmin@example.com", "password": "password123", "display_name": "Length Admin",
+	}, "")
+	token := auth["token"].(string)
+	userID := auth["user"].(map[string]any)["id"].(string)
+	getJSON(t, ts.URL+"/api/admin/overview", token)
+
+	cases := []struct {
+		url     string
+		payload map[string]any
+		field   string
+	}{
+		{
+			url:     ts.URL + "/api/admin/users/" + userID + "/role",
+			payload: map[string]any{"role": strings.Repeat("x", 41)},
+			field:   "Role",
+		},
+		{
+			url:     ts.URL + "/api/admin/users/" + userID + "/risk",
+			payload: map[string]any{"risk_flagged": true, "note": strings.Repeat("x", 241)},
+			field:   "Note",
+		},
+		{
+			url: ts.URL + "/api/admin/agents/research-agent",
+			payload: map[string]any{
+				"prompt_version": strings.Repeat("x", 81),
+				"system_prompt":  strings.Repeat("p", 20),
+			},
+			field: "PromptVersion",
+		},
+		{
+			url: ts.URL + "/api/admin/agents/research-agent",
+			payload: map[string]any{
+				"prompt_version": "v2",
+				"system_prompt":  strings.Repeat("p", 6001),
+			},
+			field: "SystemPrompt",
+		},
+	}
+	for _, tc := range cases {
+		resp := rawPatch(t, tc.url, tc.payload, token)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("too-long admin payload should return 422 for %s, got %d", tc.field, resp.StatusCode)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if !strings.Contains(string(body), tc.field) || !strings.Contains(string(body), "'max'") {
+			t.Fatalf("expected max validation error for %s, got %s", tc.field, string(body))
+		}
+	}
+}
+
 func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()
