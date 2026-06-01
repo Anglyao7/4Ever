@@ -22,11 +22,11 @@ type Handler struct {
 }
 
 type DirectAttachment struct {
-	ID      string  `json:"id"`
-	Name    string  `json:"name"`
-	Type    string  `json:"type"`
+	ID      *string `json:"id"`
+	Name    *string `json:"name"`
+	Type    *string `json:"type"`
 	Size    int     `json:"size"`
-	Kind    string  `json:"kind"`
+	Kind    *string `json:"kind"`
 	DataURL *string `json:"data_url"`
 }
 
@@ -312,7 +312,7 @@ func (h Handler) SendDirectMessage(c *gin.Context) {
 
 func validateAttachments(c *gin.Context, attachments []DirectAttachment) bool {
 	for _, attachment := range attachments {
-		if strings.TrimSpace(attachment.ID) == "" || strings.TrimSpace(attachment.Name) == "" || strings.TrimSpace(attachment.Type) == "" || strings.TrimSpace(attachment.Kind) == "" {
+		if attachment.ID == nil || attachment.Name == nil || attachment.Type == nil || attachment.Kind == nil {
 			httputil.Error(c, http.StatusUnprocessableEntity, "Attachment id, name, type, and kind are required.")
 			return false
 		}
@@ -456,10 +456,10 @@ func directReplyPreview(message models.DirectMessage, currentID string) DirectRe
 }
 
 func firstAttachmentLabel(attachments []DirectAttachment) string {
-	if len(attachments) == 0 || strings.TrimSpace(attachments[0].Name) == "" {
+	if len(attachments) == 0 || attachments[0].Name == nil || strings.TrimSpace(*attachments[0].Name) == "" {
 		return "Attachment"
 	}
-	return strings.TrimSpace(attachments[0].Name)
+	return strings.TrimSpace(*attachments[0].Name)
 }
 
 func friendPair(left string, right string) (string, string) {

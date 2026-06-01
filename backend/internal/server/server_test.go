@@ -632,6 +632,14 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 	if badAttachment.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("negative attachment size should be rejected, got %d", badAttachment.StatusCode)
 	}
+	missingAttachmentField := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "a1", "name": "bad", "type": "text/plain", "size": 1}}}, aliceToken)
+	if missingAttachmentField.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("missing attachment kind should be rejected, got %d", missingAttachmentField.StatusCode)
+	}
+	emptyAttachmentFields := postJSON(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "", "name": "", "type": "", "kind": "", "size": 1}}}, aliceToken)
+	if len(emptyAttachmentFields["attachments"].([]any)) != 1 {
+		t.Fatalf("present empty attachment string fields should match Python schema: %#v", emptyAttachmentFields)
+	}
 
 	attachments := []map[string]any{}
 	for index := 0; index < 5; index++ {
@@ -642,7 +650,7 @@ func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
 		t.Fatalf("attachments should be capped at four: %#v", sent)
 	}
 	messages := getJSONList(t, ts.URL+"/api/chat/direct/"+aliceID, bobToken)
-	if len(messages) != 1 || messages[0].(map[string]any)["sender_id"] != aliceID {
+	if len(messages) != 2 || messages[0].(map[string]any)["sender_id"] != aliceID || messages[1].(map[string]any)["sender_id"] != aliceID {
 		t.Fatalf("bob should see alice's message: %#v", messages)
 	}
 }
