@@ -14722,6 +14722,7 @@ select:focus {
 }
 
 :root[data-color-mode="dark"] .token-range-tabs,
+:root[data-color-mode="dark"] .token-section-tabs,
 :root[data-color-mode="dark"] .token-key-name-field input,
 :root[data-color-mode="dark"] .token-dialog-box,
 :root[data-color-mode="dark"] .token-dialog-field input,
@@ -14740,8 +14741,14 @@ select:focus {
   border-color: rgba(143, 213, 196, 0.28);
 }
 
+:root[data-color-mode="dark"] .token-section-tabs button {
+  color: #cbd6ce;
+}
+
 :root[data-color-mode="dark"] .token-range-tabs button.active,
 :root[data-color-mode="dark"] .token-range-tabs button:hover,
+:root[data-color-mode="dark"] .token-section-tabs button.active,
+:root[data-color-mode="dark"] .token-section-tabs button:hover,
 :root[data-color-mode="dark"] .token-stat-icon {
   color: #9ee4d3;
   background: rgba(113, 184, 166, 0.12);
