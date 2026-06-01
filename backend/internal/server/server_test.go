@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -292,6 +293,54 @@ func TestAgentRunValidationReviewCancelAndResumeContracts(t *testing.T) {
 	}
 }
 
+func TestDirectMessageValidationMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	alice := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "alice", "email": "alice@example.com", "password": "password123", "display_name": "Alice",
+	}, "")
+	bob := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "bob", "email": "bob@example.com", "password": "password123", "display_name": "Bob",
+	}, "")
+	aliceToken := alice["token"].(string)
+	bobToken := bob["token"].(string)
+	aliceID := alice["user"].(map[string]any)["id"].(string)
+	bobID := bob["user"].(map[string]any)["id"].(string)
+
+	request := postJSON(t, ts.URL+"/api/chat/friends/request/"+bobID, map[string]any{}, aliceToken)
+	accepted := postJSON(t, ts.URL+"/api/chat/friends/requests/"+jsonID(request["id"])+"/accept", map[string]any{}, bobToken)
+	if accepted["status"] != "accepted" {
+		t.Fatalf("friend request should be accepted: %#v", accepted)
+	}
+
+	empty := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"content": "   ", "attachments": []any{}}, aliceToken)
+	if empty.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("empty direct message should be rejected, got %d", empty.StatusCode)
+	}
+	tooLong := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"content": strings.Repeat("x", 20001)}, aliceToken)
+	if tooLong.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long direct message should be rejected, got %d", tooLong.StatusCode)
+	}
+	badAttachment := rawPost(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": []map[string]any{{"id": "a1", "name": "bad", "type": "text/plain", "kind": "file", "size": -1}}}, aliceToken)
+	if badAttachment.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("negative attachment size should be rejected, got %d", badAttachment.StatusCode)
+	}
+
+	attachments := []map[string]any{}
+	for index := 0; index < 5; index++ {
+		attachments = append(attachments, map[string]any{"id": "a", "name": "file", "type": "text/plain", "kind": "file", "size": 1})
+	}
+	sent := postJSON(t, ts.URL+"/api/chat/direct/"+bobID, map[string]any{"attachments": attachments}, aliceToken)
+	if len(sent["attachments"].([]any)) != 4 {
+		t.Fatalf("attachments should be capped at four: %#v", sent)
+	}
+	messages := getJSONList(t, ts.URL+"/api/chat/direct/"+aliceID, bobToken)
+	if len(messages) != 1 || messages[0].(map[string]any)["sender_id"] != aliceID {
+		t.Fatalf("bob should see alice's message: %#v", messages)
+	}
+}
+
 func getJSON(t *testing.T, url string, token string) map[string]any {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
@@ -307,6 +356,27 @@ func getJSON(t *testing.T, url string, token string) map[string]any {
 		t.Fatalf("GET %s returned %d", url, resp.StatusCode)
 	}
 	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func getJSONList(t *testing.T, url string, token string) []any {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		t.Fatalf("GET %s returned %d", url, resp.StatusCode)
+	}
+	var out []any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
@@ -395,4 +465,8 @@ func checkpointSteps(rows []any) []string {
 		out = append(out, row.(map[string]any)["graph_step"].(string))
 	}
 	return out
+}
+
+func jsonID(value any) string {
+	return fmt.Sprintf("%.0f", value.(float64))
 }

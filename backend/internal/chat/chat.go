@@ -279,9 +279,16 @@ func (h Handler) SendDirectMessage(c *gin.Context) {
 		httputil.Error(c, http.StatusUnprocessableEntity, "Message content or attachment is required.")
 		return
 	}
+	if len([]rune(req.Content)) > 20000 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Message content must be 20000 characters or fewer.")
+		return
+	}
 	attachments := req.Attachments
 	if len(attachments) > 4 {
 		attachments = attachments[:4]
+	}
+	if ok := validateAttachments(c, attachments); !ok {
+		return
 	}
 	attachmentJSON, _ := json.Marshal(attachments)
 	attachmentRaw := string(attachmentJSON)
@@ -301,6 +308,20 @@ func (h Handler) SendDirectMessage(c *gin.Context) {
 	message := models.DirectMessage{SenderID: user.ID, RecipientID: peerID, Content: strings.TrimSpace(req.Content), AttachmentsJSON: &attachmentRaw, ReplyToMessageID: replyID, ReplyToPreviewJSON: replyPreview}
 	h.DB.Create(&message)
 	c.JSON(http.StatusOK, toDirectMessage(message))
+}
+
+func validateAttachments(c *gin.Context, attachments []DirectAttachment) bool {
+	for _, attachment := range attachments {
+		if strings.TrimSpace(attachment.ID) == "" || strings.TrimSpace(attachment.Name) == "" || strings.TrimSpace(attachment.Type) == "" || strings.TrimSpace(attachment.Kind) == "" {
+			httputil.Error(c, http.StatusUnprocessableEntity, "Attachment id, name, type, and kind are required.")
+			return false
+		}
+		if attachment.Size < 0 {
+			httputil.Error(c, http.StatusUnprocessableEntity, "Attachment size must be greater than or equal to 0.")
+			return false
+		}
+	}
+	return true
 }
 
 func (h Handler) ensureDirectPeer(c *gin.Context, peerID string, currentID string, requireFriendship bool) (models.User, bool) {
