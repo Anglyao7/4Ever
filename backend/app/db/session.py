@@ -208,12 +208,14 @@ def ensure_schema_updates() -> None:
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workflow_agent_checkpoints_run_id ON workflow_agent_checkpoints (run_id)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workflow_agent_checkpoints_thread_id ON workflow_agent_checkpoints (thread_id)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workflow_agent_checkpoints_checkpoint_id ON workflow_agent_checkpoints (checkpoint_id)"))
-    try:
-        token_key_columns = {column["name"] for column in inspector.get_columns("token_usage_api_keys")}
-    except Exception:
-        token_key_columns = set()
+    ensure_token_usage_schema_updates(engine)
+
+
+def ensure_token_usage_schema_updates(target_engine: Engine) -> None:
+    inspector = inspect(target_engine)
+    token_key_columns = table_columns(inspector, "token_usage_api_keys")
     if not token_key_columns:
-        with engine.begin() as connection:
+        with target_engine.begin() as connection:
             connection.execute(
                 text(
                     "CREATE TABLE IF NOT EXISTS token_usage_api_keys ("
@@ -222,6 +224,7 @@ def ensure_schema_updates() -> None:
                     "name VARCHAR(120) NOT NULL, "
                     "prefix VARCHAR(24) NOT NULL, "
                     "key_hash VARCHAR(128) NOT NULL UNIQUE, "
+                    "raw_key TEXT, "
                     "status VARCHAR(24) NOT NULL DEFAULT 'active', "
                     "last_used_at DATETIME, "
                     "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
@@ -229,15 +232,26 @@ def ensure_schema_updates() -> None:
                     ")",
                 ),
             )
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_user_id ON token_usage_api_keys (user_id)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_prefix ON token_usage_api_keys (prefix)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_key_hash ON token_usage_api_keys (key_hash)"))
-    try:
-        token_bucket_columns = {column["name"] for column in inspector.get_columns("token_usage_buckets")}
-    except Exception:
-        token_bucket_columns = set()
+    else:
+        with target_engine.begin() as connection:
+            add_missing_columns(connection, "token_usage_api_keys", token_key_columns, {
+                "name": "VARCHAR(120) NOT NULL DEFAULT '本机 CLI'",
+                "prefix": "VARCHAR(24) NOT NULL DEFAULT ''",
+                "key_hash": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "raw_key": "TEXT",
+                "status": "VARCHAR(24) NOT NULL DEFAULT 'active'",
+                "last_used_at": "DATETIME",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            })
+    with target_engine.begin() as connection:
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_user_id ON token_usage_api_keys (user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_prefix ON token_usage_api_keys (prefix)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_api_keys_key_hash ON token_usage_api_keys (key_hash)"))
+
+    token_bucket_columns = table_columns(inspector, "token_usage_buckets")
     if not token_bucket_columns:
-        with engine.begin() as connection:
+        with target_engine.begin() as connection:
             connection.execute(
                 text(
                     "CREATE TABLE IF NOT EXISTS token_usage_buckets ("
@@ -259,22 +273,36 @@ def ensure_schema_updates() -> None:
                     "estimated_cost_usd FLOAT, "
                     "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
                     "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-                    "CONSTRAINT uq_token_usage_bucket_scope UNIQUE (user_id, device_id, source, model, project_key, bucket_start)"
+                    "CONSTRAINT uq_token_usage_bucket_scope UNIQUE (user_id, api_key_id, device_id, source, model, project_key, bucket_start)"
                     ")",
                 ),
             )
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_user_id ON token_usage_buckets (user_id)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_bucket_start ON token_usage_buckets (bucket_start)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_device_id ON token_usage_buckets (device_id)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_source ON token_usage_buckets (source)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_model ON token_usage_buckets (model)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_project_key ON token_usage_buckets (project_key)"))
-    try:
-        token_session_columns = {column["name"] for column in inspector.get_columns("token_usage_sessions")}
-    except Exception:
-        token_session_columns = set()
+    else:
+        with target_engine.begin() as connection:
+            add_missing_columns(connection, "token_usage_buckets", token_bucket_columns, {
+                "api_key_id": "VARCHAR(80)",
+                "hostname": "VARCHAR(160) NOT NULL DEFAULT ''",
+                "model": "VARCHAR(160) NOT NULL DEFAULT 'unknown'",
+                "project_key": "VARCHAR(160) NOT NULL DEFAULT 'unknown'",
+                "project_label": "VARCHAR(240) NOT NULL DEFAULT ''",
+                "reasoning_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "cached_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "total_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "estimated_cost_usd": "FLOAT",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            })
+    with target_engine.begin() as connection:
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_user_id ON token_usage_buckets (user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_bucket_start ON token_usage_buckets (bucket_start)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_device_id ON token_usage_buckets (device_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_source ON token_usage_buckets (source)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_model ON token_usage_buckets (model)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_buckets_project_key ON token_usage_buckets (project_key)"))
+
+    token_session_columns = table_columns(inspector, "token_usage_sessions")
     if not token_session_columns:
-        with engine.begin() as connection:
+        with target_engine.begin() as connection:
             connection.execute(
                 text(
                     "CREATE TABLE IF NOT EXISTS token_usage_sessions ("
@@ -302,16 +330,49 @@ def ensure_schema_updates() -> None:
                     "model_usages_json TEXT NOT NULL DEFAULT '[]', "
                     "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
                     "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-                    "CONSTRAINT uq_token_usage_session_scope UNIQUE (user_id, device_id, source, session_hash)"
+                    "CONSTRAINT uq_token_usage_session_scope UNIQUE (user_id, api_key_id, device_id, source, session_hash)"
                     ")",
                 ),
             )
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_user_id ON token_usage_sessions (user_id)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_device_id ON token_usage_sessions (device_id)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_source ON token_usage_sessions (source)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_project_key ON token_usage_sessions (project_key)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_session_hash ON token_usage_sessions (session_hash)"))
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_first_message_at ON token_usage_sessions (first_message_at)"))
+    else:
+        with target_engine.begin() as connection:
+            add_missing_columns(connection, "token_usage_sessions", token_session_columns, {
+                "api_key_id": "VARCHAR(80)",
+                "hostname": "VARCHAR(160) NOT NULL DEFAULT ''",
+                "project_label": "VARCHAR(240) NOT NULL DEFAULT ''",
+                "duration_seconds": "INTEGER NOT NULL DEFAULT 0",
+                "active_seconds": "INTEGER NOT NULL DEFAULT 0",
+                "message_count": "INTEGER NOT NULL DEFAULT 0",
+                "user_message_count": "INTEGER NOT NULL DEFAULT 0",
+                "reasoning_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "cached_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "total_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "primary_model": "VARCHAR(160) NOT NULL DEFAULT ''",
+                "model_usages_json": "TEXT NOT NULL DEFAULT '[]'",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            })
+    with target_engine.begin() as connection:
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_user_id ON token_usage_sessions (user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_device_id ON token_usage_sessions (device_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_source ON token_usage_sessions (source)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_project_key ON token_usage_sessions (project_key)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_session_hash ON token_usage_sessions (session_hash)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_first_message_at ON token_usage_sessions (first_message_at)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_token_usage_sessions_last_message_at ON token_usage_sessions (last_message_at)"))
+
+
+def table_columns(inspector, table_name: str) -> set[str]:
+    try:
+        return {column["name"] for column in inspector.get_columns(table_name)}
+    except Exception:
+        return set()
+
+
+def add_missing_columns(connection, table_name: str, existing_columns: set[str], columns: dict[str, str]) -> None:
+    for name, definition in columns.items():
+        if name not in existing_columns:
+            connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {definition}"))
 
 
 def check_database() -> bool:

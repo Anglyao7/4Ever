@@ -11817,6 +11817,107 @@ h1 {
   flex-wrap: wrap;
 }
 
+.token-key-name-field {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.token-key-name-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.token-key-name-field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.token-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(18, 22, 20, 0.46);
+  backdrop-filter: blur(8px);
+}
+
+.token-dialog-box {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(20, 16, 12, 0.24);
+}
+
+.token-dialog-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.token-dialog-head strong {
+  display: block;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.token-dialog-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.token-dialog-field {
+  display: grid;
+  gap: 6px;
+}
+
+.token-dialog-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.token-dialog-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.token-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .token-key-status {
   color: var(--muted);
   font-size: 12px;
@@ -11848,6 +11949,91 @@ h1 {
 
 .token-secret-reveal .secondary-button {
   white-space: nowrap;
+}
+
+.token-key-list {
+  display: grid;
+  gap: 8px;
+}
+
+.token-key-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(222, 215, 203, 0.7);
+  border-radius: 8px;
+}
+
+.token-key-item.disabled {
+  opacity: 0.62;
+}
+
+.token-key-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.token-key-main strong,
+.token-key-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-key-main strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.token-key-main span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.token-key-item .token-secret-reveal {
+  grid-column: 1 / -1;
+}
+
+.token-key-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-icon-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(222, 215, 203, 0.78);
+  border-radius: 8px;
+}
+
+.token-icon-button:hover,
+.token-icon-button:focus-visible {
+  color: var(--accent-strong);
+  background: rgba(47, 111, 103, 0.08);
+  border-color: rgba(47, 111, 103, 0.28);
+}
+
+.token-icon-button.danger:hover,
+.token-icon-button.danger:focus-visible {
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.08);
+  border-color: rgba(180, 35, 24, 0.26);
 }
 
 .token-api-info {
@@ -12042,23 +12228,23 @@ h1 {
 
 .token-custom-tooltip {
   display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  min-width: 180px;
-  max-width: 240px;
+  gap: 7px;
+  padding: 14px 16px;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 24px));
   color: white;
   background: rgba(32, 38, 36, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   pointer-events: none;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.4;
 }
 
 .token-custom-tooltip strong {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   color: rgba(255, 255, 255, 0.9);
   margin-bottom: 2px;
@@ -12066,7 +12252,7 @@ h1 {
 
 .token-custom-tooltip span {
   display: block;
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 900;
   color: white;
   margin-bottom: 2px;
@@ -12074,9 +12260,23 @@ h1 {
 
 .token-custom-tooltip small {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.token-tooltip-breakdown {
+  display: grid;
+  gap: 3px;
+  padding-top: 6px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.token-tooltip-breakdown small {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .token-heatmap-tooltip {
@@ -14482,6 +14682,7 @@ select:focus {
 :root[data-color-mode="dark"] .workflow-progress-step,
 :root[data-color-mode="dark"] .workflow-run-card,
 :root[data-color-mode="dark"] .token-device-item,
+:root[data-color-mode="dark"] .token-key-item,
 :root[data-color-mode="dark"] .token-device-list > div,
 :root[data-color-mode="dark"] .token-leaderboard-list > div {
   color: var(--ink);
@@ -14501,6 +14702,8 @@ select:focus {
 :root[data-color-mode="dark"] .token-chart-title small,
 :root[data-color-mode="dark"] .token-setup-header small,
 :root[data-color-mode="dark"] .token-key-status,
+:root[data-color-mode="dark"] .token-key-name-field span,
+:root[data-color-mode="dark"] .token-key-item span,
 :root[data-color-mode="dark"] .token-setup-hint,
 :root[data-color-mode="dark"] .token-setup-note,
 :root[data-color-mode="dark"] .token-sync-option p,
@@ -14519,11 +14722,22 @@ select:focus {
 }
 
 :root[data-color-mode="dark"] .token-range-tabs,
+:root[data-color-mode="dark"] .token-key-name-field input,
+:root[data-color-mode="dark"] .token-dialog-box,
+:root[data-color-mode="dark"] .token-dialog-field input,
+:root[data-color-mode="dark"] .token-icon-button,
 :root[data-color-mode="dark"] .token-command-row code,
 :root[data-color-mode="dark"] .token-secret-value {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.075);
   border-color: rgba(202, 211, 204, 0.18);
+}
+
+:root[data-color-mode="dark"] .token-icon-button:hover,
+:root[data-color-mode="dark"] .token-icon-button:focus-visible {
+  color: #9ee4d3;
+  background: rgba(113, 184, 166, 0.12);
+  border-color: rgba(143, 213, 196, 0.28);
 }
 
 :root[data-color-mode="dark"] .token-range-tabs button.active,
@@ -16449,8 +16663,18 @@ select:focus {
     width: 100%;
   }
 
-  .token-secret-row .secondary-button {
+  .token-secret-row .secondary-button,
+  .token-secret-reveal .secondary-button {
     width: 100%;
+  }
+
+  .token-key-item,
+  .token-secret-reveal {
+    grid-template-columns: 1fr;
+  }
+
+  .token-key-row-actions {
+    justify-content: flex-start;
   }
 
   .token-heatmap {

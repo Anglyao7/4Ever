@@ -231,6 +231,7 @@ class TokenUsageApiKeyRecord(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     prefix: Mapped[str] = mapped_column(String(24), index=True, nullable=False)
     key_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    raw_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -245,7 +246,7 @@ class TokenUsageApiKeyRecord(Base):
 class TokenUsageBucketRecord(Base):
     __tablename__ = "token_usage_buckets"
     __table_args__ = (
-        UniqueConstraint("user_id", "device_id", "source", "model", "project_key", "bucket_start", name="uq_token_usage_bucket_scope"),
+        UniqueConstraint("user_id", "api_key_id", "device_id", "source", "model", "project_key", "bucket_start", name="uq_token_usage_bucket_scope"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -271,7 +272,7 @@ class TokenUsageBucketRecord(Base):
 class TokenUsageSessionRecord(Base):
     __tablename__ = "token_usage_sessions"
     __table_args__ = (
-        UniqueConstraint("user_id", "device_id", "source", "session_hash", name="uq_token_usage_session_scope"),
+        UniqueConstraint("user_id", "api_key_id", "device_id", "source", "session_hash", name="uq_token_usage_session_scope"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

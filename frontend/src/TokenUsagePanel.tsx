@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, BarChart3, Check, Clipboard, Clock3, Flame, KeyRound, LoaderCircle, Medal, Package, RefreshCw, TerminalSquare, Trophy, Zap } from "lucide-react";
+import { Activity, BarChart3, Check, Clipboard, Clock3, Eye, EyeOff, Flame, KeyRound, LoaderCircle, Medal, Package, Pencil, RefreshCw, TerminalSquare, Trophy, XCircle, Zap } from "lucide-react";
 import { createPortal } from "react-dom";
 
-import { createTokenUsageKey, fetchTokenUsageDashboard, fetchTokenUsageKeys, fetchTokenUsageLeaderboard, getApiBaseUrl } from "./services/api";
+import { createTokenUsageKey, fetchTokenUsageDashboard, fetchTokenUsageKeys, fetchTokenUsageLeaderboard, getApiBaseUrl, revealTokenUsageKey, updateTokenUsageKey } from "./services/api";
 import type { AuthUser } from "./types/auth";
 import type { TokenUsageApiKey, TokenUsageDashboard, TokenUsageDeviceSummary, TokenUsageLeaderboard } from "./types/tokenUsage";
 
@@ -21,7 +21,14 @@ type ContributionDay = {
   date: Date;
   total_tokens: number;
   active_seconds: number;
+  key_breakdown: ContributionKeyBreakdown[];
   inRange: boolean;
+};
+
+type ContributionKeyBreakdown = {
+  key_id: string;
+  key_name: string;
+  total_tokens: number;
 };
 
 type ContributionWeek = {
@@ -48,6 +55,11 @@ type TrendData = {
   error: string;
 };
 
+const tokenUsageDisplayTimeZone = "Asia/Shanghai";
+const tokenUsageVisitedStorageKey = "token-usage-guide-opened";
+
+type KeyDialogMode = "create" | "rename";
+
 const emptyDashboard: TokenUsageDashboard = {
   range: "all",
   overview: {
@@ -73,23 +85,30 @@ const emptyDashboard: TokenUsageDashboard = {
   last_synced_at: null,
 };
 
+function getInitialTokenUsageView(): TokenUsageView {
+  try {
+    return localStorage.getItem(tokenUsageVisitedStorageKey) ? "dashboard" : "guide";
+  } catch {
+    return "guide";
+  }
+}
+
 export default function TokenUsagePanel(props: { authToken: string; currentUser: AuthUser | null }) {
-  const [view, setView] = useState<TokenUsageView>("dashboard");
+  const [view, setView] = useState<TokenUsageView>(() => getInitialTokenUsageView());
   const [trendMode, setTrendMode] = useState<TrendMode>("month");
-  const [customStart, setCustomStart] = useState(() => isoDate(addDays(new Date(), -29)));
-  const [customEnd, setCustomEnd] = useState(() => isoDate(new Date()));
+  const [customStart, setCustomStart] = useState(() => isoDate(addDays(displayCalendarDate(new Date()), -29)));
+  const [customEnd, setCustomEnd] = useState(() => displayIsoDate(new Date()));
   const [dashboard, setDashboard] = useState<TokenUsageDashboard>(emptyDashboard);
   const [allTimeDashboard, setAllTimeDashboard] = useState<TokenUsageDashboard>(emptyDashboard);
   const [leaderboard, setLeaderboard] = useState<TokenUsageLeaderboard>({ entries: [] });
   const [keys, setKeys] = useState<TokenUsageApiKey[]>([]);
-  const [rawKey, setRawKey] = useState("");
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, string | null>>({});
+  const [keyDialog, setKeyDialog] = useState<{ mode: KeyDialogMode; key?: TokenUsageApiKey; name: string } | null>(null);
   const [copied, setCopied] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("");
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<TooltipData>(null);
-  const [showGuide, setShowGuide] = useState(false);
-  const [showGuideModal, setShowGuideModal] = useState(false);
   const apiBaseUrl = getApiBaseUrl();
   const installCommand = "npm install -g @anglyaoy/token-usage";
   const initCommand = "forever-token init";
@@ -97,16 +116,14 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const autoSyncCommand = "forever-token service setup";
   const uninstallCommand = "npm uninstall -g @anglyaoy/token-usage";
 
-  // 判断是否有数据（首次使用）
-  const hasData = dashboard.overview.total_tokens > 0 || dashboard.devices.length > 0;
-
   useEffect(() => {
     if (!props.authToken) {
       setDashboard(emptyDashboard);
       setAllTimeDashboard(emptyDashboard);
       setLeaderboard({ entries: [] });
       setKeys([]);
-      setRawKey("");
+      setVisibleKeys({});
+      setKeyDialog(null);
       setCopied("");
       setLoading(false);
       setLoadingLabel("");
@@ -115,14 +132,16 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     void refresh();
   }, [props.authToken, trendMode, customStart, customEnd]);
 
-  // 首次访问检测
   useEffect(() => {
-    const hasVisited = localStorage.getItem("token-usage-visited");
-    if (!hasVisited && !hasData) {
-      setShowGuideModal(true);
-      localStorage.setItem("token-usage-visited", "true");
+    if (!props.authToken || !props.currentUser) return;
+    try {
+      if (!localStorage.getItem(tokenUsageVisitedStorageKey)) {
+        localStorage.setItem(tokenUsageVisitedStorageKey, "true");
+      }
+    } catch {
+      // Ignore storage failures; the first-visit guide still renders for this session.
     }
-  }, [hasData]);
+  }, [props.authToken, props.currentUser]);
 
   async function refresh() {
     setLoading(true);
@@ -152,20 +171,101 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     }
   }
 
-  async function createKey() {
+  async function createKey(name: string) {
     if (!props.authToken) return;
     setLoading(true);
     setLoadingLabel("正在生成 CLI Key");
     setError("");
     try {
-      const result = await createTokenUsageKey(props.authToken, `${props.currentUser?.username ?? "4Ever"} CLI`);
-      setRawKey(result.raw_key);
+      const result = await createTokenUsageKey(props.authToken, name.trim() || defaultKeyName(props.currentUser));
       setKeys((current) => [result.key, ...current]);
+      setVisibleKeys((current) => ({ ...current, [result.key.id]: result.raw_key }));
+      setKeyDialog(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "CLI Key 创建失败");
     } finally {
       setLoading(false);
       setLoadingLabel("");
+    }
+  }
+
+  async function renameKey(key: TokenUsageApiKey, name: string) {
+    if (!props.authToken) return;
+    setLoading(true);
+    setLoadingLabel("正在修改 CLI Key 名称");
+    setError("");
+    try {
+      const updated = await updateTokenUsageKey(props.authToken, key.id, { name: name.trim() });
+      setKeys((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setKeyDialog(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "CLI Key 修改失败");
+    } finally {
+      setLoading(false);
+      setLoadingLabel("");
+    }
+  }
+
+  async function disableKey(key: TokenUsageApiKey) {
+    if (!props.authToken) return;
+    if (!window.confirm(`停用 "${key.name}" 后，这个 Key 将不能继续上传数据。确定停用吗？`)) return;
+    setLoading(true);
+    setLoadingLabel("正在停用 CLI Key");
+    setError("");
+    try {
+      const updated = await updateTokenUsageKey(props.authToken, key.id, { status: "disabled" });
+      setKeys((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "CLI Key 停用失败");
+    } finally {
+      setLoading(false);
+      setLoadingLabel("");
+    }
+  }
+
+  async function toggleKeyVisibility(key: TokenUsageApiKey) {
+    if (Object.prototype.hasOwnProperty.call(visibleKeys, key.id)) {
+      setVisibleKeys((current) => {
+        const next = { ...current };
+        delete next[key.id];
+        return next;
+      });
+      return;
+    }
+    if (!props.authToken) return;
+    setLoading(true);
+    setLoadingLabel("正在读取 CLI Key");
+    setError("");
+    try {
+      const result = await revealTokenUsageKey(props.authToken, key.id);
+      setVisibleKeys((current) => ({ ...current, [key.id]: result.raw_key ?? null }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "CLI Key 读取失败");
+    } finally {
+      setLoading(false);
+      setLoadingLabel("");
+    }
+  }
+
+  function openCreateKeyDialog() {
+    setKeyDialog({ mode: "create", name: defaultKeyName(props.currentUser) });
+  }
+
+  function openRenameKeyDialog(key: TokenUsageApiKey) {
+    setKeyDialog({ mode: "rename", key, name: key.name });
+  }
+
+  function submitKeyDialog() {
+    if (!keyDialog) return;
+    const name = keyDialog.name.trim();
+    if (!name) {
+      setError("请输入 Key 名称。");
+      return;
+    }
+    if (keyDialog.mode === "create") {
+      void createKey(name);
+    } else if (keyDialog.key) {
+      void renameKey(keyDialog.key, name);
     }
   }
 
@@ -187,8 +287,8 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   // Tooltip 处理函数
   const showTooltip = (event: React.MouseEvent<HTMLElement>, content: React.ReactNode) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const tooltipWidth = 220;
-    const tooltipHeight = 90;
+    const tooltipWidth = 280;
+    const tooltipHeight = 118;
 
     // 默认显示在元素右侧
     let x = rect.right + 10;
@@ -269,6 +369,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
                         <strong>{day.day}</strong>
                         <span>{formatTokens(day.total_tokens)}</span>
                         <small>活跃 {formatDuration(day.active_seconds)}</small>
+                        <TooltipKeyBreakdown items={day.key_breakdown} />
                       </>)}
                       onMouseLeave={hideTooltip}
                     />)}
@@ -307,7 +408,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
               role="img"
               tabIndex={0}
               aria-label={`${point.title}，${formatTokens(point.total_tokens)}，活跃 ${formatDuration(point.active_seconds)}`}
-              style={{ height: `${Math.max(8, (point.total_tokens / trendMax) * 100)}%` }}
+              style={{ height: `${point.total_tokens > 0 ? Math.max(8, (point.total_tokens / trendMax) * 100) : 0}%` }}
               onMouseEnter={(e) => showTooltip(e, <>
                 <strong>{point.title}</strong>
                 <span>{formatTokens(point.total_tokens)}</span>
@@ -341,48 +442,23 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
         copied={copied}
         onCopy={copyText}
         keys={keys}
-        rawKey={rawKey}
+        visibleKeys={visibleKeys}
         loading={loading}
-        onCreateKey={createKey}
+        onCreateKey={openCreateKeyDialog}
+        onRevealKey={toggleKeyVisibility}
+        onRenameKey={openRenameKeyDialog}
+        onDisableKey={disableKey}
         devices={dashboard.devices}
       />}
 
-      {/* Guide Modal */}
-      {showGuideModal && createPortal(
-        <div className="token-modal-overlay" onClick={() => setShowGuideModal(false)}>
-          <div className="token-modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="token-modal-header">
-              <div>
-                <h2>让你更了解你</h2>
-                <p>安装 CLI 工具，自动采集本地 AI 使用数据</p>
-              </div>
-              <button className="token-modal-close" onClick={() => setShowGuideModal(false)} aria-label="关闭">
-                ×
-              </button>
-            </div>
-            <div className="token-modal-content">
-              <GuideView
-                installCommand={installCommand}
-                initCommand={initCommand}
-                manualSyncCommand={manualSyncCommand}
-                autoSyncCommand={autoSyncCommand}
-                uninstallCommand={uninstallCommand}
-                copied={copied}
-                onCopy={copyText}
-                keys={keys}
-                rawKey={rawKey}
-                loading={loading}
-                onCreateKey={createKey}
-                devices={dashboard.devices}
-              />
-            </div>
-            <div className="token-modal-footer">
-              <button className="primary-action" onClick={() => setShowGuideModal(false)}>
-                开始使用
-              </button>
-            </div>
-          </div>
-        </div>,
+      {keyDialog && createPortal(
+        <KeyDialog
+          dialog={keyDialog}
+          loading={loading}
+          onNameChange={(name) => setKeyDialog((current) => current ? { ...current, name } : current)}
+          onCancel={() => setKeyDialog(null)}
+          onSubmit={submitKeyDialog}
+        />,
         document.body
       )}
 
@@ -414,6 +490,66 @@ function CommandLine(props: { value: string; label: string; copied: string; onCo
         {isCopied ? <Check size={14} /> : <Clipboard size={14} />}
         <span>{isCopied ? "已复制" : "复制"}</span>
       </button>
+    </div>
+  );
+}
+
+function TooltipKeyBreakdown(props: { items: ContributionKeyBreakdown[] }) {
+  if (!props.items.length) return null;
+  return (
+    <div className="token-tooltip-breakdown">
+      {props.items.map((item) => (
+        <small key={item.key_id}>
+          {item.key_name}：消耗 {formatTokens(item.total_tokens)}
+        </small>
+      ))}
+    </div>
+  );
+}
+
+function KeyDialog(props: {
+  dialog: { mode: KeyDialogMode; key?: TokenUsageApiKey; name: string };
+  loading: boolean;
+  onNameChange: (name: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const title = props.dialog.mode === "create" ? "生成 CLI Key" : "修改 Key 名称";
+  return (
+    <div className="token-dialog-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && props.onCancel()}>
+      <div className="token-dialog-box" role="dialog" aria-modal="true" aria-labelledby="token-key-dialog-title">
+        <div className="token-dialog-head">
+          <div>
+            <strong id="token-key-dialog-title">{title}</strong>
+            <small>Key 名称会用于区分不同设备和热力图明细。</small>
+          </div>
+          <button className="token-icon-button" type="button" onClick={props.onCancel} aria-label="关闭">
+            <XCircle size={17} />
+          </button>
+        </div>
+        <label className="token-dialog-field">
+          <span>Key 名称</span>
+          <input
+            autoFocus
+            type="text"
+            value={props.dialog.name}
+            maxLength={120}
+            placeholder="例如：家里 Mac、公司主机"
+            onChange={(event) => props.onNameChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") props.onSubmit();
+              if (event.key === "Escape") props.onCancel();
+            }}
+          />
+        </label>
+        <div className="token-dialog-actions">
+          <button className="secondary-button compact" type="button" onClick={props.onCancel}>取消</button>
+          <button className="primary-action compact" type="button" disabled={props.loading || !props.dialog.name.trim()} onClick={props.onSubmit}>
+            <Check size={15} />
+            <span>确认</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -481,9 +617,12 @@ function GuideView(props: {
   copied: string;
   onCopy: (value: string, label: string) => void;
   keys: TokenUsageApiKey[];
-  rawKey: string;
+  visibleKeys: Record<string, string | null>;
   loading: boolean;
   onCreateKey: () => void;
+  onRevealKey: (key: TokenUsageApiKey) => void;
+  onRenameKey: (key: TokenUsageApiKey) => void;
+  onDisableKey: (key: TokenUsageApiKey) => void;
   devices: TokenUsageDeviceSummary[];
 }) {
   return (
@@ -499,32 +638,63 @@ function GuideView(props: {
         <div className="token-guide-content">
           <div className="token-guide-section">
             <h3>🔑 CLI Key 管理</h3>
-            <p>生成 CLI Key 用于绑定本地设备，初始化时需要输入此 Key</p>
+            <p>每台设备生成一个独立 CLI Key，所有设备都会统计到当前账户。</p>
             <div className="token-key-actions">
               <button className="primary-action compact" type="button" disabled={props.loading} onClick={props.onCreateKey}>
                 <KeyRound size={15} />
                 <span>生成 CLI Key</span>
               </button>
-              {props.keys[0] && (
-                <span className="token-key-status">
-                  当前：{props.keys[0].prefix}... · {props.keys[0].last_used_at ? `上次同步 ${formatDate(props.keys[0].last_used_at)}` : "等待同步"}
-                </span>
+            </div>
+            <div className="token-key-list" aria-label="CLI Key 列表">
+              {props.keys.map((key) => (
+                <div key={key.id} className={`token-key-item ${key.status !== "active" ? "disabled" : ""}`}>
+                  <div className="token-key-main">
+                    <strong>{key.name}</strong>
+                    <span>{key.prefix}... · {key.status === "active" ? "启用中" : "已停用"} · {key.last_used_at ? `上次同步 ${formatDate(key.last_used_at)}` : "等待同步"}</span>
+                  </div>
+                  {Object.prototype.hasOwnProperty.call(props.visibleKeys, key.id) && (
+                    <div className="token-secret-reveal">
+                      <p className="token-secret-value">{props.visibleKeys[key.id] || "旧 Key 无法显示完整值，请重新生成。"}</p>
+                      {props.visibleKeys[key.id] && (
+                        <button
+                          className="secondary-button compact"
+                          type="button"
+                          onClick={() => props.onCopy(props.visibleKeys[key.id] || "", `key-${key.id}`)}
+                          title="复制 CLI Key"
+                        >
+                          {props.copied === `key-${key.id}` ? <Check size={15} /> : <Clipboard size={15} />}
+                          <span>{props.copied === `key-${key.id}` ? "已复制" : "复制"}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="token-key-row-actions">
+                    <button className="token-icon-button" type="button" onClick={() => props.onRevealKey(key)} title={Object.prototype.hasOwnProperty.call(props.visibleKeys, key.id) ? "隐藏 Key" : "显示 Key"} aria-label={Object.prototype.hasOwnProperty.call(props.visibleKeys, key.id) ? "隐藏 Key" : "显示 Key"}>
+                      {Object.prototype.hasOwnProperty.call(props.visibleKeys, key.id) ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    {props.visibleKeys[key.id] && (
+                      <button className="token-icon-button" type="button" onClick={() => props.onCopy(props.visibleKeys[key.id] || "", `key-${key.id}`)} title="复制 Key" aria-label="复制 Key">
+                        {props.copied === `key-${key.id}` ? <Check size={16} /> : <Clipboard size={16} />}
+                      </button>
+                    )}
+                    <button className="token-icon-button" type="button" onClick={() => props.onRenameKey(key)} title="修改名称" aria-label="修改名称">
+                      <Pencil size={16} />
+                    </button>
+                    {key.status === "active" && (
+                      <button className="token-icon-button danger" type="button" onClick={() => props.onDisableKey(key)} title="停用 Key" aria-label="停用 Key">
+                        <XCircle size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!props.keys.length && (
+                <div className="token-key-item token-key-empty">
+                  <strong>暂无 CLI Key</strong>
+                  <span>先为当前设备生成一个 Key。</span>
+                </div>
               )}
             </div>
-            {props.rawKey && (
-              <div className="token-secret-reveal">
-                <p className="token-secret-value">{props.rawKey}</p>
-                <button
-                  className="secondary-button compact"
-                  type="button"
-                  onClick={() => props.onCopy(props.rawKey, "key")}
-                  title="复制 CLI Key"
-                >
-                  {props.copied === "key" ? <Check size={15} /> : <Clipboard size={15} />}
-                  <span>{props.copied === "key" ? "已复制" : "复制 Key"}</span>
-                </button>
-              </div>
-            )}
             <div className="token-device-grid" aria-label="绑定设备">
               {props.devices.slice(0, 3).map((device) => (
                 <div key={device.device_id} className="token-device-item">
@@ -615,6 +785,10 @@ function trendModeLabel(value: TrendMode) {
   return ({ day: "按日", week: "按周", month: "按月", custom: "自定义" })[value];
 }
 
+function defaultKeyName(user: AuthUser | null) {
+  return `${user?.display_name || user?.username || "4Ever"} CLI`;
+}
+
 function trendRangeLabel(mode: TrendMode, customStart: string, customEnd: string) {
   if (mode === "day") return "今日";
   if (mode === "week") return "最近 7 天";
@@ -634,7 +808,7 @@ function rangeFromTrendMode(mode: TrendMode, customStart: string, customEnd: str
 
 function buildTrendData(dashboard: TokenUsageDashboard, mode: TrendMode, customStart: string, customEnd: string): TrendData {
   if (mode === "day") return buildHourlyTrend(dashboard.heatmap);
-  const end = mode === "custom" ? parseDateInput(customEnd) : startOfLocalDay(new Date());
+  const end = mode === "custom" ? parseDateInput(customEnd) : displayCalendarDate(new Date());
   const start = mode === "week" ? addDays(end, -6) : mode === "month" ? addDays(end, -29) : parseDateInput(customStart);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return { bars: [], error: "请选择有效的开始和结束日期。" };
   if (start > end) return { bars: [], error: "开始日期不能晚于结束日期。" };
@@ -643,7 +817,7 @@ function buildTrendData(dashboard: TokenUsageDashboard, mode: TrendMode, customS
 }
 
 function buildHourlyTrend(cells: TokenUsageDashboard["heatmap"]): TrendData {
-  const today = isoDate(new Date());
+  const today = displayIsoDate(new Date());
   const byHour = new Map<number, { total_tokens: number; active_seconds: number }>();
   for (const cell of cells) {
     if (cell.day !== today) continue;
@@ -696,15 +870,21 @@ function daysBetween(start: Date, end: Date) {
 }
 
 function buildContributionHeatmap(cells: TokenUsageDashboard["heatmap"]): ContributionHeatmap {
-  const byDay = new Map<string, { total_tokens: number; active_seconds: number }>();
+  const byDay = new Map<string, { total_tokens: number; active_seconds: number; key_breakdown: Map<string, ContributionKeyBreakdown> }>();
   for (const cell of cells) {
-    const current = byDay.get(cell.day) ?? { total_tokens: 0, active_seconds: 0 };
+    const current = byDay.get(cell.day) ?? { total_tokens: 0, active_seconds: 0, key_breakdown: new Map<string, ContributionKeyBreakdown>() };
     current.total_tokens += cell.total_tokens;
     current.active_seconds += cell.active_seconds;
+    for (const item of cell.key_breakdown ?? []) {
+      const existing = current.key_breakdown.get(item.key_id) ?? { key_id: item.key_id, key_name: item.key_name, total_tokens: 0 };
+      existing.key_name = item.key_name;
+      existing.total_tokens += item.total_tokens;
+      current.key_breakdown.set(item.key_id, existing);
+    }
     byDay.set(cell.day, current);
   }
 
-  const end = endOfLocalDay(new Date());
+  const end = endOfLocalDay(displayCalendarDate(new Date()));
   const rangeStart = startOfLocalDay(addDays(end, -364));
   const calendarStart = startOfWeek(rangeStart);
   const weeks: ContributionWeek[] = [];
@@ -717,10 +897,17 @@ function buildContributionHeatmap(cells: TokenUsageDashboard["heatmap"]): Contri
     for (let weekday = 0; weekday < 7; weekday += 1) {
       const date = addDays(weekStart, weekday);
       const day = isoDate(date);
-      const usage = byDay.get(day) ?? { total_tokens: 0, active_seconds: 0 };
+      const usage = byDay.get(day) ?? { total_tokens: 0, active_seconds: 0, key_breakdown: new Map<string, ContributionKeyBreakdown>() };
       const inRange = date >= rangeStart && date <= end;
       if (inRange) peak = Math.max(peak, usage.total_tokens);
-      days.push({ day, date, total_tokens: inRange ? usage.total_tokens : 0, active_seconds: inRange ? usage.active_seconds : 0, inRange });
+      days.push({
+        day,
+        date,
+        total_tokens: inRange ? usage.total_tokens : 0,
+        active_seconds: inRange ? usage.active_seconds : 0,
+        key_breakdown: inRange ? Array.from(usage.key_breakdown.values()).sort((first, second) => second.total_tokens - first.total_tokens || first.key_name.localeCompare(second.key_name, "zh-CN")) : [],
+        inRange,
+      });
     }
     const firstVisibleDay = days.find((day) => day.inRange);
     if (firstVisibleDay && firstVisibleDay.date.getDate() <= 7) {
@@ -751,6 +938,21 @@ function isoDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function displayIsoDate(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tokenUsageDisplayTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
+}
+
+function displayCalendarDate(date: Date) {
+  return parseDateInput(displayIsoDate(date));
 }
 
 function startOfLocalDay(date: Date) {
@@ -802,7 +1004,7 @@ function formatDate(value: string) {
   const date = parseServerDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return `${new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: tokenUsageDisplayTimeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

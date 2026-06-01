@@ -1,0 +1,26 @@
+{
+  "name": "@anglyaoy/token-usage",
+  "version": "0.2.1",
+  "type": "module",
+  "description": "Collect local AI coding token usage and sync it to 4Ever.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "forever-token": "bin/forever-token.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/forever-token.js",
+    "sync": "node bin/forever-token.js sync",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

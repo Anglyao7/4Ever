@@ -12,6 +12,10 @@ export interface TokenUsageKeyCreateResponse {
   raw_key: string;
 }
 
+export interface TokenUsageKeyRevealResponse {
+  raw_key?: string | null;
+}
+
 export interface TokenUsageOverview {
   input_tokens: number;
   output_tokens: number;
@@ -50,6 +54,13 @@ export interface TokenUsageHeatmapCell {
   hour: number;
   total_tokens: number;
   active_seconds: number;
+  key_breakdown?: TokenUsageHeatmapKeyBreakdown[];
+}
+
+export interface TokenUsageHeatmapKeyBreakdown {
+  key_id: string;
+  key_name: string;
+  total_tokens: number;
 }
 
 export interface TokenUsageDeviceSummary {
