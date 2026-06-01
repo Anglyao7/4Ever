@@ -128,6 +128,68 @@ func TestAuthTokenUsageAndAgentAdminFlow(t *testing.T) {
 	}
 }
 
+func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "usagevalidator", "email": "usagevalidator@example.com", "password": "password123", "display_name": "Usage Validator",
+	}, "")
+	token := auth["token"].(string)
+	key := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "Validator"}, token)
+	rawKey := key["raw_key"].(string)
+	now := time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	base := func() map[string]any {
+		return map[string]any{
+			"schemaVersion": 2,
+			"device":        map[string]any{"deviceId": "validator-device", "hostname": "validator-host"},
+			"buckets": []map[string]any{{
+				"source": "codex", "bucketStart": now, "inputTokens": 1,
+			}},
+			"sessions": []map[string]any{{
+				"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "activeSeconds": 1,
+			}},
+		}
+	}
+
+	cases := []map[string]any{
+		func() map[string]any { payload := base(); payload["schemaVersion"] = 1; return payload }(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "inputTokens": -1}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "activeSeconds": -1}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = make([]map[string]any, 501)
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = make([]map[string]any, 1001)
+			return payload
+		}(),
+	}
+	for _, payload := range cases {
+		resp := rawPost(t, ts.URL+"/api/token-usage/ingest", payload, rawKey)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("invalid ingest payload should return 422, got %d for %#v", resp.StatusCode, payload)
+		}
+		_ = resp.Body.Close()
+	}
+
+	dashboard := getJSON(t, ts.URL+"/api/token-usage/dashboard?range=all", token)
+	if dashboard["overview"].(map[string]any)["total_tokens"].(float64) != 0 {
+		t.Fatalf("invalid ingest payloads should not persist usage: %#v", dashboard["overview"])
+	}
+}
+
 func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()

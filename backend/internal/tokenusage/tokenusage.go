@@ -94,7 +94,7 @@ type SessionIn struct {
 }
 
 type IngestRequest struct {
-	SchemaVersion int         `json:"schemaVersion"`
+	SchemaVersion *int        `json:"schemaVersion"`
 	Device        DeviceIn    `json:"device" binding:"required"`
 	Buckets       []BucketIn  `json:"buckets"`
 	Sessions      []SessionIn `json:"sessions"`
@@ -281,6 +281,9 @@ func (h Handler) Ingest(c *gin.Context) {
 	}
 	var req IngestRequest
 	if !httputil.BindJSON(c, &req) {
+		return
+	}
+	if !validateIngestRequest(c, req) {
 		return
 	}
 	now := time.Now().UTC()
@@ -513,6 +516,75 @@ func randomURLSafe(bytes int) string {
 
 func toUTC(value time.Time) time.Time {
 	return value.UTC()
+}
+
+func validateIngestRequest(c *gin.Context, req IngestRequest) bool {
+	if req.SchemaVersion == nil {
+		httputil.Error(c, http.StatusUnprocessableEntity, "schemaVersion is required.")
+		return false
+	}
+	if *req.SchemaVersion != 2 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "schemaVersion must be 2.")
+		return false
+	}
+	if strings.TrimSpace(req.Device.DeviceID) == "" {
+		httputil.Error(c, http.StatusUnprocessableEntity, "deviceId is required.")
+		return false
+	}
+	if len(req.Buckets) > 500 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "buckets cannot contain more than 500 items.")
+		return false
+	}
+	if len(req.Sessions) > 1000 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "sessions cannot contain more than 1000 items.")
+		return false
+	}
+	for _, bucket := range req.Buckets {
+		if !validateBucket(c, bucket) {
+			return false
+		}
+	}
+	for _, session := range req.Sessions {
+		if !validateSession(c, session) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateBucket(c *gin.Context, bucket BucketIn) bool {
+	if negativeInts(bucket.InputTokens, bucket.OutputTokens, bucket.ReasoningTokens, bucket.CachedTokens, bucket.TotalTokens) {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Token counts must be greater than or equal to 0.")
+		return false
+	}
+	return true
+}
+
+func validateSession(c *gin.Context, session SessionIn) bool {
+	if negativeInts(
+		session.DurationSeconds,
+		session.ActiveSeconds,
+		session.MessageCount,
+		session.UserMessageCount,
+		session.InputTokens,
+		session.OutputTokens,
+		session.ReasoningTokens,
+		session.CachedTokens,
+		session.TotalTokens,
+	) {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Session counters must be greater than or equal to 0.")
+		return false
+	}
+	return true
+}
+
+func negativeInts(values ...int) bool {
+	for _, value := range values {
+		if value < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func usageRange(c *gin.Context, value string, customStart string, customEnd string) (*time.Time, *time.Time, bool) {
