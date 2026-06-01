@@ -128,11 +128,15 @@ func (req *IngestRequest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	var raw struct {
-		Buckets  []map[string]json.RawMessage `json:"buckets"`
-		Sessions []map[string]json.RawMessage `json:"sessions"`
+		SchemaVersion json.RawMessage              `json:"schemaVersion"`
+		Buckets       []map[string]json.RawMessage `json:"buckets"`
+		Sessions      []map[string]json.RawMessage `json:"sessions"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
+	}
+	if raw.SchemaVersion != nil && string(raw.SchemaVersion) == "null" {
+		return fmt.Errorf("schemaVersion cannot be null")
 	}
 	for _, bucket := range raw.Buckets {
 		if hasNullRaw(bucket, "model", "projectKey", "projectLabel") {
@@ -577,11 +581,11 @@ func toUTC(value time.Time) time.Time {
 }
 
 func validateIngestRequest(c *gin.Context, req IngestRequest) bool {
-	if req.SchemaVersion == nil {
-		httputil.Error(c, http.StatusUnprocessableEntity, "schemaVersion is required.")
-		return false
+	schemaVersion := 2
+	if req.SchemaVersion != nil {
+		schemaVersion = *req.SchemaVersion
 	}
-	if *req.SchemaVersion != 2 {
+	if schemaVersion != 2 {
 		httputil.Error(c, http.StatusUnprocessableEntity, "schemaVersion must be 2.")
 		return false
 	}

@@ -213,6 +213,7 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 
 	cases := []map[string]any{
 		func() map[string]any { payload := base(); payload["schemaVersion"] = 1; return payload }(),
+		func() map[string]any { payload := base(); payload["schemaVersion"] = nil; return payload }(),
 		func() map[string]any {
 			payload := base()
 			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "inputTokens": -1}}
@@ -330,6 +331,34 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 	dashboard := getJSON(t, ts.URL+"/api/token-usage/dashboard?range=all", token)
 	if dashboard["overview"].(map[string]any)["total_tokens"].(float64) != 0 {
 		t.Fatalf("invalid ingest payloads should not persist usage: %#v", dashboard["overview"])
+	}
+}
+
+func TestTokenUsageIngestSchemaVersionDefaultMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	auth := postJSON(t, ts.URL+"/api/auth/sign-up", map[string]any{
+		"username": "usagedefaultschema", "email": "usagedefaultschema@example.com", "password": "password123",
+	}, "")
+	token := auth["token"].(string)
+	key := postJSON(t, ts.URL+"/api/token-usage/keys", map[string]any{"name": "Default Schema"}, token)
+	rawKey := key["raw_key"].(string)
+	now := time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	payload := map[string]any{
+		"device": map[string]any{"deviceId": "default-schema-device", "hostname": "default-schema-host"},
+		"buckets": []map[string]any{{
+			"source": "codex", "bucketStart": now, "inputTokens": 7,
+		}},
+	}
+	result := postJSON(t, ts.URL+"/api/token-usage/ingest", payload, rawKey)
+	if result["bucketCount"].(float64) != 1 {
+		t.Fatalf("missing schemaVersion should default to 2: %#v", result)
+	}
+	dashboard := getJSON(t, ts.URL+"/api/token-usage/dashboard?range=all", token)
+	if dashboard["overview"].(map[string]any)["total_tokens"].(float64) != 7 {
+		t.Fatalf("default schemaVersion ingest should persist usage: %#v", dashboard["overview"])
 	}
 }
 
