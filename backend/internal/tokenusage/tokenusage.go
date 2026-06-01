@@ -122,6 +122,31 @@ type IngestRequest struct {
 	Sessions      []SessionIn `json:"sessions" binding:"dive"`
 }
 
+func (req *IngestRequest) UnmarshalJSON(data []byte) error {
+	type alias IngestRequest
+	if err := json.Unmarshal(data, (*alias)(req)); err != nil {
+		return err
+	}
+	var raw struct {
+		Buckets  []map[string]json.RawMessage `json:"buckets"`
+		Sessions []map[string]json.RawMessage `json:"sessions"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, bucket := range raw.Buckets {
+		if hasNullRaw(bucket, "model", "projectKey", "projectLabel") {
+			return fmt.Errorf("bucket string defaults cannot be null")
+		}
+	}
+	for _, session := range raw.Sessions {
+		if hasNullRaw(session, "projectKey", "projectLabel", "primaryModel") {
+			return fmt.Errorf("session string defaults cannot be null")
+		}
+	}
+	return nil
+}
+
 type IngestResponse struct {
 	OK           bool   `json:"ok"`
 	BucketCount  int    `json:"bucketCount"`
@@ -614,6 +639,16 @@ func validateSession(c *gin.Context, session SessionIn) bool {
 func negativeInts(values ...int) bool {
 	for _, value := range values {
 		if value < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNullRaw(row map[string]json.RawMessage, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := row[key]
+		if ok && string(value) == "null" {
 			return true
 		}
 	}

@@ -57,6 +57,17 @@ func TestSignUpDisplayNameDefaultMatchesPythonRoute(t *testing.T) {
 	if user["display_name"] != "namedefault" {
 		t.Fatalf("blank display_name should fall back to username: %#v", user)
 	}
+
+	token := auth["token"].(string)
+	unchanged := patchJSON(t, ts.URL+"/api/auth/me", map[string]any{"display_name": nil}, token)
+	if unchanged["display_name"] != "namedefault" {
+		t.Fatalf("null display_name should leave account unchanged: %#v", unchanged)
+	}
+	empty := rawPatch(t, ts.URL+"/api/auth/me", map[string]any{"display_name": ""}, token)
+	if empty.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("empty display_name update should be rejected with 422, got %d", empty.StatusCode)
+	}
+	_ = empty.Body.Close()
 }
 
 func TestModulesTreatInvalidAuthAsNonAdminLikePythonRoute(t *testing.T) {
@@ -244,6 +255,21 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 		}(),
 		func() map[string]any {
 			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "model": nil}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "projectKey": nil}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "projectLabel": nil}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
 			payload["buckets"] = []map[string]any{{"source": "codex", "bucketStart": now, "deviceId": strings.Repeat("x", 121)}}
 			return payload
 		}(),
@@ -275,6 +301,21 @@ func TestTokenUsageIngestValidationMatchesPythonSchema(t *testing.T) {
 		func() map[string]any {
 			payload := base()
 			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "primaryModel": strings.Repeat("x", 161)}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "projectKey": nil}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "projectLabel": nil}}
+			return payload
+		}(),
+		func() map[string]any {
+			payload := base()
+			payload["sessions"] = []map[string]any{{"source": "codex", "sessionHash": "session", "firstMessageAt": now, "lastMessageAt": now, "primaryModel": nil}}
 			return payload
 		}(),
 	}
