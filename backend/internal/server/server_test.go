@@ -681,6 +681,24 @@ func TestAvatarUploadSniffsImageContentLikePythonBackend(t *testing.T) {
 	}
 	_ = invalid.Body.Close()
 
+	invalidBase64 := rawPost(t, ts.URL+"/api/auth/me/avatar", map[string]any{
+		"filename":     "avatar.jpg",
+		"content_type": "image/jpeg",
+		"data_base64":  "not-valid-base64!",
+	}, token)
+	if invalidBase64.StatusCode != http.StatusUnprocessableEntity || errorDetail(t, invalidBase64) != "Avatar data is invalid." {
+		t.Fatalf("invalid base64 should match Python error, got %d", invalidBase64.StatusCode)
+	}
+
+	base64WithNewline := rawPost(t, ts.URL+"/api/auth/me/avatar", map[string]any{
+		"filename":     "avatar.jpg",
+		"content_type": "image/jpeg",
+		"data_base64":  base64.StdEncoding.EncodeToString([]byte("not an image")) + "\n",
+	}, token)
+	if base64WithNewline.StatusCode != http.StatusUnprocessableEntity || errorDetail(t, base64WithNewline) != "Avatar data is invalid." {
+		t.Fatalf("base64 with newline should match Python strict validation, got %d", base64WithNewline.StatusCode)
+	}
+
 	validPNG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 	updated := postJSON(t, ts.URL+"/api/auth/me/avatar", map[string]any{
 		"filename":     "avatar.png",
@@ -872,6 +890,17 @@ func rawPost(t *testing.T, url string, payload map[string]any, token string) *ht
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func errorDetail(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer resp.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	detail, _ := body["detail"].(string)
+	return detail
 }
 
 func rawPatch(t *testing.T, url string, payload map[string]any, token string) *http.Response {

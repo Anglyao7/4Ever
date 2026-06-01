@@ -270,9 +270,13 @@ func (h Handler) UploadAvatar(c *gin.Context) {
 		httputil.Error(c, http.StatusUnsupportedMediaType, "Avatar must be JPG, PNG, WEBP, or GIF.")
 		return
 	}
-	data, err := base64.StdEncoding.DecodeString(req.DataBase64)
-	if err != nil || len(data) == 0 {
+	data, err := strictBase64Decode(req.DataBase64)
+	if err != nil {
 		httputil.Error(c, http.StatusUnprocessableEntity, "Avatar data is invalid.")
+		return
+	}
+	if len(data) == 0 {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Avatar file is empty.")
 		return
 	}
 	if len(data) > 3*1024*1024 {
@@ -437,6 +441,15 @@ func isSupportedAvatarImage(data []byte, contentType string) bool {
 	default:
 		return false
 	}
+}
+
+func strictBase64Decode(value string) ([]byte, error) {
+	if strings.IndexFunc(value, func(r rune) bool {
+		return !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '+' || r == '/' || r == '=')
+	}) >= 0 {
+		return nil, base64.CorruptInputError(0)
+	}
+	return base64.StdEncoding.Strict().DecodeString(value)
 }
 
 func randomHex(bytes int) string {
