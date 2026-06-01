@@ -368,7 +368,7 @@ func buildChatProviderRequest(provider string, req ChatCompletionRequest) (strin
 		if systemPrompt != "" {
 			payload["systemInstruction"] = map[string]any{"parts": []map[string]string{{"text": systemPrompt}}}
 		}
-		return strings.TrimRight(baseURL, "/") + "/models/" + req.Model + ":generateContent", payload, headers
+		return geminiEndpoint(baseURL, req.Model), payload, headers
 	default:
 		messages := []map[string]any{}
 		if req.SystemPrompt != nil && strings.TrimSpace(*req.SystemPrompt) != "" {
@@ -419,7 +419,41 @@ func parseChatContent(provider string, data map[string]any) string {
 		}
 		choice, _ := choices[0].(map[string]any)
 		message, _ := choice["message"].(map[string]any)
-		return stringValue(message["content"])
+		return contentToText(message["content"])
+	}
+}
+
+func geminiEndpoint(baseURL string, model string) string {
+	base := strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(base, ":generateContent") {
+		return base
+	}
+	cleanModel := strings.TrimPrefix(model, "models/")
+	if strings.HasSuffix(base, "/models") {
+		return base + "/" + cleanModel + ":generateContent"
+	}
+	return base + "/models/" + cleanModel + ":generateContent"
+}
+
+func contentToText(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return typed
+	case []any:
+		parts := []string{}
+		for _, item := range typed {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			text := stringValue(row["text"])
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return stringValue(content)
 	}
 }
 
