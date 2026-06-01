@@ -26,17 +26,18 @@ func TestProviderErrorDetailMatchesPythonBehavior(t *testing.T) {
 
 func TestImageGenerationRequestDefaultsAndPromptLimit(t *testing.T) {
 	req := GenerationRequest{Prompt: "draw"}
-	provider := strings.ToLower(strings.TrimSpace(req.Provider))
-	if provider == "" {
-		provider = "openai"
+	rawProvider := "openai"
+	if req.Provider != nil {
+		rawProvider = *req.Provider
 	}
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		model = "gpt-image-1"
+	provider := strings.ToLower(strings.TrimSpace(rawProvider))
+	model := "gpt-image-1"
+	if req.Model != nil {
+		model = *req.Model
 	}
-	size := strings.TrimSpace(req.Size)
-	if size == "" {
-		size = "1024x1024"
+	size := "1024x1024"
+	if req.Size != nil {
+		size = *req.Size
 	}
 	if provider != "openai" || model != "gpt-image-1" || size != "1024x1024" {
 		t.Fatalf("unexpected defaults: provider=%s model=%s size=%s", provider, model, size)

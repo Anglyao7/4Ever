@@ -16,12 +16,12 @@ import (
 type Handler struct{}
 
 type GenerationRequest struct {
-	Provider string  `json:"provider"`
+	Provider *string `json:"provider"`
 	BaseURL  *string `json:"base_url"`
 	APIKey   *string `json:"api_key"`
-	Model    string  `json:"model"`
+	Model    *string `json:"model"`
 	Prompt   string  `json:"prompt" binding:"required"`
-	Size     string  `json:"size"`
+	Size     *string `json:"size"`
 }
 
 type GeneratedImage struct {
@@ -47,12 +47,13 @@ func (Handler) Generate(c *gin.Context) {
 	if !httputil.BindJSON(c, &req) {
 		return
 	}
-	provider := strings.ToLower(strings.TrimSpace(req.Provider))
-	if provider == "" {
-		provider = "openai"
+	rawProvider := "openai"
+	if req.Provider != nil {
+		rawProvider = *req.Provider
 	}
+	provider := strings.ToLower(strings.TrimSpace(rawProvider))
 	if provider != "openai" && provider != "custom" {
-		httputil.Error(c, http.StatusNotImplemented, "Image provider '"+req.Provider+"' is not supported yet.")
+		httputil.Error(c, http.StatusNotImplemented, "Image provider '"+rawProvider+"' is not supported yet.")
 		return
 	}
 	if len([]rune(req.Prompt)) > 4000 {
@@ -71,13 +72,13 @@ func (Handler) Generate(c *gin.Context) {
 	if req.BaseURL != nil && strings.TrimSpace(*req.BaseURL) != "" {
 		baseURL = strings.TrimSpace(*req.BaseURL)
 	}
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		model = "gpt-image-1"
+	model := "gpt-image-1"
+	if req.Model != nil {
+		model = *req.Model
 	}
-	size := strings.TrimSpace(req.Size)
-	if size == "" {
-		size = "1024x1024"
+	size := "1024x1024"
+	if req.Size != nil {
+		size = *req.Size
 	}
 	payload := map[string]any{"model": model, "prompt": req.Prompt, "size": size}
 	body, _ := json.Marshal(payload)

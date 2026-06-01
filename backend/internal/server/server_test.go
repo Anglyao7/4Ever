@@ -760,6 +760,31 @@ func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
 	if providerPayload["model"] != "gpt-image-1" || providerPayload["size"] != "1024x1024" || providerPayload["prompt"] != "draw" {
 		t.Fatalf("image defaults were not sent to provider: %#v", providerPayload)
 	}
+
+	explicitBlank := postJSON(t, ts.URL+"/api/images/generate", map[string]any{
+		"prompt":   "draw",
+		"api_key":  "test-image-key",
+		"base_url": provider.URL,
+		"model":    "",
+		"size":     "",
+	}, "")
+	if explicitBlank["status"] != "success" {
+		t.Fatalf("explicit blank image payload should still reach provider: %#v", explicitBlank)
+	}
+	if providerPayload["model"] != "" || providerPayload["size"] != "" {
+		t.Fatalf("explicit blank model and size should match Python schema behavior: %#v", providerPayload)
+	}
+
+	blankProvider := rawPost(t, ts.URL+"/api/images/generate", map[string]any{
+		"prompt":   "draw",
+		"api_key":  "test-image-key",
+		"provider": "",
+	}, "")
+	if blankProvider.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("explicit blank provider should not be defaulted, got %d", blankProvider.StatusCode)
+	}
+	_ = blankProvider.Body.Close()
+
 	tooLong := rawPost(t, ts.URL+"/api/images/generate", map[string]any{
 		"prompt":  strings.Repeat("x", 4001),
 		"api_key": "test-image-key",
