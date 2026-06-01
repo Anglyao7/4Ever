@@ -264,6 +264,27 @@ func TestAgentRunStreamUsesFrontendEventContract(t *testing.T) {
 	}
 }
 
+func TestAgentQueryAndToolValidationMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	for _, query := range []string{"0", "101", "bad"} {
+		resp := rawGet(t, ts.URL+"/api/agents/runs?limit="+query, "")
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("invalid limit %q should return 422, got %d", query, resp.StatusCode)
+		}
+		_ = resp.Body.Close()
+	}
+
+	resp := rawPost(t, ts.URL+"/api/agents/mcp/bigmodel-web-search/tools/call", map[string]any{
+		"tool_name": strings.Repeat("x", 121),
+	}, "")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("too-long tool_name should return 422, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+}
+
 func TestAgentCatalogReportsInternalRuntimeLikePythonBackend(t *testing.T) {
 	ts := testRouter(t)
 	defer ts.Close()

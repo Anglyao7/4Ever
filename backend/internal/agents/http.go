@@ -37,7 +37,7 @@ type ToolListResponse struct {
 }
 
 type ToolCallRequest struct {
-	ToolName  string         `json:"tool_name" binding:"required"`
+	ToolName  string         `json:"tool_name" binding:"required,max=120"`
 	Arguments map[string]any `json:"arguments"`
 }
 
@@ -248,9 +248,11 @@ func (h Handler) ListRuns(c *gin.Context) {
 	limit := 30
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		var parsed int
-		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed >= 1 && parsed <= 100 {
-			limit = parsed
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err != nil || parsed < 1 || parsed > 100 {
+			httputil.Error(c, http.StatusUnprocessableEntity, "limit must be between 1 and 100.")
+			return
 		}
+		limit = parsed
 	}
 	var records []models.WorkflowAgentRun
 	h.DB.Order("started_at DESC").Limit(limit).Find(&records)
