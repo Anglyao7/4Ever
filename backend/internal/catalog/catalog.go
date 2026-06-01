@@ -89,6 +89,10 @@ func (h Handler) fetchModels(c *gin.Context) ([]ProviderModel, bool) {
 		return nil, false
 	}
 	provider := normalizeProvider(req.Provider)
+	if !isSupportedProvider(provider) {
+		httputil.Error(c, http.StatusUnprocessableEntity, "Unsupported provider format: "+provider)
+		return nil, false
+	}
 	baseURL := providerBaseURL(provider, req.BaseURL)
 	headers := providerHeaders(provider, req.APIKey)
 	request, _ := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
@@ -135,7 +139,10 @@ type ChatCompletionResponse struct {
 }
 
 func CompleteChat(settings config.Settings, req ChatCompletionRequest) (ChatCompletionResponse, int, string) {
-	provider := normalizeProvider(req.Provider)
+	provider, status, detail := validateChatRequest(req)
+	if status >= 400 {
+		return ChatCompletionResponse{}, status, detail
+	}
 	url, payload, headers := buildChatProviderRequest(provider, req)
 	body, _ := json.Marshal(payload)
 	httpReq, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
@@ -168,7 +175,10 @@ func CompleteChat(settings config.Settings, req ChatCompletionRequest) (ChatComp
 }
 
 func StreamChat(settings config.Settings, req ChatCompletionRequest, onChunk func(string) error) (int, string) {
-	provider := normalizeProvider(req.Provider)
+	provider, status, detail := validateChatRequest(req)
+	if status >= 400 {
+		return status, detail
+	}
 	if provider != "openai" {
 		resp, status, detail := CompleteChat(settings, req)
 		if status >= 400 {
@@ -219,6 +229,44 @@ func normalizeProvider(provider string) string {
 		return "openai"
 	}
 	return provider
+}
+
+func isSupportedProvider(provider string) bool {
+	switch provider {
+	case "openai", "anthropic", "gemini":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateChatRequest(req ChatCompletionRequest) (string, int, string) {
+	provider := normalizeProvider(req.Provider)
+	if !isSupportedProvider(provider) {
+		return provider, http.StatusUnprocessableEntity, "Unsupported provider format: " + provider
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		return provider, http.StatusUnprocessableEntity, "Model is required."
+	}
+	if len(req.Messages) == 0 {
+		return provider, http.StatusUnprocessableEntity, "At least one message is required."
+	}
+	for _, message := range req.Messages {
+		role := strings.TrimSpace(stringValue(message["role"]))
+		if role != "system" && role != "user" && role != "assistant" {
+			return provider, http.StatusUnprocessableEntity, "Message role must be system, user, or assistant."
+		}
+		if strings.TrimSpace(stringValue(message["content"])) == "" {
+			return provider, http.StatusUnprocessableEntity, "Message content is required."
+		}
+	}
+	if req.Temperature != nil && (*req.Temperature < 0 || *req.Temperature > 2) {
+		return provider, http.StatusUnprocessableEntity, "Temperature must be between 0 and 2."
+	}
+	if req.MaxTokens != nil && (*req.MaxTokens < 1 || *req.MaxTokens > 100000) {
+		return provider, http.StatusUnprocessableEntity, "Max tokens must be between 1 and 100000."
+	}
+	return provider, http.StatusOK, ""
 }
 
 func providerBaseURL(provider string, value *string) string {

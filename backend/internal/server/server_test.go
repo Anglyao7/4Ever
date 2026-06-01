@@ -411,6 +411,40 @@ func TestImageGenerationUsesPythonSchemaDefaults(t *testing.T) {
 	}
 }
 
+func TestChatRequestValidationMatchesPythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	cases := []map[string]any{
+		{"provider": "bad", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}},
+		{"provider": "openai", "model": "gpt", "messages": []any{}},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": ""}}},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "tool", "content": "hi"}}},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}, "temperature": 2.1},
+		{"provider": "openai", "model": "gpt", "messages": []map[string]string{{"role": "user", "content": "hi"}}, "max_tokens": 0},
+	}
+	for _, payload := range cases {
+		resp := rawPost(t, ts.URL+"/api/chat", payload, "")
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("payload should be rejected with 422, got %d for %#v", resp.StatusCode, payload)
+		}
+		_ = resp.Body.Close()
+	}
+}
+
+func TestProviderConnectionRejectsUnsupportedProviderLikePythonSchema(t *testing.T) {
+	ts := testRouter(t)
+	defer ts.Close()
+
+	resp := rawPost(t, ts.URL+"/api/catalog/provider/models", map[string]any{
+		"provider": "bad",
+	}, "")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unsupported provider should be rejected with 422, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+}
+
 func getJSON(t *testing.T, url string, token string) map[string]any {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
