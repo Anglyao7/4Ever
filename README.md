@@ -2,7 +2,7 @@
 
 4Ever is a modular multi-model workspace. It starts with a clean AI workbench and grows toward one place for chat, image generation, provider aggregation, automation, and personal account space.
 
-The current application includes a Go backend, a React + Vite frontend, authentication, provider management, chat, image generation, notes, memory map, workflow, inspiration, and admin modules.
+The application now runs on a Python/FastAPI backend. The legacy Go backend is kept as a migration reference, while the Python backend preserves the frontend API contract and uses LangGraph for Agent workflow execution.
 
 ## Features
 
@@ -15,7 +15,7 @@ The current application includes a Go backend, a React + Vite frontend, authenti
 - Agent/MCP catalog endpoint, workflow UI, and backend-gated BigModel MCP client foundation.
 - Backend-owned MCP `tools/list` inspection for workflow MCP server controls.
 - Admin MCP enablement controls with backend policy enforcement and audit logs.
-- Go service with SQLite by default and support for PostgreSQL URLs.
+- Python service with SQLite by default and the same table/API contract as the previous Go backend.
 
 ## TODO List
 
@@ -28,12 +28,16 @@ The current application includes a Go backend, a React + Vite frontend, authenti
 
 ```text
 .
-├── backend/                    # Go backend service
+├── backend/                    # Legacy Go backend service kept as migration reference
 │   ├── cmd/server              # Go app entrypoint
 │   ├── internal/               # API routes, services, configuration, and database models
 │   ├── .env.example            # Backend environment example
 │   ├── go.mod                  # Go module dependencies
 │   └── README.md               # Backend-specific notes
+├── python_backend/             # Python FastAPI backend migration target
+│   ├── app/                    # API routes, config, and LangGraph Agent runtime
+│   ├── tests/                  # Python backend contract tests
+│   └── pyproject.toml          # Python dependencies and pytest config
 ├── frontend/                   # React + Vite frontend
 │   ├── src/
 │   │   ├── assets/             # Global styles and visual assets
@@ -52,7 +56,17 @@ The current application includes a Go backend, a React + Vite frontend, authenti
 
 ## Development
 
-Run the backend:
+Run the Python backend:
+
+```bash
+cd python_backend
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+uvicorn app.main:app --host 127.0.0.1 --port 7778
+```
+
+The legacy Go backend can still be run as a reference implementation:
 
 ```bash
 cd backend
@@ -94,6 +108,11 @@ Frontend configuration lives in `frontend/.env` and can be based on `frontend/.e
 ```bash
 cd frontend
 npm run build
+```
+
+```bash
+cd python_backend
+python3.11 -m pytest
 ```
 
 ```bash

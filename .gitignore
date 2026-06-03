@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 node_modules/
 .npm-cache/
 dist/
@@ -14,3 +15,4 @@ dist/
 .learnings/
 frontend-home.png
 backend/media/
+python_backend/media/
