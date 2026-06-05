@@ -70,7 +70,8 @@ async function sync() {
   const batchCount = Math.max(Math.ceil(buckets.length / batchSize.buckets), Math.ceil(sessions.length / batchSize.sessions), 1);
   let bucketCount = 0;
   let sessionCount = 0;
-  await withSpinner(`正在上传 Token 用量（${batchCount} 批）`, async () => {
+  const progress = startProgressBar("正在上传 Token 用量", batchCount);
+  try {
     for (let index = 0; index < batchCount; index += 1) {
       const body = await uploadUsageBatch(config, {
         buckets: buckets.slice(index * batchSize.buckets, (index + 1) * batchSize.buckets),
@@ -78,8 +79,13 @@ async function sync() {
       });
       bucketCount += body.bucketCount ?? 0;
       sessionCount += body.sessionCount ?? 0;
+      progress.tick(index + 1);
     }
-  });
+    progress.succeed();
+  } catch (error) {
+    progress.fail();
+    throw error;
+  }
   console.log(`Synced ${bucketCount} buckets and ${sessionCount} sessions in ${batchCount} batch${batchCount === 1 ? "" : "es"}.`);
 }
 
@@ -238,6 +244,39 @@ function startSpinner(label) {
   };
 }
 
+function startProgressBar(label, total) {
+  const width = 24;
+  let current = 0;
+  let active = Boolean(output.isTTY && !process.env.CI);
+  const render = (done = false) => {
+    if (!active) return;
+    const ratio = total > 0 ? Math.min(1, current / total) : 1;
+    const filled = done ? width : Math.round(ratio * width);
+    const bar = "#".repeat(filled).padEnd(width, "-");
+    const percent = Math.round(ratio * 100).toString().padStart(3, " ");
+    output.write(`\r[${bar}] ${percent}% ${current}/${total} ${label}`);
+  };
+  render();
+  return {
+    tick(value) {
+      current = Math.max(0, Math.min(total, value));
+      render();
+    },
+    succeed() {
+      if (!active) return;
+      current = total;
+      render(true);
+      output.write("\n");
+      active = false;
+    },
+    fail() {
+      if (!active) return;
+      output.write(`\r[${"!".repeat(width)}] failed ${current}/${total} ${label}\n`);
+      active = false;
+    },
+  };
+}
+
 function parseLocalUsage() {
   const merged = { buckets: [], sessions: [] };
   for (const parser of PARSERS) {
@@ -250,6 +289,26 @@ function parseLocalUsage() {
     }
   }
   return merged;
+}
+
+function tokenEntry(fields) {
+  const totalTokens = safeNumber(fields.inputTokens) + safeNumber(fields.outputTokens) + safeNumber(fields.reasoningTokens) + safeNumber(fields.cachedTokens);
+  const basis = fields.dedupeKey || [
+    fields.source,
+    fields.sessionId,
+    fields.model || "unknown",
+    fields.project || "unknown",
+    fields.timestamp instanceof Date ? fields.timestamp.toISOString() : String(fields.timestamp || ""),
+    totalTokens,
+  ].join("|");
+  return {
+    ...fields,
+    inputTokens: safeNumber(fields.inputTokens),
+    outputTokens: safeNumber(fields.outputTokens),
+    reasoningTokens: safeNumber(fields.reasoningTokens),
+    cachedTokens: safeNumber(fields.cachedTokens),
+    dedupeKey: createHash("sha256").update(basis).digest("hex").slice(0, 24),
+  };
 }
 
 function parseCodex() {
@@ -297,7 +356,7 @@ function parseCodex() {
         const outputTokens = safeNumber(usage.output_tokens);
         if (!inputTokens && !outputTokens && !reasoningTokens && !cachedTokens) continue;
         sessionEvents.push({ sessionId: filePath, source, project, timestamp, role: "assistant" });
-        entries.push({ sessionId: filePath, source, model: activeModel, project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens });
+        entries.push(tokenEntry({ sessionId: filePath, source, model: activeModel, project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens, dedupeKey: event.id || event.payload?.id || `codex:${source}:${project}:${event.timestamp}:${activeModel}:${JSON.stringify(usage)}` }));
       } catch {
         // Skip malformed JSONL rows.
       }
@@ -350,7 +409,7 @@ function parseClaudeCode() {
           const inputTokens = safeNumber(usage.input_tokens);
           const outputTokens = safeNumber(usage.output_tokens);
           if (!inputTokens && !outputTokens && !cachedTokens) continue;
-          entries.push({ sessionId, source: "claude-code", model: obj.message.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens: 0, cachedTokens });
+          entries.push(tokenEntry({ sessionId, source: "claude-code", model: obj.message.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens: 0, cachedTokens, dedupeKey: obj.uuid || obj.message?.id || `claude-code:${project}:${obj.timestamp}:${obj.message.model || "unknown"}:${JSON.stringify(usage)}` }));
         } catch {
           // Skip malformed JSONL rows.
         }
@@ -408,14 +467,14 @@ function parseGeminiCli() {
         const inputTokens = safeNumber(tokens.input);
         const outputTokens = safeNumber(tokens.output);
         if (!inputTokens && !outputTokens && !reasoningTokens && !cachedTokens) continue;
-        entries.push({ sessionId: filePath, source: "gemini-cli", model: message.model || record.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens });
+        entries.push(tokenEntry({ sessionId: filePath, source: "gemini-cli", model: message.model || record.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens, dedupeKey: message.id || message.uuid || `gemini-cli:${project}:${rawTimestamp}:${message.model || record.model || "unknown"}:${JSON.stringify(tokens)}` }));
       } else if (usage) {
         const cachedTokens = safeNumber(usage.cachedContentTokenCount);
         const reasoningTokens = safeNumber(usage.thoughtsTokenCount);
         const inputTokens = safeNumber(usage.promptTokenCount || usage.input_tokens);
         const outputTokens = safeNumber(usage.candidatesTokenCount || usage.output_tokens);
         if (!inputTokens && !outputTokens && !reasoningTokens && !cachedTokens) continue;
-        entries.push({ sessionId: filePath, source: "gemini-cli", model: message.model || record.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens });
+        entries.push(tokenEntry({ sessionId: filePath, source: "gemini-cli", model: message.model || record.model || "unknown", project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens, dedupeKey: message.id || message.uuid || `gemini-cli:${project}:${rawTimestamp}:${message.model || record.model || "unknown"}:${JSON.stringify(usage)}` }));
       }
     }
   }
@@ -452,7 +511,7 @@ function parseQwenCode() {
         const inputTokens = safeNumber(usage.promptTokenCount ?? usage.input_tokens ?? usage.input_token_count);
         const outputTokens = safeNumber(usage.candidatesTokenCount ?? usage.output_tokens ?? usage.output_token_count);
         if (!inputTokens && !outputTokens && !reasoningTokens && !cachedTokens) continue;
-        entries.push({ sessionId: filePath, source: "qwen-code", model: obj.model || "unknown", project, timestamp, inputTokens, outputTokens: outputTokens + toolTokens, reasoningTokens, cachedTokens });
+        entries.push(tokenEntry({ sessionId: filePath, source: "qwen-code", model: obj.model || "unknown", project, timestamp, inputTokens, outputTokens: outputTokens + toolTokens, reasoningTokens, cachedTokens, dedupeKey: obj.uuid || obj.id || obj.response_id || obj.prompt_id || `qwen-code:${project}:${obj.timestamp}:${obj.model || "unknown"}:${JSON.stringify(usage)}` }));
       } catch {
         // Skip malformed JSONL rows.
       }
@@ -482,7 +541,7 @@ function parseOpenCode() {
     const project = record.path ? leafName(record.path) : "opencode";
     const model = record.modelID || record.model?.modelID || record.model || "unknown";
     sessionEvents.push({ sessionId, source: "opencode", project, timestamp, role: "assistant" });
-    entries.push({ sessionId, source: "opencode", model, project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens });
+    entries.push(tokenEntry({ sessionId, source: "opencode", model, project, timestamp, inputTokens, outputTokens, reasoningTokens, cachedTokens, dedupeKey: `opencode:${row.id}` }));
   }
   return { buckets: aggregateBuckets(entries), sessions: extractSessions(sessionEvents, entries) };
 }
@@ -507,7 +566,7 @@ function readOpenCodeMessages(dbPath) {
 
 function readOpenCodeMessagesWithSQLite(dbPath) {
   try {
-    const stdout = execFileSync("sqlite3", ["-json", "-readonly", dbPath, "SELECT id, data FROM message"], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+    const stdout = execFileSync("sqlite3", ["-json", "-readonly", dbPath, "SELECT id, data FROM message"], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
     const rows = JSON.parse(stdout || "[]");
     if (!Array.isArray(rows)) return [];
     return rows.flatMap((row) => {
@@ -643,7 +702,7 @@ function parseOpenClaw() {
         if (!inputTokens && contextEstimate > 0) inputTokens = contextEstimate;
         if (!outputTokens && recordEstimate > 0) outputTokens = recordEstimate;
         if (inputTokens || outputTokens) {
-          entries.push({ sessionId: filePath, source: "openclaw", model, project, timestamp, inputTokens, outputTokens, reasoningTokens: 0, cachedTokens: 0 });
+          entries.push(tokenEntry({ sessionId: filePath, source: "openclaw", model, project, timestamp, inputTokens, outputTokens, reasoningTokens: 0, cachedTokens: 0, dedupeKey: item.uuid || item.id || message.id || `openclaw:${project}:${timestamp.toISOString()}:${model}:${JSON.stringify(rawUsage)}:${recordEstimate}` }));
         }
         contextEstimate += contextContribution;
       } catch {
@@ -685,6 +744,7 @@ function resolveUsageDelta(model, info, previousTotals) {
 }
 
 function aggregateBuckets(entries) {
+  entries = dedupeEntries(entries);
   const buckets = new Map();
   for (const entry of entries) {
     const bucketStart = roundHalfHour(entry.timestamp).toISOString();
@@ -702,6 +762,8 @@ function aggregateBuckets(entries) {
 }
 
 function extractSessions(events, entries) {
+  events = dedupeSessionEvents(events);
+  entries = dedupeEntries(entries);
   const grouped = new Map();
   for (const event of events) {
     if (!grouped.has(event.sessionId)) grouped.set(event.sessionId, []);
@@ -717,6 +779,35 @@ function extractSessions(events, entries) {
     const primaryModel = modelUsages[0]?.model || "";
     return { source: first.source, projectKey: hashProject(first.project), projectLabel: first.project, sessionHash: createHash("sha256").update(sessionId).digest("hex").slice(0, 16), firstMessageAt: first.timestamp.toISOString(), lastMessageAt: last.timestamp.toISOString(), durationSeconds: Math.max(0, Math.round((last.timestamp - first.timestamp) / 1000)), activeSeconds: estimateActiveSeconds(sessionEvents), messageCount: sessionEvents.length, userMessageCount: sessionEvents.filter((event) => event.role === "user").length, ...totals, primaryModel, modelUsages };
   });
+}
+
+function dedupeSessionEvents(events) {
+  const seen = new Set();
+  const out = [];
+  for (const event of events) {
+    const key = [
+      event.source,
+      event.project || "unknown",
+      event.timestamp instanceof Date ? event.timestamp.toISOString() : String(event.timestamp || ""),
+      event.role || "",
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(event);
+  }
+  return out;
+}
+
+function dedupeEntries(entries) {
+  const seen = new Set();
+  const out = [];
+  for (const entry of entries) {
+    const key = entry.dedupeKey || tokenEntry(entry).dedupeKey;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
 }
 
 function buildModelUsages(entries) {

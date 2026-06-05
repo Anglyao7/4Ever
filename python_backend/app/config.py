@@ -95,10 +95,13 @@ def _detect_base_dir(root: Path) -> Path:
     cwd = Path.cwd().resolve()
     candidates = [cwd, *cwd.parents, root, *root.parents]
     for candidate in candidates:
-        backend_dir = candidate / "backend"
-        if (backend_dir / "go.mod").exists():
-            return backend_dir.resolve()
-        if candidate.name == "backend" and (candidate / "go.mod").exists():
+        if (candidate / "python_backend" / "pyproject.toml").exists() and (candidate / "frontend" / "package.json").exists():
+            return candidate.resolve()
+        if candidate.name == "python_backend" and (candidate / "pyproject.toml").exists():
+            parent = candidate.parent
+            if (parent / "frontend" / "package.json").exists():
+                return parent.resolve()
+        if (candidate / ".git").exists():
             return candidate.resolve()
     return root.resolve()
 

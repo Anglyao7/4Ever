@@ -144,6 +144,12 @@ _CREATE_TABLES = [
       system_prompt TEXT,
       temperature REAL NOT NULL DEFAULT 0.7,
       max_tokens INTEGER NOT NULL DEFAULT 1024,
+      supports_vision INTEGER NOT NULL DEFAULT 0,
+      fallback_model TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      persona_json TEXT NOT NULL DEFAULT '{}',
+      pet_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -345,6 +351,14 @@ _CREATE_TABLES = [
 ]
 
 _SCHEMA_UPDATES = {
+    "model_profiles": {
+        "supports_vision": "INTEGER NOT NULL DEFAULT 0",
+        "fallback_model": "TEXT NOT NULL DEFAULT ''",
+        "enabled": "INTEGER NOT NULL DEFAULT 1",
+        "is_active": "INTEGER NOT NULL DEFAULT 0",
+        "persona_json": "TEXT NOT NULL DEFAULT '{}'",
+        "pet_json": "TEXT NOT NULL DEFAULT '{}'",
+    },
     "users": {
         "avatar_path": "TEXT",
         "cover_path": "TEXT",

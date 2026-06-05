@@ -51,6 +51,45 @@ def test_stream_agent_run_returns_sse_events():
     assert "event: run.finished" in response.text
 
 
+def test_mcp_tools_use_backend_planned_mode_without_secret():
+    response = client.get("/api/agents/mcp/bigmodel-web-search/tools")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["server_id"] == "bigmodel-web-search"
+    assert data["status"] == "planned"
+    assert data["tools"] == ["webSearchPrime"]
+    assert data["configured"] is False
+    assert "BIGMODEL_API_KEY" in data["reason"]
+
+
+def test_mcp_tool_call_enforces_allowlist():
+    response = client.post(
+        "/api/agents/mcp/bigmodel-web-search/tools/call",
+        json={"tool_name": "notAllowed", "arguments": {}},
+    )
+    assert response.status_code == 400
+
+
+def test_agent_mcp_node_uses_python_mcp_client_planned_output():
+    response = client.post(
+        "/api/agents/runs",
+        json={
+            "template_id": "agent-research-brief",
+            "agent_id": "research-agent",
+            "mcp_server_ids": ["bigmodel-web-search", "bigmodel-web-reader"],
+            "input": {"query": "https://example.com 研究一下"},
+            "source": "manual",
+        },
+    )
+    assert response.status_code == 200
+    run = response.json()
+    mcp_results = [result for result in run["node_results"] if result["type"] == "mcp"]
+    assert len(mcp_results) == 2
+    assert "Tool: webSearchPrime" in mcp_results[0]["output"]
+    assert "Tool: webReader" in mcp_results[1]["output"]
+    assert "计划调用 BigModel" in mcp_results[0]["output"]
+
+
 def test_canvas_run_preserves_runtime_binding_in_node_output():
     response = client.post(
         "/api/agents/runs",

@@ -1,223 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Save, Trash2, ZoomIn, ZoomOut, Grid3x3, Sparkles, Bot, Workflow, GitBranch, AlignHorizontalSpaceAround } from "lucide-react";
+import { Plus, Grid3x3, Sparkles, Bot, Workflow, GitBranch, AlignHorizontalSpaceAround } from "lucide-react";
 import { nodeTemplates, getNodeTemplate } from "./lib/node-templates";
 import AIWorkflowAssistant from "./AIWorkflowAssistant";
-import type { NodeConnection, WorkflowCanvas, WorkflowNode, NodePosition, NodeTemplate, NodeType } from "./types/workflow-canvas";
+import type { NodeConnection, WorkflowCanvas, WorkflowNode, NodePosition, NodeTemplate } from "./types/workflow-canvas";
 
 const canvasStorageKey = "4ever.inspiration.canvas";
-const workflowHandoffKey = "4ever.workflow.handoff";
 const nodeWidth = 240;
 const nodeHeaderHeight = 52;
 const nodePortRowHeight = 20;
 
 type CanvasNodeStatus = "ready" | "entry" | "exit" | "isolated" | "blocked" | "cycle";
 
-type SystemFlowPreset = {
-  id: string;
-  label: string;
-  notice: string;
-  nodes: Array<{
-    key: string;
-    type: NodeType;
-    position: NodePosition;
-  }>;
-  edges: Array<{
-    source: string;
-    target: string;
-    sourceHandle?: string;
-    targetHandle?: string;
-  }>;
-};
-
-const systemFlowPresets: SystemFlowPreset[] = [
-  {
-    id: "interface-models",
-    label: "模型接口",
-    notice: "已生成接口中枢获取模型到秩序 Agent 的流程，并自动连好流程线。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 120 } },
-      { key: "health", type: "api-health", position: { x: 420, y: 120 } },
-      { key: "models", type: "provider-models", position: { x: 720, y: 120 } },
-      { key: "agent", type: "agent-run", position: { x: 1020, y: 120 } },
-    ],
-    edges: [
-      { source: "trigger", target: "health" },
-      { source: "health", target: "models", sourceHandle: "status" },
-      { source: "models", target: "agent", sourceHandle: "models", targetHandle: "task" },
-    ],
-  },
-  {
-    id: "knowledge-context",
-    label: "知识接口",
-    notice: "已生成笔记、知识库、文件资产汇总到秩序 Agent 的流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 220 } },
-      { key: "notes", type: "notes-query", position: { x: 420, y: 80 } },
-      { key: "knowledge", type: "knowledge-search", position: { x: 420, y: 230 } },
-      { key: "files", type: "file-asset", position: { x: 420, y: 380 } },
-      { key: "agent", type: "agent-run", position: { x: 780, y: 230 } },
-    ],
-    edges: [
-      { source: "trigger", target: "notes" },
-      { source: "trigger", target: "knowledge" },
-      { source: "trigger", target: "files" },
-      { source: "notes", target: "agent", sourceHandle: "excerpt", targetHandle: "context" },
-      { source: "knowledge", target: "agent", sourceHandle: "documents", targetHandle: "context" },
-      { source: "files", target: "agent", sourceHandle: "files", targetHandle: "context" },
-    ],
-  },
-  {
-    id: "external-event",
-    label: "外部入口",
-    notice: "已生成 Webhook 外部事件进入 MCP 工具和秩序 Agent 的流程。",
-    nodes: [
-      { key: "webhook", type: "webhook-ingress", position: { x: 120, y: 190 } },
-      { key: "http", type: "http-request", position: { x: 420, y: 110 } },
-      { key: "mcp", type: "mcp-tool", position: { x: 720, y: 110 } },
-      { key: "audit", type: "admin-audit", position: { x: 420, y: 300 } },
-      { key: "agent", type: "agent-run", position: { x: 1020, y: 190 } },
-    ],
-    edges: [
-      { source: "webhook", target: "http", sourceHandle: "payload", targetHandle: "params" },
-      { source: "http", target: "mcp", sourceHandle: "response", targetHandle: "arguments" },
-      { source: "webhook", target: "audit", sourceHandle: "headers", targetHandle: "scope" },
-      { source: "mcp", target: "agent", sourceHandle: "result", targetHandle: "task" },
-      { source: "audit", target: "agent", sourceHandle: "audit", targetHandle: "context" },
-    ],
-  },
-  {
-    id: "communication-loop",
-    label: "沟通闭环",
-    notice: "已生成会话、联系人、日程和通知发送组成的沟通闭环流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 210 } },
-      { key: "thread", type: "chat-thread", position: { x: 420, y: 80 } },
-      { key: "contact", type: "contact-profile", position: { x: 420, y: 240 } },
-      { key: "calendar", type: "calendar-event", position: { x: 420, y: 400 } },
-      { key: "agent", type: "agent-run", position: { x: 780, y: 240 } },
-      { key: "notify", type: "notification-send", position: { x: 1080, y: 240 } },
-    ],
-    edges: [
-      { source: "trigger", target: "thread" },
-      { source: "trigger", target: "contact" },
-      { source: "trigger", target: "calendar" },
-      { source: "thread", target: "agent", sourceHandle: "summary", targetHandle: "task" },
-      { source: "contact", target: "agent", sourceHandle: "profile", targetHandle: "context" },
-      { source: "calendar", target: "agent", sourceHandle: "events", targetHandle: "context" },
-      { source: "agent", target: "notify", sourceHandle: "summary", targetHandle: "content" },
-    ],
-  },
-  {
-    id: "data-ops",
-    label: "数据接口",
-    notice: "已生成数据库、模块目录、Token 统计和管理审计汇入秩序的系统数据流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 210 } },
-      { key: "database", type: "database-query", position: { x: 420, y: 80 } },
-      { key: "modules", type: "module-catalog", position: { x: 420, y: 240 } },
-      { key: "tokens", type: "token-usage", position: { x: 420, y: 400 } },
-      { key: "audit", type: "admin-audit", position: { x: 720, y: 240 } },
-      { key: "agent", type: "agent-run", position: { x: 1020, y: 240 } },
-    ],
-    edges: [
-      { source: "trigger", target: "database" },
-      { source: "trigger", target: "modules" },
-      { source: "trigger", target: "tokens" },
-      { source: "database", target: "audit", sourceHandle: "rows", targetHandle: "scope" },
-      { source: "modules", target: "audit", sourceHandle: "modules", targetHandle: "scope" },
-      { source: "tokens", target: "audit", sourceHandle: "overview", targetHandle: "scope" },
-      { source: "audit", target: "agent", sourceHandle: "audit", targetHandle: "context" },
-    ],
-  },
-  {
-    id: "office-ingest",
-    label: "办公入口",
-    notice: "已生成邮件、云盘和表格数据汇入秩序 Agent 的办公入口流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 220 } },
-      { key: "email", type: "email-inbox", position: { x: 420, y: 70 } },
-      { key: "drive", type: "cloud-drive", position: { x: 420, y: 230 } },
-      { key: "sheet", type: "sheet-row", position: { x: 420, y: 390 } },
-      { key: "agent", type: "agent-run", position: { x: 780, y: 230 } },
-    ],
-    edges: [
-      { source: "trigger", target: "email", targetHandle: "query" },
-      { source: "trigger", target: "drive", targetHandle: "query" },
-      { source: "trigger", target: "sheet", targetHandle: "filter" },
-      { source: "email", target: "agent", sourceHandle: "messages", targetHandle: "context" },
-      { source: "drive", target: "agent", sourceHandle: "files", targetHandle: "context" },
-      { source: "sheet", target: "agent", sourceHandle: "summary", targetHandle: "context" },
-    ],
-  },
-  {
-    id: "content-publish",
-    label: "发布接口",
-    notice: "已生成笔记检索、AI 成稿、绘影资产和内容发布的复核流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 210 } },
-      { key: "notes", type: "notes-query", position: { x: 420, y: 100 } },
-      { key: "draft", type: "ai-chat", position: { x: 720, y: 100 } },
-      { key: "image", type: "image-studio", position: { x: 720, y: 310 } },
-      { key: "publish", type: "cms-publish", position: { x: 1020, y: 210 } },
-      { key: "notify", type: "notification-send", position: { x: 1320, y: 210 } },
-    ],
-    edges: [
-      { source: "trigger", target: "notes", targetHandle: "query" },
-      { source: "notes", target: "draft", sourceHandle: "excerpt", targetHandle: "input" },
-      { source: "notes", target: "image", sourceHandle: "excerpt", targetHandle: "prompt" },
-      { source: "draft", target: "publish", sourceHandle: "response", targetHandle: "content" },
-      { source: "image", target: "publish", sourceHandle: "image_url", targetHandle: "assets" },
-      { source: "publish", target: "notify", sourceHandle: "status", targetHandle: "content" },
-    ],
-  },
-  {
-    id: "memory-context",
-    label: "记忆接口",
-    notice: "已生成会话、笔记、地图记忆和知识检索沉淀为秩序任务的流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 240 } },
-      { key: "thread", type: "chat-thread", position: { x: 420, y: 80 } },
-      { key: "notes", type: "notes-query", position: { x: 420, y: 240 } },
-      { key: "memory", type: "memory-map", position: { x: 420, y: 400 } },
-      { key: "knowledge", type: "knowledge-search", position: { x: 740, y: 240 } },
-      { key: "agent", type: "agent-run", position: { x: 1060, y: 240 } },
-      { key: "note", type: "note-create", position: { x: 1380, y: 240 } },
-    ],
-    edges: [
-      { source: "trigger", target: "thread" },
-      { source: "trigger", target: "notes", targetHandle: "query" },
-      { source: "trigger", target: "memory", targetHandle: "city" },
-      { source: "thread", target: "knowledge", sourceHandle: "summary", targetHandle: "query" },
-      { source: "notes", target: "knowledge", sourceHandle: "excerpt", targetHandle: "query" },
-      { source: "memory", target: "agent", sourceHandle: "memory_card", targetHandle: "context" },
-      { source: "knowledge", target: "agent", sourceHandle: "documents", targetHandle: "context" },
-      { source: "agent", target: "note", sourceHandle: "summary", targetHandle: "content" },
-    ],
-  },
-  {
-    id: "ops-approval",
-    label: "复核接口",
-    notice: "已生成接口健康、Token 统计、模块目录、审计复核和通知闭环流程。",
-    nodes: [
-      { key: "trigger", type: "trigger", position: { x: 120, y: 230 } },
-      { key: "health", type: "api-health", position: { x: 420, y: 80 } },
-      { key: "tokens", type: "token-usage", position: { x: 420, y: 230 } },
-      { key: "modules", type: "module-catalog", position: { x: 420, y: 380 } },
-      { key: "audit", type: "admin-audit", position: { x: 740, y: 230 } },
-      { key: "agent", type: "agent-run", position: { x: 1060, y: 230 } },
-      { key: "notify", type: "notification-send", position: { x: 1380, y: 230 } },
-    ],
-    edges: [
-      { source: "trigger", target: "health" },
-      { source: "trigger", target: "tokens", targetHandle: "range" },
-      { source: "trigger", target: "modules", targetHandle: "filter" },
-      { source: "health", target: "audit", sourceHandle: "status", targetHandle: "scope" },
-      { source: "tokens", target: "audit", sourceHandle: "overview", targetHandle: "scope" },
-      { source: "modules", target: "audit", sourceHandle: "modules", targetHandle: "scope" },
-      { source: "audit", target: "agent", sourceHandle: "audit", targetHandle: "context" },
-      { source: "agent", target: "notify", sourceHandle: "summary", targetHandle: "content" },
-    ],
-  },
+const nodeLibraryGroups: Array<{ category: NodeTemplate["category"]; title: string }> = [
+  { category: "trigger", title: "触发" },
+  { category: "action", title: "系统动作" },
+  { category: "data", title: "系统数据" },
 ];
 
 export default function InspirationCanvasPanel() {
@@ -226,7 +23,7 @@ export default function InspirationCanvasPanel() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<NodePosition>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const zoom = 1;
   const [pan, setPan] = useState<NodePosition>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<NodePosition>({ x: 0, y: 0 });
@@ -241,11 +38,14 @@ export default function InspirationCanvasPanel() {
 
   // 保存画布到本地存储
   useEffect(() => {
-    try {
-      localStorage.setItem(canvasStorageKey, JSON.stringify(canvas));
-    } catch (error) {
-      console.error("Failed to save canvas:", error);
-    }
+    const saveTimer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(canvasStorageKey, JSON.stringify(canvas));
+      } catch (error) {
+        console.error("Failed to save canvas:", error);
+      }
+    }, 180);
+    return () => window.clearTimeout(saveTimer);
   }, [canvas]);
 
   // 添加节点到画布
@@ -326,16 +126,6 @@ export default function InspirationCanvasPanel() {
     setNotice("已删除流程连接。");
   }, []);
 
-  const autoWireCanvas = useCallback(() => {
-    setCanvas((prev) => ({
-      ...prev,
-      connections: connectSequentialNodes([], orderedNodesByPosition(prev.nodes)),
-      updatedAt: new Date().toISOString(),
-    }));
-    setConnectionDraft(null);
-    setNotice("已按画布位置自动连线，节点现在是一条可送入秩序的流程。");
-  }, []);
-
   const arrangeCanvas = useCallback(() => {
     setCanvas((prev) => ({
       ...prev,
@@ -344,41 +134,6 @@ export default function InspirationCanvasPanel() {
     }));
     setPan({ x: 0, y: 0 });
     setNotice("已按流程层级整理画布：入口在左，分支上下展开，汇聚节点靠后。线和配置未改变。");
-  }, []);
-
-  const addSystemFlow = useCallback((preset: SystemFlowPreset) => {
-    const nodeSpecs = preset.nodes.flatMap((nodeSpec) => {
-      const template = nodeTemplates.find((item) => item.type === nodeSpec.type);
-      return template ? [{ ...nodeSpec, template }] : [];
-    });
-    if (!nodeSpecs.length) return;
-    let firstNodeId = "";
-    setCanvas((prev) => {
-      const offset = flowPlacementOffset(prev.nodes);
-      const nodes = nodeSpecs.map((nodeSpec, index) => createCanvasNode(nodeSpec.template, prev.nodes.length + index, {
-        x: nodeSpec.position.x + offset.x,
-        y: nodeSpec.position.y + offset.y,
-      }));
-      const nodeByKey = new Map(nodeSpecs.map((nodeSpec, index) => [nodeSpec.key, nodes[index]]));
-      firstNodeId = nodes[0]?.id ?? "";
-      return {
-        ...prev,
-        nodes: [...prev.nodes, ...nodes],
-        connections: [
-          ...prev.connections,
-          ...connectSequentialNodes(prev.nodes, nodes.slice(0, 1)),
-          ...preset.edges.flatMap((edge) => {
-            const source = nodeByKey.get(edge.source);
-            const target = nodeByKey.get(edge.target);
-            return source && target ? [autoConnection(source, target, edge.sourceHandle, edge.targetHandle)] : [];
-          }),
-        ],
-        updatedAt: new Date().toISOString(),
-      };
-    });
-    setConnectionDraft(null);
-    setSelectedNode(firstNodeId);
-    setNotice(preset.notice);
   }, []);
 
   const handleTemplateClick = useCallback((event: React.MouseEvent<HTMLButtonElement>, template: NodeTemplate) => {
@@ -391,7 +146,6 @@ export default function InspirationCanvasPanel() {
     setCanvas((prev) => ({
       ...prev,
       nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, position } : n)),
-      updatedAt: new Date().toISOString(),
     }));
   }, []);
 
@@ -399,6 +153,7 @@ export default function InspirationCanvasPanel() {
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    e.preventDefault();
 
     const node = canvas.nodes.find((n) => n.id === nodeId);
     if (!node) return;
@@ -414,14 +169,36 @@ export default function InspirationCanvasPanel() {
   // 拖拽节点移动
   useEffect(() => {
     if (!draggingNode) return;
+    let frameId: number | null = null;
+    let pendingPosition: NodePosition | null = null;
+
+    const flushPosition = () => {
+      frameId = null;
+      if (!pendingPosition) return;
+      const nextPosition = pendingPosition;
+      pendingPosition = null;
+      updateNodePosition(draggingNode, nextPosition);
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
       const newX = (e.clientX - pan.x - dragOffset.x) / zoom;
       const newY = (e.clientY - pan.y - dragOffset.y) / zoom;
-      updateNodePosition(draggingNode, { x: newX, y: newY });
+      pendingPosition = { x: newX, y: newY };
+      if (frameId === null) {
+        frameId = window.requestAnimationFrame(flushPosition);
+      }
     };
 
     const handleMouseUp = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+      if (pendingPosition) {
+        updateNodePosition(draggingNode, pendingPosition);
+        pendingPosition = null;
+      }
+      setCanvas((prev) => ({ ...prev, updatedAt: new Date().toISOString() }));
       setDraggingNode(null);
     };
 
@@ -429,6 +206,9 @@ export default function InspirationCanvasPanel() {
     window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -436,7 +216,8 @@ export default function InspirationCanvasPanel() {
 
   // 画布平移
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0 || e.target !== canvasRef.current) return;
+    if (e.button !== 0 || isCanvasPanBlocked(e.target)) return;
+    e.preventDefault();
     setConnectionDraft(null);
     setIsPanning(true);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -444,15 +225,36 @@ export default function InspirationCanvasPanel() {
 
   useEffect(() => {
     if (!isPanning) return;
+    let frameId: number | null = null;
+    let pendingPan: NodePosition | null = null;
+
+    const flushPan = () => {
+      frameId = null;
+      if (!pendingPan) return;
+      const nextPan = pendingPan;
+      pendingPan = null;
+      setPan(nextPan);
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
-      setPan({
+      pendingPan = {
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y,
-      });
+      };
+      if (frameId === null) {
+        frameId = window.requestAnimationFrame(flushPan);
+      }
     };
 
     const handleMouseUp = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+      if (pendingPan) {
+        setPan(pendingPan);
+        pendingPan = null;
+      }
       setIsPanning(false);
     };
 
@@ -460,48 +262,13 @@ export default function InspirationCanvasPanel() {
     window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isPanning, panStart]);
-
-  // 保存到秩序模块
-  const saveToWorkflow = useCallback(() => {
-    if (canvas.nodes.length === 0) {
-      setNotice("画布还没有节点，先生成或添加节点后再送入秩序。");
-      return;
-    }
-    const issue = canvasFlowIssue(canvas);
-    if (issue) {
-      setNotice(`${issue} 请先手动连线，或点击“自动连线”。`);
-      return;
-    }
-    try {
-      localStorage.setItem(workflowHandoffKey, JSON.stringify(canvasToWorkflowHandoff(canvas)));
-      setNotice("已送入秩序，正在打开秩序模块。");
-      window.history.pushState({}, "", "/automation");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } catch (error) {
-      setNotice("送入秩序失败，请检查浏览器存储空间后再试。");
-    }
-  }, [canvas]);
-
-  // 清空画布
-  const clearCanvas = useCallback(() => {
-    if (!confirm("确定要清空画布吗？")) return;
-    setCanvas({
-      id: `canvas_${Date.now()}`,
-      name: "新工作流",
-      description: "",
-      nodes: [],
-      connections: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    setSelectedNode(null);
-    setConnectionDraft(null);
-    setNotice("画布已清空，可以重新开始。");
-  }, []);
 
   // AI 生成工作流
   const handleAIGenerateWorkflow = useCallback((nodes: WorkflowNode[], connections: NodeConnection[] = []) => {
@@ -527,7 +294,7 @@ export default function InspirationCanvasPanel() {
         <div className="canvas-toolbar-left">
           <Sparkles size={20} />
           <div>
-            <strong>灵感画布</strong>
+            <strong>灵感</strong>
             <small>从想法生成流程，整理后送入秩序执行</small>
           </div>
         </div>
@@ -536,14 +303,6 @@ export default function InspirationCanvasPanel() {
             <Bot size={16} />
             <span>{showAIAssistant ? "隐藏" : "显示"} AI 助手</span>
           </button>
-          <div className="canvas-system-flows" aria-label="系统接口流程">
-            {systemFlowPresets.map((preset) => (
-              <button key={preset.id} className="secondary-button compact" onClick={() => addSystemFlow(preset)}>
-                <GitBranch size={16} />
-                <span>{preset.label}</span>
-              </button>
-            ))}
-          </div>
           <button className="secondary-button compact" onClick={() => setShowNodeLibrary(!showNodeLibrary)}>
             <Grid3x3 size={16} />
             <span>{showNodeLibrary ? "隐藏" : "显示"}节点库</span>
@@ -551,21 +310,6 @@ export default function InspirationCanvasPanel() {
           <button className="secondary-button compact" onClick={arrangeCanvas} disabled={!canvas.nodes.length}>
             <AlignHorizontalSpaceAround size={16} />
             <span>整理布局</span>
-          </button>
-          <button className="secondary-button compact" onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}>
-            <ZoomOut size={16} />
-          </button>
-          <span className="zoom-indicator">{Math.round(zoom * 100)}%</span>
-          <button className="secondary-button compact" onClick={() => setZoom(Math.min(2, zoom + 0.1))}>
-            <ZoomIn size={16} />
-          </button>
-          <button className="secondary-button compact" onClick={clearCanvas}>
-            <Trash2 size={16} />
-            <span>清空</span>
-          </button>
-          <button className="primary-action compact" onClick={saveToWorkflow}>
-            <Save size={16} />
-            <span>保存到秩序</span>
           </button>
         </div>
       </div>
@@ -577,98 +321,50 @@ export default function InspirationCanvasPanel() {
         {canvas.nodes.length > 0 && <span className={flowSummary.entryLabels.length === 1 ? "done" : "warning"}><GitBranch size={14} />入口 {flowSummary.entryLabels.length || 0}</span>}
         {canvas.nodes.length > 0 && <span className={flowSummary.exitLabels.length ? "done" : "warning"}><Workflow size={14} />出口 {flowSummary.exitLabels.length || 0}</span>}
         <p>{notice}</p>
-        {flowIssue && <button type="button" className="canvas-auto-wire-button" onClick={autoWireCanvas}><GitBranch size={14} /><span>自动连线</span></button>}
       </div>
 
       <div className="canvas-workspace">
-        {/* AI 助手面板 */}
-        {showAIAssistant && (
-          <AIWorkflowAssistant onGenerateWorkflow={handleAIGenerateWorkflow} />
-        )}
-
         {/* 左侧节点库 */}
         {showNodeLibrary && (
           <aside className="canvas-node-library">
             <h3>节点库</h3>
-
-            <div className="node-category">
-              <h4>🎯 触发器</h4>
-              <div className="node-template-list">
-                {nodeTemplates.filter((t) => t.category === "trigger").map((template) => (
-                  <button
-                    key={template.type}
-                    data-node-template={template.type}
-                    className="node-template-item"
-                    onClick={(event) => handleTemplateClick(event, template)}
-                    title={template.description}
-                  >
-                    <span className="node-template-icon">{template.icon}</span>
-                    <span className="node-template-label">{template.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="node-category">
-              <h4>⚡ 动作</h4>
-              <div className="node-template-list">
-                {nodeTemplates.filter((t) => t.category === "action").map((template) => (
-                  <button
-                    key={template.type}
-                    data-node-template={template.type}
-                    className="node-template-item"
-                    onClick={(event) => handleTemplateClick(event, template)}
-                    title={template.description}
-                  >
-                    <span className="node-template-icon">{template.icon}</span>
-                    <span className="node-template-label">{template.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="node-category">
-              <h4>🔀 逻辑</h4>
-              <div className="node-template-list">
-                {nodeTemplates.filter((t) => t.category === "logic").map((template) => (
-                  <button
-                    key={template.type}
-                    data-node-template={template.type}
-                    className="node-template-item"
-                    onClick={(event) => handleTemplateClick(event, template)}
-                    title={template.description}
-                  >
-                    <span className="node-template-icon">{template.icon}</span>
-                    <span className="node-template-label">{template.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="node-category">
-              <h4>📊 数据</h4>
-              <div className="node-template-list">
-                {nodeTemplates.filter((t) => t.category === "data").map((template) => (
-                  <button
-                    key={template.type}
-                    data-node-template={template.type}
-                    className="node-template-item"
-                    onClick={(event) => handleTemplateClick(event, template)}
-                    title={template.description}
-                  >
-                    <span className="node-template-icon">{template.icon}</span>
-                    <span className="node-template-label">{template.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {nodeLibraryGroups.flatMap((group) => {
+              const templates = nodeTemplates.filter((template) => template.category === group.category);
+              if (!templates.length) return [];
+              return [
+                <div className="node-category" key={group.category}>
+                  <h4>{group.title}</h4>
+                  <div className="node-template-list">
+                    {templates.map((template) => (
+                      <button
+                        key={template.type}
+                        data-node-template={template.type}
+                        className="node-template-item"
+                        onClick={(event) => handleTemplateClick(event, template)}
+                        title={template.description}
+                      >
+                        <span className="node-template-icon">{template.icon}</span>
+                        <span className="node-template-label">{template.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>,
+              ];
+            })}
           </aside>
+        )}
+
+        {/* AI 助手面板 */}
+        {showAIAssistant && (
+          <div className="canvas-ai-drawer">
+            <AIWorkflowAssistant onGenerateWorkflow={handleAIGenerateWorkflow} />
+          </div>
         )}
 
         {/* 画布区域 */}
         <div
           ref={canvasRef}
-          className="canvas-area"
+          className={`canvas-area ${isPanning ? "is-panning" : ""}`}
           onMouseDown={handleCanvasMouseDown}
           style={{
             cursor: isPanning ? "grabbing" : "grab",
@@ -694,17 +390,9 @@ export default function InspirationCanvasPanel() {
                 const target = canvas.nodes.find((node) => node.id === connection.targetNodeId);
                 if (!source || !target) return null;
                 const path = connectionPath(source, target, connection);
-                const label = connectionLabelPosition(source, target, connection);
                 return (
                   <g key={connection.id} className="canvas-connection-group">
                     <path className="canvas-connection-path" d={path} markerEnd="url(#canvas-arrow)" onClick={() => deleteConnection(connection.id)} />
-                    <foreignObject className="canvas-connection-label-wrap" x={label.x} y={label.y} width={label.width} height="30">
-                      <button className="canvas-connection-label" type="button" title="点击删除这条流程线" aria-label={`删除连线：${source.label} ${connection.sourceHandle || "output"} 到 ${target.label} ${connection.targetHandle || "input"}`} onClick={() => deleteConnection(connection.id)}>
-                        <span>{connection.sourceHandle || "output"}</span>
-                        <i>→</i>
-                        <span>{connection.targetHandle || "input"}</span>
-                      </button>
-                    </foreignObject>
                   </g>
                 );
               })}
@@ -716,7 +404,7 @@ export default function InspirationCanvasPanel() {
               return (
                 <div
                   key={node.id}
-                  className={`canvas-node ${selectedNode === node.id ? "selected" : ""} status-${nodeStatus}`}
+                  className={`canvas-node ${selectedNode === node.id ? "selected" : ""} ${draggingNode === node.id ? "dragging" : ""} status-${nodeStatus}`}
                   style={{
                     left: node.position.x,
                     top: node.position.y,
@@ -764,6 +452,30 @@ export default function InspirationCanvasPanel() {
               );
             })}
 
+            <div className="canvas-connection-label-layer" aria-label="画布流程连线标签">
+              {canvas.connections.map((connection) => {
+                const source = canvas.nodes.find((node) => node.id === connection.sourceNodeId);
+                const target = canvas.nodes.find((node) => node.id === connection.targetNodeId);
+                if (!source || !target) return null;
+                const label = connectionLabelPosition(source, target, connection);
+                return (
+                  <button
+                    key={connection.id}
+                    className="canvas-connection-label"
+                    type="button"
+                    title="点击删除这条流程线"
+                    aria-label={`删除连线：${source.label} ${connection.sourceHandle || "output"} 到 ${target.label} ${connection.targetHandle || "input"}`}
+                    style={{ left: label.x, top: label.y, width: label.width }}
+                    onClick={() => deleteConnection(connection.id)}
+                  >
+                    <span>{connection.sourceHandle || "output"}</span>
+                    <i>→</i>
+                    <span>{connection.targetHandle || "input"}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* 空状态提示 */}
             {canvas.nodes.length === 0 && (
               <div className="canvas-empty-state">
@@ -781,48 +493,10 @@ export default function InspirationCanvasPanel() {
               </div>
             )}
           </div>
-          {canvas.nodes.length > 0 && (
-            <div className="canvas-flow-map" aria-label="画布流程概览">
-              <div className="canvas-flow-map-head">
-                <Workflow size={14} />
-                <strong>流程概览</strong>
-                <small>{flowSummary.connectedCount}/{canvas.nodes.length} 已接入</small>
-              </div>
-              <div className="canvas-flow-map-grid">
-                <span><b>入口</b>{flowSummary.entryLabels.join(" / ") || "未识别"}</span>
-                <span><b>出口</b>{flowSummary.exitLabels.join(" / ") || "未识别"}</span>
-                <span><b>分支</b>{flowSummary.branchLabels.join(" / ") || "无"}</span>
-              </div>
-              <ol className="canvas-flow-map-path">
-                {flowSummary.orderedNodes.slice(0, 8).map((node, index) => (
-                  <li key={node.id}>
-                    <em>{index + 1}</em>
-                    <strong>{node.label}</strong>
-                    <small>{node.incoming} 入 / {node.outgoing} 出</small>
-                  </li>
-                ))}
-              </ol>
-              {flowSummary.orderedNodes.length > 8 && <p>还有 {flowSummary.orderedNodes.length - 8} 个节点，整理布局后可继续查看。</p>}
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
-}
-
-function canvasToWorkflowHandoff(canvas: WorkflowCanvas) {
-  return {
-    source: "inspiration",
-    sourceId: canvas.id,
-    noteId: "",
-    title: canvas.name || "灵感画布工作流",
-    content: renderCanvasSummary(canvas),
-    mood: "灵感画布",
-    stage: "growing",
-    createdAt: new Date().toISOString(),
-    canvas,
-  };
 }
 
 function autoConnection(source: WorkflowNode, target: WorkflowNode, sourceHandle?: string, targetHandle?: string): NodeConnection {
@@ -835,12 +509,6 @@ function autoConnection(source: WorkflowNode, target: WorkflowNode, sourceHandle
   };
 }
 
-function flowPlacementOffset(existingNodes: WorkflowNode[]): NodePosition {
-  if (!existingNodes.length) return { x: 0, y: 0 };
-  const maxY = Math.max(...existingNodes.map((node) => node.position.y));
-  return { x: 0, y: maxY + 260 };
-}
-
 function createCanvasNode(template: NodeTemplate, nodeIndex: number, position?: NodePosition): WorkflowNode {
   return {
     id: `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -851,6 +519,7 @@ function createCanvasNode(template: NodeTemplate, nodeIndex: number, position?: 
       y: 110 + Math.floor(nodeIndex / 3) * 170,
     },
     config: { ...template.defaultConfig },
+    runtime: template.runtime ? { ...template.runtime } : undefined,
     inputs: [...template.inputs],
     outputs: [...template.outputs],
   };
@@ -933,10 +602,6 @@ function nodeHeight(node: WorkflowNode) {
   const outputRows = node.outputs.length * nodePortRowHeight;
   const groupGap = node.inputs.length && node.outputs.length ? 10 : 0;
   return nodeHeaderHeight + 24 + Math.max(nodePortRowHeight, inputRows + outputRows + groupGap);
-}
-
-function canvasFlowIssue(canvas: WorkflowCanvas) {
-  return diagnoseCanvasFlow(canvas).issue;
 }
 
 function diagnoseCanvasFlow(canvas: WorkflowCanvas) {
@@ -1063,25 +728,6 @@ function nodePortAnchor(node: WorkflowNode, handle: string, direction: "input" |
   };
 }
 
-function renderCanvasSummary(canvas: WorkflowCanvas) {
-  const nodeLabels = new Map(canvas.nodes.map((node) => [node.id, node.label]));
-  const orderedNodes = orderedCanvasNodes(canvas);
-  const nodes = orderedNodes.map((node, index) => {
-    const incomingCount = canvas.connections.filter((connection) => connection.targetNodeId === node.id).length;
-    const outgoingCount = canvas.connections.filter((connection) => connection.sourceNodeId === node.id).length;
-    const configText = Object.entries(node.config ?? {})
-      .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
-      .map(([key, value]) => `${key}: ${String(value)}`)
-      .join("; ");
-    return `${index + 1}. ${node.label}（${node.type}，${incomingCount} 入 / ${outgoingCount} 出）${configText ? ` - ${configText}` : ""}`;
-  }).join("\n");
-  const connections = canvas.connections.length
-    ? canvas.connections.map((connection, index) => `${index + 1}. ${nodeLabels.get(connection.sourceNodeId) || connection.sourceNodeId}:${connection.sourceHandle} -> ${nodeLabels.get(connection.targetNodeId) || connection.targetNodeId}:${connection.targetHandle}`).join("\n")
-    : "暂无连接，按节点顺序执行。";
-  const flowStats = `节点：${canvas.nodes.length}；连线：${canvas.connections.length}；入口：${flowEntryLabels(canvas).join(" / ") || "未识别"}`;
-  return [`# ${canvas.name || "灵感画布工作流"}`, canvas.description, "## 流程概览", flowStats, "## 执行顺序", nodes, "## 连接", connections].filter(Boolean).join("\n\n");
-}
-
 function orderedCanvasNodes(canvas: WorkflowCanvas) {
   if (!canvas.connections.length) return canvas.nodes;
   const nodeById = new Map(canvas.nodes.map((node) => [node.id, node]));
@@ -1114,43 +760,31 @@ function orderedCanvasNodes(canvas: WorkflowCanvas) {
   return orderedIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
 }
 
-function flowEntryLabels(canvas: WorkflowCanvas) {
-  const targets = new Set(canvas.connections.map((connection) => connection.targetNodeId));
-  return canvas.nodes.filter((node) => !targets.has(node.id)).map((node) => node.label);
-}
-
 function summarizeCanvasFlow(canvas: WorkflowCanvas) {
   const nodeIds = new Set(canvas.nodes.map((node) => node.id));
   const validConnections = canvas.connections.filter((connection) => nodeIds.has(connection.sourceNodeId) && nodeIds.has(connection.targetNodeId) && connection.sourceNodeId !== connection.targetNodeId);
   const incomingCount = new Map(canvas.nodes.map((node) => [node.id, 0]));
   const outgoingCount = new Map(canvas.nodes.map((node) => [node.id, 0]));
-  const connectedNodeIds = new Set<string>();
   validConnections.forEach((connection) => {
     incomingCount.set(connection.targetNodeId, (incomingCount.get(connection.targetNodeId) ?? 0) + 1);
     outgoingCount.set(connection.sourceNodeId, (outgoingCount.get(connection.sourceNodeId) ?? 0) + 1);
-    connectedNodeIds.add(connection.sourceNodeId);
-    connectedNodeIds.add(connection.targetNodeId);
   });
-  const orderedNodes = orderedCanvasNodes({ ...canvas, connections: validConnections }).map((node) => ({
-    id: node.id,
-    label: node.label,
-    incoming: incomingCount.get(node.id) ?? 0,
-    outgoing: outgoingCount.get(node.id) ?? 0,
-  }));
   return {
-    orderedNodes,
-    connectedCount: connectedNodeIds.size,
     entryLabels: canvas.nodes.filter((node) => (incomingCount.get(node.id) ?? 0) === 0).map((node) => node.label),
     exitLabels: canvas.nodes.filter((node) => (outgoingCount.get(node.id) ?? 0) === 0).map((node) => node.label),
-    branchLabels: canvas.nodes.filter((node) => (outgoingCount.get(node.id) ?? 0) > 1).map((node) => node.label),
   };
+}
+
+function isCanvasPanBlocked(target: EventTarget | null) {
+  if (!(target instanceof Element)) return true;
+  return Boolean(target.closest(".canvas-node, button, input, textarea, select, a, [role='button']"));
 }
 
 function loadCanvas(): WorkflowCanvas {
   try {
     const stored = localStorage.getItem(canvasStorageKey);
     if (stored) {
-      return JSON.parse(stored);
+      return normalizeStoredCanvas(JSON.parse(stored));
     }
   } catch (error) {
     console.error("Failed to load canvas:", error);
@@ -1165,4 +799,51 @@ function loadCanvas(): WorkflowCanvas {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+function normalizeStoredCanvas(canvas: WorkflowCanvas): WorkflowCanvas {
+  const nodes = canvas.nodes.map(withTemplateRuntime).filter((node) => legacyNodeType(node) !== "http-request");
+  const removedNodeIds = new Set(canvas.nodes.filter((node) => legacyNodeType(node) === "http-request").map((node) => node.id));
+  const preservedConnections = canvas.connections.filter((connection) => !removedNodeIds.has(connection.sourceNodeId) && !removedNodeIds.has(connection.targetNodeId));
+  const bridgedConnections = bridgeRemovedNodes(canvas.nodes, canvas.connections, removedNodeIds, new Set(nodes.map((node) => node.id)));
+  return {
+    ...canvas,
+    nodes,
+    connections: dedupeConnections([...preservedConnections, ...bridgedConnections]),
+  };
+}
+
+function withTemplateRuntime(node: WorkflowNode): WorkflowNode {
+  const template = getNodeTemplate(node.type);
+  if (!template?.runtime || node.runtime) return node;
+  return { ...node, runtime: { ...template.runtime } };
+}
+
+function legacyNodeType(node: WorkflowNode) {
+  return String((node as { type?: unknown }).type ?? "");
+}
+
+function bridgeRemovedNodes(nodes: WorkflowNode[], connections: NodeConnection[], removedNodeIds: Set<string>, liveNodeIds: Set<string>) {
+  return nodes.flatMap((node) => {
+    if (!removedNodeIds.has(node.id)) return [];
+    const incoming = connections.filter((connection) => connection.targetNodeId === node.id && liveNodeIds.has(connection.sourceNodeId));
+    const outgoing = connections.filter((connection) => connection.sourceNodeId === node.id && liveNodeIds.has(connection.targetNodeId));
+    return incoming.flatMap((source) => outgoing.map((target) => ({
+      id: `conn_${source.sourceNodeId}_${target.targetNodeId}_${Date.now()}`,
+      sourceNodeId: source.sourceNodeId,
+      sourceHandle: source.sourceHandle,
+      targetNodeId: target.targetNodeId,
+      targetHandle: target.targetHandle,
+    })));
+  });
+}
+
+function dedupeConnections(connections: NodeConnection[]) {
+  const seen = new Set<string>();
+  return connections.filter((connection) => {
+    const key = `${connection.sourceNodeId}:${connection.sourceHandle}->${connection.targetNodeId}:${connection.targetHandle}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

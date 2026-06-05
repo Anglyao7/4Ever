@@ -18,6 +18,8 @@ from app.database import Database, now_iso, row_to_dict, touch_user
 
 
 PASSWORD_ITERATIONS = 210000
+PASSWORD_MIN_LENGTH = 6
+PASSWORD_MAX_LENGTH = 128
 
 
 class SignUpRequest(BaseModel):
@@ -61,8 +63,8 @@ def router(db: Database, settings: Settings) -> APIRouter:
             raise HTTPException(status_code=422, detail="Username must be between 3 and 80 characters.")
         if len(email) < 5 or len(email) > 160 or "@" not in email:
             raise HTTPException(status_code=422, detail="Email is invalid.")
-        if len(payload.password) < 8 or len(payload.password) > 128:
-            raise HTTPException(status_code=422, detail="Password must be between 8 and 128 characters.")
+        if len(payload.password) < PASSWORD_MIN_LENGTH or len(payload.password) > PASSWORD_MAX_LENGTH:
+            raise HTTPException(status_code=422, detail=f"Password must be between {PASSWORD_MIN_LENGTH} and {PASSWORD_MAX_LENGTH} characters.")
         display_name = (payload.display_name or payload.username).strip() or payload.username.strip()
         if len(display_name) > 120:
             raise HTTPException(status_code=422, detail="display_name must be 120 characters or fewer.")
@@ -191,8 +193,8 @@ def router(db: Database, settings: Settings) -> APIRouter:
     @api.post("/password")
     def change_password(request: Request, payload: PasswordChangeRequest) -> dict[str, str]:
         user = require_user(request, db)
-        if len(payload.new_password) < 8 or len(payload.new_password) > 128:
-            raise HTTPException(status_code=422, detail="New password must be between 8 and 128 characters.")
+        if len(payload.new_password) < PASSWORD_MIN_LENGTH or len(payload.new_password) > PASSWORD_MAX_LENGTH:
+            raise HTTPException(status_code=422, detail=f"New password must be between {PASSWORD_MIN_LENGTH} and {PASSWORD_MAX_LENGTH} characters.")
         if not verify_password(payload.current_password, str(user["password_hash"])):
             raise HTTPException(status_code=401, detail="Current password is incorrect.")
         with db.connect() as conn:

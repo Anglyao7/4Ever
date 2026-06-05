@@ -4,6 +4,9 @@ export interface AuthUser {
   email: string;
   display_name: string;
   avatar_url?: string | null;
+  cover_url?: string | null;
+  bio: string;
+  location: string;
   role: string;
   created_at: string;
 }
@@ -20,7 +23,9 @@ export interface UserSearchResult {
   display_name: string;
   status: string;
   bio: string;
+  location: string;
   avatar_url?: string | null;
+  cover_url?: string | null;
 }
 
 export interface AdminUser {
@@ -76,6 +81,8 @@ export interface SignUpPayload {
 export interface AccountUpdatePayload {
   display_name?: string;
   email?: string;
+  bio?: string;
+  location?: string;
 }
 
 export interface AvatarUploadPayload {
@@ -84,7 +91,21 @@ export interface AvatarUploadPayload {
   data_base64: string;
 }
 
+export type ProfileCoverUploadPayload = AvatarUploadPayload;
+
 export interface PasswordChangePayload {
   current_password: string;
   new_password: string;
+}
+
+export interface BoundPlatform {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "empty" | string;
+  detail: string;
+}
+
+export interface PlatformSummary {
+  platforms: BoundPlatform[];
 }

@@ -26,14 +26,14 @@
 
 ## 为什么你的脚本比 TokenArena 更多
 
-核心原因：TokenArena 采用更保守的“去重、非重叠字段、计费友好”口径；你的脚本采用更激进的“本地日志原始累计”口径。
+核心原因：TokenArena 采用更保守的“去重、非重叠字段、计费友好”口径；旧本地脚本采用更激进的“本地日志原始累计”口径。4Ever CLI 现在改为“本地日志去重累计”口径：保留更广的数据覆盖范围，但会按稳定事件键去掉重复 usage 记录。
 
 这两个目标不同：
 
 - TokenArena 更适合公开排行榜和避免重复计数。
-- 你的脚本更适合回答“本机所有 AI 工具日志里出现过多少 Token 用量”。
+- 4Ever CLI 更适合回答“本机所有 AI 工具日志里出现过多少不重复的 Token 用量”。
 
-如果 4Ever 的目标是“尽量不漏掉用户真实消耗痕迹”，应该采用你的脚本口径，并在产品里明确说明这是“本地日志累计口径”。
+如果 4Ever 的目标是“尽量不漏掉用户真实消耗痕迹”，应该采用本地日志去重累计口径，并在产品里明确说明它不是账单口径。
 
 ## 主要差异点
 
@@ -44,7 +44,7 @@
 - 同时扫描 `~/.codex/sessions` 和 `~/.codex/archived_sessions`。
 - 通过 `~/.codex/state_5.sqlite` 的 `threads` 表识别 `codex_app` / `codex_cli` / unknown。
 - 按 `token_count` 原始事件累计。
-- 不把重复记录过滤掉。
+- 按事件 id、消息 id 或 usage 内容指纹过滤重复记录。
 - `total_tokens = input_tokens + cached_input_tokens + cache_creation_input_tokens + output_tokens + tool_tokens`。
 - `reasoning_output_tokens` 单独展示，不塞进 total。
 
@@ -58,7 +58,8 @@ TokenArena：
 
 结果：
 
-- 你的脚本会更大，因为它保留原始事件累计、包含归档会话，并且没有从 input/output 中扣掉 cached/reasoning。
+- 旧本地脚本会更大，因为它保留原始事件累计、包含归档会话，并且没有从 input/output 中扣掉 cached/reasoning。
+- 当前 4Ever CLI 仍同时读取 `sessions` 和 `archived_sessions`，但会去掉重复 usage 事件。
 - TokenArena 会更小，因为它主动避免重叠字段和累计快照重复。
 
 本机脚本里 Codex 占比非常高：
@@ -75,7 +76,7 @@ TokenArena：
 - 扫描 `~/.claude/projects/**/*.jsonl`。
 - 读取 assistant message 的 usage。
 - 累计 `input_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`、`output_tokens`。
-- 明确“不跳过重复记录”。
+- 通过 `uuid` / message id / usage 指纹跳过重复 usage 记录。
 
 TokenArena：
 
@@ -203,13 +204,13 @@ TokenArena 支持更多 parser，例如：
 
 ## 4Ever 应采用的 npm 采集策略
 
-建议把 4Ever 的 npm 包定义成“本地日志累计口径”，保持历史本地脚本快照的统计语义，而不是完全照搬 TokenArena 的去重口径。
+建议把 4Ever 的 npm 包定义成“本地日志去重累计口径”，保留历史本地脚本的覆盖范围，同时避免同一 usage 记录重复计入。
 
 建议规则：
 
 1. Codex 同时读取 `sessions` 和 `archived_sessions`。
 2. Codex 通过 `state_5.sqlite` 区分 `codex_app`、`codex_cli`、unknown。
-3. 默认按原始 token usage 记录累计，不主动对 `token_count` 做 delta 去重。
+3. 默认对 usage 记录做稳定键去重；Codex 的 `total_token_usage` 快照继续做 delta，避免累计快照重复。
 4. `total_tokens` 统一包含 reasoning，保持：
    `input + cached_input + cache_creation_input + output + reasoning + tool`。
 5. `reasoning_output_tokens` 同时单独展示，便于核对推理消耗来源。
@@ -247,7 +248,7 @@ npm publish --access public
 
 ## 当前风险
 
-1. 你的脚本口径会比 TokenArena 高，这是产品选择，不是 bug，但必须在 UI 和 README 说明。
-2. 如果把“原始累计口径”用于公开排行榜，用户之间可能因为工具日志重复程度不同而不可完全公平。
-3. 如果追求账单级准确，应提供第二个“去重/计费估算口径”，不要和“本地累计口径”混在同一个数字里。
+1. 4Ever CLI 口径仍可能比 TokenArena 高，这是覆盖范围选择，不是 bug，但必须在 UI 和 README 说明。
+2. 去重键依赖日志字段质量；没有稳定 id 的来源会退回到时间、模型、项目和 usage 指纹。
+3. 如果追求账单级准确，应提供第二个“计费估算口径”，不要和“本地日志去重累计口径”混在同一个数字里。
 4. 当前 4Ever 页面如果默认展示“全部历史”，用户看到的数字会明显高于 30 天视图，应在范围切换上保持醒目。

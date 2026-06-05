@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import admin, auth, direct_chat, images, maps, modules, providers, token_usage
 from app.agents.catalog import catalog, configured_mcp_server
+from app.agents.mcp import call_mcp_tool, list_mcp_tools, tool_names_from_result
 from app.agents.runner import (
     RUN_EVENTS,
     cancel_saved_run,
@@ -41,7 +42,7 @@ app.add_middleware(
 settings.media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/api/media", StaticFiles(directory=settings.media_root), name="media")
 
-app.include_router(providers.router(settings))
+app.include_router(providers.router(settings, database))
 app.include_router(images.router())
 app.include_router(maps.router(settings))
 app.include_router(auth.router(database, settings))
@@ -102,7 +103,7 @@ def mcp_tools(server_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="MCP server not found.")
     if not server["enabled"]:
         raise HTTPException(status_code=403, detail="MCP server is disabled by admin policy.")
-    reason = "" if server["configured"] and server["live_enabled"] else (server["required_env"] + " is not configured." if not server["configured"] else "BIGMODEL_MCP_LIVE is disabled.")
+    result = list_mcp_tools(server, settings)
     return {
         "server_id": server["id"],
         "server_name": server["name"],
@@ -110,10 +111,10 @@ def mcp_tools(server_id: str) -> dict[str, Any]:
         "enabled": server["enabled"],
         "configured": server["configured"],
         "live_enabled": server["live_enabled"],
-        "status": "planned",
-        "tools": server["tool_names"],
-        "reason": reason,
-        "error": "",
+        "status": result.get("status", "planned"),
+        "tools": tool_names_from_result(result, server["tool_names"]),
+        "reason": result.get("reason", ""),
+        "error": result.get("error", ""),
     }
 
 
@@ -126,7 +127,7 @@ def mcp_tool_call(server_id: str, payload: ToolCallRequest) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail="MCP server is disabled by admin policy.")
     if payload.tool_name not in server["tool_names"]:
         raise HTTPException(status_code=400, detail="Tool is not allowlisted for this MCP server.")
-    reason = "" if server["configured"] and server["live_enabled"] else (server["required_env"] + " is not configured." if not server["configured"] else "BIGMODEL_MCP_LIVE is disabled.")
+    result = call_mcp_tool(server, payload.tool_name, payload.arguments, settings)
     return {
         "server_id": server["id"],
         "server_name": server["name"],
@@ -134,11 +135,11 @@ def mcp_tool_call(server_id: str, payload: ToolCallRequest) -> dict[str, Any]:
         "enabled": server["enabled"],
         "configured": server["configured"],
         "live_enabled": server["live_enabled"],
-        "status": "planned",
+        "status": result.get("status", "planned"),
         "arguments": payload.arguments,
-        "result": {},
-        "reason": reason,
-        "error": "",
+        "result": result.get("result", {}),
+        "reason": result.get("reason", ""),
+        "error": result.get("error", ""),
     }
 
 

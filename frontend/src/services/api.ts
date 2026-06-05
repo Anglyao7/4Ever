@@ -4,9 +4,12 @@ import type {
   ChatMessage,
   ChatResponse,
   ChatSendPayload,
+  ChatStreamEvent,
   DirectMessageRecord,
   FriendRequestRecord,
   FriendSummary,
+  ModelProfile,
+  ModelProfileSyncResponse,
   ProviderConnectionResponse,
   ProviderInfo,
   ProviderModelsResponse,
@@ -19,7 +22,9 @@ import type {
   AvatarUploadPayload,
   AuthResponse,
   AuthUser,
+  PlatformSummary,
   PasswordChangePayload,
+  ProfileCoverUploadPayload,
   UserSearchResult,
   SignInPayload,
   SignUpPayload,
@@ -49,7 +54,7 @@ export function resolveMediaUrl(path?: string | null): string | undefined {
   if (!path) {
     return undefined;
   }
-  if (/^https?:\/\//i.test(path)) {
+  if (/^(https?:|data:|blob:)/i.test(path)) {
     return path;
   }
   if (API_BASE_URL) {
@@ -548,6 +553,18 @@ export async function removeFriend(token: string, userId: string): Promise<void>
   }
 }
 
+export async function fetchCurrentUserPlatforms(token: string): Promise<PlatformSummary> {
+  const response = await fetch(apiUrl("/api/auth/me/platforms"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
 export async function updateCurrentUser(token: string, payload: AccountUpdatePayload): Promise<AuthUser> {
   const response = await fetch(apiUrl("/api/auth/me"), {
     method: "PATCH",
@@ -565,6 +582,21 @@ export async function updateCurrentUser(token: string, payload: AccountUpdatePay
 
 export async function uploadCurrentUserAvatar(token: string, payload: AvatarUploadPayload): Promise<AuthUser> {
   const response = await fetch(apiUrl("/api/auth/me/avatar"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function uploadCurrentUserCover(token: string, payload: ProfileCoverUploadPayload): Promise<AuthUser> {
+  const response = await fetch(apiUrl("/api/auth/me/cover"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -696,6 +728,33 @@ export async function fetchProviderModels(config: ChatConfig): Promise<ProviderM
   return response.json();
 }
 
+export async function fetchModelProfiles(): Promise<ModelProfileSyncResponse> {
+  const response = await fetch(apiUrl("/api/catalog/model-profiles"));
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return modelProfileResponseFromApi(await response.json());
+}
+
+export async function syncModelProfiles(profiles: ModelProfile[], activeProfileId: string): Promise<ModelProfileSyncResponse> {
+  const response = await fetch(apiUrl("/api/catalog/model-profiles"), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      profiles: profiles.map(modelProfileToApi),
+      active_profile_id: activeProfileId,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return modelProfileResponseFromApi(await response.json());
+}
+
 function tokenUsageRangeQuery(range: string) {
   const [start, end] = range.startsWith("custom:") ? range.slice("custom:".length).split(":") : [];
   if (start && end) {
@@ -725,6 +784,7 @@ export async function streamChat(
   config: ChatConfig,
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
+  onEvent?: (event: ChatStreamEvent) => void,
 ): Promise<string> {
   const response = await fetch(apiUrl("/api/chat/stream"), {
     method: "POST",
@@ -740,36 +800,78 @@ export async function streamChat(
   }
 
   if (!response.body) {
-    const content = await response.text();
-    if (content) {
-      onChunk(content);
-    }
-    return content;
+    return handleChatStreamText(await response.text(), onChunk, onEvent);
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let content = "";
+  let buffer = "";
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
-    const chunk = decoder.decode(value, { stream: true });
-    if (chunk) {
-      content += chunk;
-      onChunk(chunk);
-    }
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\n\n+/);
+    buffer = blocks.pop() ?? "";
+    content += consumeChatStreamBlocks(blocks, onChunk, onEvent);
   }
 
-  const tail = decoder.decode();
-  if (tail) {
-    content += tail;
-    onChunk(tail);
-  }
+  buffer += decoder.decode();
+  content += consumeChatStreamBlocks([buffer], onChunk, onEvent);
 
   return content;
+}
+
+function handleChatStreamText(text: string, onChunk: (chunk: string) => void, onEvent?: (event: ChatStreamEvent) => void) {
+  const content = consumeChatStreamBlocks([text], onChunk, onEvent);
+  if (!content && text && !text.includes("event:")) {
+    onChunk(text);
+    return text;
+  }
+  return content;
+}
+
+function consumeChatStreamBlocks(blocks: string[], onChunk: (chunk: string) => void, onEvent?: (event: ChatStreamEvent) => void) {
+  let content = "";
+  for (const block of blocks) {
+    const event = parseChatStreamEvent(block);
+    if (!event) {
+      continue;
+    }
+    onEvent?.(event);
+    if (event.event === "message:chunk") {
+      const chunk = typeof event.data.content === "string" ? event.data.content : "";
+      if (chunk) {
+        content += chunk;
+        onChunk(chunk);
+      }
+    }
+    if (event.event === "run:error") {
+      const message = typeof event.data.message === "string" ? event.data.message : "AI 流式响应失败";
+      throw new Error(message);
+    }
+  }
+  return content;
+}
+
+function parseChatStreamEvent(block: string): ChatStreamEvent | null {
+  const lines = block.split("\n").map((line) => line.trimEnd()).filter(Boolean);
+  const eventLine = lines.find((line) => line.startsWith("event:"));
+  const dataLines = lines.filter((line) => line.startsWith("data:"));
+  if (!eventLine || !dataLines.length) {
+    return null;
+  }
+  try {
+    return {
+      event: eventLine.replace("event:", "").trim() as ChatStreamEvent["event"],
+      data: JSON.parse(dataLines.map((line) => line.replace("data:", "").trim()).join("\n")),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
@@ -779,6 +881,7 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
   }));
 
   return {
+    profile_id: config.profileId,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
@@ -786,6 +889,8 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
     system_prompt: config.systemPrompt,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
+    supports_vision: config.supportsVision,
+    fallback_model: config.fallbackModel,
     messages: outboundMessages,
   };
 }
@@ -819,6 +924,129 @@ function providerConnectionPayload(config: ChatConfig) {
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
+  };
+}
+
+function modelProfileResponseFromApi(payload: { profiles?: unknown[]; active_profile_id?: string }): ModelProfileSyncResponse {
+  const profiles = Array.isArray(payload.profiles) ? payload.profiles.map(modelProfileFromApi).filter((profile): profile is ModelProfile => Boolean(profile)) : [];
+  const activeProfileId = payload.active_profile_id ?? profiles[0]?.id ?? "";
+  return { profiles, activeProfileId };
+}
+
+function modelProfileToApi(profile: ModelProfile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    provider: profile.provider,
+    base_url: profile.baseUrl,
+    api_key: profile.apiKey,
+    model: profile.model,
+    system_prompt: profile.systemPrompt ?? "",
+    temperature: profile.temperature,
+    max_tokens: profile.maxTokens,
+    supports_vision: Boolean(profile.supportsVision),
+    fallback_model: profile.fallbackModel ?? "",
+    enabled: true,
+    persona: profile.persona,
+    pet: profile.pet,
+  };
+}
+
+function modelProfileFromApi(value: unknown): ModelProfile | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const provider = normalizeProviderField(item.provider);
+  const model = stringField(item.model);
+  if (!id || !provider || !model) {
+    return null;
+  }
+  const name = stringField(item.name) || model;
+  return {
+    id,
+    name,
+    provider,
+    baseUrl: stringField(item.base_url),
+    apiKey: stringField(item.api_key),
+    model,
+    systemPrompt: stringField(item.system_prompt),
+    temperature: numberField(item.temperature, 0.7),
+    maxTokens: numberField(item.max_tokens, 1024),
+    supportsVision: Boolean(item.supports_vision),
+    fallbackModel: stringField(item.fallback_model),
+    persona: profilePersonaFromApi(item.persona, name),
+    pet: profilePetFromApi(item.pet),
+  };
+}
+
+function normalizeProviderField(value: unknown): ModelProfile["provider"] | "" {
+  return value === "openai" || value === "anthropic" || value === "gemini" ? value : "";
+}
+
+function stringField(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function numberField(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function objectField(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function profilePersonaFromApi(value: unknown, fallbackName: string): ModelProfile["persona"] {
+  const item = objectField(value);
+  return {
+    alias: stringField(item?.alias) || fallbackName,
+    role: stringField(item?.role) || "助手",
+    temperament: stringField(item?.temperament) || "清晰、直接",
+    notes: stringField(item?.notes),
+  };
+}
+
+function profilePetFromApi(value: unknown): ModelProfile["pet"] {
+  const fallback = defaultProfilePet();
+  const item = objectField(value);
+  if (!item) return fallback;
+  return {
+    ...fallback,
+    name: stringField(item.name) || fallback.name,
+    species: isKnownPetSpecies(item.species) ? item.species : fallback.species,
+    level: numberField(item.level, fallback.level),
+    experience: numberField(item.experience, fallback.experience),
+    mood: numberField(item.mood, fallback.mood),
+    satiety: numberField(item.satiety, fallback.satiety),
+    energy: numberField(item.energy, fallback.energy),
+    lastAction: stringField(item.lastAction) || fallback.lastAction,
+    lastActionAt: stringField(item.lastActionAt) || undefined,
+    dailyInteractionDate: stringField(item.dailyInteractionDate) || fallback.dailyInteractionDate,
+    dailyFeedCount: numberField(item.dailyFeedCount, fallback.dailyFeedCount),
+    dailyPetCount: numberField(item.dailyPetCount, fallback.dailyPetCount),
+    dailyQuestCount: numberField(item.dailyQuestCount, fallback.dailyQuestCount),
+  };
+}
+
+function isKnownPetSpecies(value: unknown): value is ModelProfile["pet"]["species"] {
+  return typeof value === "string" && ["spark", "leaf", "stone", "cloud", "cat", "dog", "rabbit", "panda", "fox", "bird", "penguin", "hamster", "turtle"].includes(value);
+}
+
+function defaultProfilePet(): ModelProfile["pet"] {
+  return {
+    name: "小火花",
+    species: "spark",
+    level: 1,
+    experience: 0,
+    mood: 80,
+    satiety: 80,
+    energy: 80,
+    lastAction: "刚刚醒来",
+    dailyInteractionDate: "",
+    dailyFeedCount: 0,
+    dailyPetCount: 0,
+    dailyQuestCount: 0,
   };
 }
 

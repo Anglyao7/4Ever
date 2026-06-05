@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Bot, CheckCircle2, Download, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
-import { fetchProviders, testProviderConnection, fetchProviderModels } from "./services/api";
+import { fetchProviders, testProviderConnection, fetchProviderModels, fetchModelProfiles, syncModelProfiles } from "./services/api";
 import type { ChatConfig, ModelProfile, ProviderFormat, ProviderInfo, ProviderModel } from "./types/chat";
 
 const profilesKey = "4ever.model.profiles";
@@ -46,6 +46,32 @@ export default function ModelHubPanel() {
     fetchProviders().then(setProviders).catch(() => setProviders(fallbackProviders));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchModelProfiles().then((remote) => {
+      if (cancelled) return;
+      if (remote.profiles.length) {
+        const nextActiveId = remote.activeProfileId || remote.profiles[0].id;
+        persistProfileSnapshot(remote.profiles, nextActiveId);
+        setProfiles(remote.profiles);
+        setActiveId(nextActiveId);
+      } else if (profiles.length) {
+        void syncModelProfiles(profiles, activeId).catch(() => undefined);
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!profiles.length) return;
+    const timer = window.setTimeout(() => {
+      void syncModelProfiles(profiles, activeId).catch(() => undefined);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [profiles, activeId]);
+
   function commit(nextProfiles: ModelProfile[], nextActiveId = activeId) {
     const previousProfiles = readStorageValue(profilesKey);
     const previousActiveId = readStorageValue(activeProfileKey);
@@ -71,6 +97,17 @@ export default function ModelHubPanel() {
       restoreStorageValue(imageProfileKey, previousImageProfileId);
       setMessage(modelHubStorageError);
       return false;
+    }
+  }
+
+  async function confirmGlobalProfile() {
+    const nextProfiles = profiles.length ? profiles : [draft];
+    if (!commit(nextProfiles, draft.id)) return;
+    try {
+      await syncModelProfiles(nextProfiles, draft.id);
+      setMessage("已确认这组全局当前配置，并同步到后端。");
+    } catch (error) {
+      setMessage(error instanceof Error ? `已保存到本地，后端同步失败：${error.message}` : "已保存到本地，后端同步失败。");
     }
   }
 
@@ -111,10 +148,12 @@ export default function ModelHubPanel() {
 
   function changeProvider(provider: ProviderFormat) {
     const option = providerOptions.find((item) => item.id === provider);
+    const model = option?.default_model ?? draft.model;
     patchProfile({
       provider,
       baseUrl: option?.default_base_url ?? draft.baseUrl,
-      model: option?.default_model ?? draft.model,
+      model,
+      supportsVision: inferVisionSupport(provider, model),
     });
   }
 
@@ -165,7 +204,7 @@ export default function ModelHubPanel() {
   return (
     <section className="react-model-hub">
       <div className="module-view-header">
-        <div><p className="eyebrow">接口配置</p><h1>接口中枢</h1></div>
+        <div><p className="eyebrow">接口配置</p><h1>中枢</h1></div>
         <button className="primary-action compact" type="button" onClick={addProfile}>
           <Plus size={16} />
           <span>新增 API</span>
@@ -198,10 +237,18 @@ export default function ModelHubPanel() {
           {!profiles.length && <div className="model-profile-empty" role="status" aria-live="polite"><KeyRound size={18} /><strong>还没有 API 配置</strong><small>先填写右侧表单；配置完整后，聊天、灵感和秩序会读取这里的全局当前配置。</small></div>}
         </aside>
         <article className="react-profile-form">
-          <label><span>API 名称<em>必填</em></span><input value={draft.name} aria-label="API 配置名称" placeholder="例如：工作助手 API" onChange={(event) => patchProfile({ name: event.target.value })} /></label>
+          <label><span>API 名称<em>*</em></span><input value={draft.name} aria-label="API 配置名称" placeholder="例如：工作助手 API" onChange={(event) => patchProfile({ name: event.target.value })} /></label>
           <label><span>供应商</span><select value={draft.provider} aria-label="模型供应商" onChange={(event) => changeProvider(event.target.value as ProviderFormat)}>{providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{providerLabel(provider.id)}</option>)}</select></label>
-          <label><span>接口地址<em>必填</em></span><input value={draft.baseUrl} aria-label="模型接口地址" placeholder="https://api.openai.com/v1" onChange={(event) => patchProfile({ baseUrl: event.target.value })} /></label>
-          <label><span>模型<em>必填</em></span><input value={draft.model} aria-label="模型名称" placeholder="可手填，或先获取模型后点击选择" onChange={(event) => patchProfile({ model: event.target.value })} /></label>
+          <label><span>接口地址<em>*</em></span><input value={draft.baseUrl} aria-label="模型接口地址" placeholder="https://api.openai.com/v1" onChange={(event) => patchProfile({ baseUrl: event.target.value })} /></label>
+          <label><span>模型<em>*</em></span><input value={draft.model} aria-label="模型名称" placeholder="可手填，或先获取模型后点击选择" onChange={(event) => patchProfile({ model: event.target.value })} /></label>
+          <div className="model-capability-row">
+            <span>模型能力</span>
+            <label>
+              <input type="checkbox" checked={Boolean(draft.supportsVision)} onChange={(event) => patchProfile({ supportsVision: event.target.checked })} />
+              <strong>支持图片理解</strong>
+            </label>
+          </div>
+          <label><span>备用模型</span><input value={draft.fallbackModel ?? ""} aria-label="备用模型" placeholder="主模型失败时使用，例如 gpt-4o-mini" onChange={(event) => patchProfile({ fallbackModel: event.target.value })} /></label>
           {availableModels.length > 0 && (
             <div className="provider-model-picker" aria-label="当前 API 支持的模型">
               <div className="provider-model-picker-head"><strong>当前 API 支持的模型</strong><small>{availableModels.length} 个</small></div>
@@ -215,17 +262,12 @@ export default function ModelHubPanel() {
               </div>
             </div>
           )}
-          <label><span>API Key<em>必填</em></span><div className="react-secret-row"><input type={showKey ? "text" : "password"} value={draft.apiKey} aria-label="模型 API Key" placeholder="粘贴供应商提供的 API Key" autoComplete="off" onChange={(event) => patchProfile({ apiKey: event.target.value })} /><button type="button" aria-label={showKey ? "隐藏 API Key" : "显示 API Key"} title={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey((value) => !value)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
-          <label><span>系统提示词</span><textarea value={draft.systemPrompt ?? ""} aria-label="系统提示词" placeholder="可选：定义助手的角色、边界和回复风格" onChange={(event) => patchProfile({ systemPrompt: event.target.value })} /></label>
+          <label><span>API Key<em>*</em></span><div className="react-secret-row"><input type={showKey ? "text" : "password"} value={draft.apiKey} aria-label="模型 API Key" placeholder="粘贴供应商提供的 API Key" autoComplete="off" onChange={(event) => patchProfile({ apiKey: event.target.value })} /><button type="button" aria-label={showKey ? "隐藏 API Key" : "显示 API Key"} title={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey((value) => !value)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
           {!canSave && <p className="react-status-line pending" role="status" aria-live="polite">请补齐 {missingFields.join("、")}，否则全局 AI 功能会保持不可用。</p>}
           <div className={`react-form-actions ${deleteConfirmId === draft.id ? "confirming-delete" : ""}`}>
             <button className="secondary-button" type="button" disabled={!canCheckModels || testingConnection} title={canCheckModels ? "测试当前 API 并读取支持模型" : `请先补齐 ${missingConnectionFields.join("、")}`} onClick={testConnection}>{testingConnection ? <LoaderCircle className="spin" size={15} /> : <KeyRound size={15} />}<span>{testingConnection ? "测试中" : "测试连接"}</span></button>
             <button className="secondary-button" type="button" disabled={!canCheckModels || fetchingModels} title={canCheckModels ? "获取当前 API 的所有模型" : `请先补齐 ${missingConnectionFields.join("、")}`} onClick={fetchCurrentModels}>{fetchingModels ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}<span>{fetchingModels ? "获取中" : "获取所有模型"}</span></button>
-            <button className="primary-action" type="button" disabled={!canSave || testingConnection || fetchingModels} onClick={() => {
-              if (commit(profiles.length ? profiles : [draft], draft.id)) {
-                setMessage("已确认这组全局当前配置。");
-              }
-            }}><Save size={15} /><span>确认全局当前</span></button>
+            <button className="primary-action" type="button" disabled={!canSave || testingConnection || fetchingModels} onClick={() => void confirmGlobalProfile()}><Save size={15} /><span>确认全局当前</span></button>
             {profiles.length > 1 && <button className="secondary-button danger" type="button" disabled={testingConnection || fetchingModels} title={deleteConfirmId === draft.id ? "再次点击会删除当前 API 配置" : "删除当前 API 配置"} onClick={requestDeleteProfile}><Trash2 size={15} /><span>{deleteConfirmId === draft.id ? "确认删除" : "删除"}</span></button>}
             {deleteConfirmId === draft.id && <button className="secondary-button compact" type="button" onClick={() => {
               setDeleteConfirmId("");
@@ -255,6 +297,8 @@ function createProfile(name: string, provider = fallbackProviders[0]): ModelProf
     model: provider.default_model,
     temperature: 0.7,
     maxTokens: 1200,
+    supportsVision: inferVisionSupport(provider.id, provider.default_model),
+    fallbackModel: "",
     systemPrompt: "",
     persona: { alias: name, role: "助手", temperament: "清晰、直接", notes: "" },
     pet: defaultPet,
@@ -282,6 +326,19 @@ function readStorageValue(key: string) {
   }
 }
 
+function persistProfileSnapshot(profiles: ModelProfile[], activeProfileId: string) {
+  try {
+    localStorage.setItem(profilesKey, JSON.stringify(profiles));
+    if (activeProfileId) {
+      localStorage.setItem(activeProfileKey, activeProfileId);
+    } else {
+      localStorage.removeItem(activeProfileKey);
+    }
+  } catch {
+    // The backend copy remains authoritative when browser storage is unavailable.
+  }
+}
+
 function restoreStorageValue(key: string, value: string | null) {
   try {
     if (value === null) {
@@ -300,9 +357,11 @@ function configFromProfile(profile: ModelProfile): ChatConfig {
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
-    systemPrompt: profile.systemPrompt ?? "",
+    systemPrompt: "",
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
+    supportsVision: profile.supportsVision,
+    fallbackModel: profile.fallbackModel ?? "",
   };
 }
 
@@ -329,6 +388,13 @@ function providerLabel(provider: ProviderFormat) {
     anthropic: "Anthropic 消息",
     gemini: "Gemini 生成",
   }[provider];
+}
+
+function inferVisionSupport(provider: ProviderFormat, model: string) {
+  const name = model.toLowerCase();
+  if (provider === "gemini") return true;
+  if (provider === "anthropic") return name.includes("claude-3") || name.includes("claude-sonnet-4") || name.includes("claude-opus-4");
+  return ["gpt-4o", "vision", "omni", "vl", "qwen-vl", "gemini"].some((marker) => name.includes(marker));
 }
 
 function messageTone(message: string) {

@@ -2,7 +2,7 @@
 
 4Ever is a modular multi-model workspace. It starts with a clean AI workbench and grows toward one place for chat, image generation, provider aggregation, automation, and personal account space.
 
-The application now runs on a Python/FastAPI backend. The legacy Go backend is kept as a migration reference, while the Python backend preserves the frontend API contract and uses LangGraph for Agent workflow execution.
+The application now runs on a Python/FastAPI backend. The previous backend surface has been reimplemented in Python, with the frontend API contract preserved and LangGraph used for Agent workflow execution.
 
 ## Features
 
@@ -12,10 +12,10 @@ The application now runs on a Python/FastAPI backend. The legacy Go backend is k
 - Chat interface with locally stored API profile selection.
 - Image generation panel with provider, model, size, and prompt controls.
 - Notes, city memories, workflow templates, and inspiration boards stored locally in the browser.
-- Agent/MCP catalog endpoint, workflow UI, and backend-gated BigModel MCP client foundation.
+- Agent/MCP catalog endpoint, workflow UI, and backend-gated BigModel MCP client.
 - Backend-owned MCP `tools/list` inspection for workflow MCP server controls.
 - Admin MCP enablement controls with backend policy enforcement and audit logs.
-- Python service with SQLite by default and the same table/API contract as the previous Go backend.
+- Python service with SQLite by default and a single backend runtime for auth, chat, admin, providers, token usage, Agent workflows, and MCP calls.
 
 ## TODO List
 
@@ -28,15 +28,10 @@ The application now runs on a Python/FastAPI backend. The legacy Go backend is k
 
 ```text
 .
-├── backend/                    # Legacy Go backend service kept as migration reference
-│   ├── cmd/server              # Go app entrypoint
-│   ├── internal/               # API routes, services, configuration, and database models
-│   ├── .env.example            # Backend environment example
-│   ├── go.mod                  # Go module dependencies
-│   └── README.md               # Backend-specific notes
-├── python_backend/             # Python FastAPI backend migration target
+├── python_backend/             # Python FastAPI backend
 │   ├── app/                    # API routes, config, and LangGraph Agent runtime
 │   ├── tests/                  # Python backend contract tests
+│   ├── .env.example            # Backend environment example
 │   └── pyproject.toml          # Python dependencies and pytest config
 ├── frontend/                   # React + Vite frontend
 │   ├── src/
@@ -66,13 +61,6 @@ pip install -e '.[dev]'
 uvicorn app.main:app --host 127.0.0.1 --port 7778
 ```
 
-The legacy Go backend can still be run as a reference implementation:
-
-```bash
-cd backend
-go run ./cmd/server
-```
-
 Run the frontend:
 
 ```bash
@@ -91,14 +79,14 @@ The Vite dev server proxies `/api` and `/health` to `http://127.0.0.1:7778`.
 
 ## Environment
 
-Backend configuration lives in `backend/.env` and can be based on `backend/.env.example`.
+Backend configuration can live in either the project root `.env` or `python_backend/.env`, based on `python_backend/.env.example`.
 
 ```env
 DATABASE_URL=sqlite:///./4ever.db
 BIGMODEL_API_KEY=
 BIGMODEL_MCP_LIVE=0
 AGENT_SYNTHESIS_LIVE=0
-AGENT_GRAPH_RUNTIME=auto
+AGENT_GRAPH_RUNTIME=langgraph
 ```
 
 Frontend configuration lives in `frontend/.env` and can be based on `frontend/.env.example`.
@@ -116,18 +104,13 @@ python3.11 -m pytest
 ```
 
 ```bash
-cd backend
-go test ./...
-```
-
-```bash
 curl http://127.0.0.1:7778/health
 curl http://127.0.0.1:7778/api/database/health
 ```
 
 ## Agent / MCP Workflow
 
-See [docs/agent-mcp-workflow.md](docs/agent-mcp-workflow.md) for the BigModel MCP, Agent, and Go graph workflow implementation.
+See [docs/agent-mcp-workflow.md](docs/agent-mcp-workflow.md) for the Python Agent, LangGraph, and BigModel MCP workflow implementation.
 
 ## Git Notes
 

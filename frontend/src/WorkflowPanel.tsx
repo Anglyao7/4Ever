@@ -212,15 +212,15 @@ const templates: WorkflowTemplate[] = [
     id: "canvas-workflow",
     name: "画布流程执行",
     nameEn: "Canvas workflow",
-    description: "从灵感画布接收节点与连线，按画布拓扑交给秩序 Agent 编排。",
+    description: "从灵感接收节点与连线，按画布拓扑交给秩序 Agent 编排。",
     descriptionEn: "Run an inspiration canvas as an ordered workflow.",
     category: "灵感",
     categoryEn: "Inspiration",
     agentId: "workflow-agent",
     mcpServerIds: [],
-    inputs: [{ key: "canvas", label: "画布摘要", labelEn: "Canvas", placeholder: "从灵感画布保存后会自动填入流程摘要。", placeholderEn: "Canvas summary", type: "textarea", required: true }],
+    inputs: [{ key: "canvas", label: "画布摘要", labelEn: "Canvas", placeholder: "从灵感保存后会自动填入流程摘要。", placeholderEn: "Canvas summary", type: "textarea", required: true }],
     nodes: [
-      { id: "canvas-source", type: "notes", title: "读取画布", titleEn: "Read canvas", description: "接收灵感画布节点、配置和连接", descriptionEn: "Read canvas nodes and connections", graphStep: "read_canvas" },
+      { id: "canvas-source", type: "notes", title: "读取画布", titleEn: "Read canvas", description: "接收灵感节点、配置和连接", descriptionEn: "Read canvas nodes and connections", graphStep: "read_canvas" },
       { id: "canvas-plan", type: "transform", title: "梳理拓扑", titleEn: "Plan topology", description: "按入口、分支和汇聚整理执行顺序", descriptionEn: "Plan topology", graphStep: "plan_canvas" },
       { id: "canvas-agent", type: "agent", title: "秩序编排", titleEn: "Orchestrate", description: "交给秩序 Agent 输出可复核行动", descriptionEn: "Create reviewed actions", graphStep: "orchestrate_canvas" },
     ],
@@ -715,7 +715,7 @@ export default function WorkflowPanel() {
                   <span><Sparkles size={16} /></span>
                   <div>
                     <strong>已接住灵感：{workflowHandoff.title}</strong>
-                    <small>{workflowHandoff.mood || "灵感温室"} {stageLabel(workflowHandoff.stage)} · 可直接运行，或继续改写输入。</small>
+                    <small>{workflowHandoff.mood || "灵感"} {stageLabel(workflowHandoff.stage)} · 可直接运行，或继续改写输入。</small>
                   </div>
                   <button type="button" aria-label="清除灵感来源" title="清除灵感来源" onClick={clearWorkflowHandoff}><X size={15} /><span>清除</span></button>
                 </div>
@@ -1447,13 +1447,13 @@ function presentationTemplate(template: WorkflowTemplate, handoff: WorkflowHando
     ...template,
     name: canvasNodes ? "画布流程执行" : "灵感拆解成行动",
     nameEn: "Inspiration to action",
-    description: canvasNodes ? "按灵感画布节点和连线组织秩序执行步骤。" : "把灵感温室生成的新方向整理成可执行步骤、风险和下一次追问。",
+    description: canvasNodes ? "按灵感节点和连线组织秩序执行步骤。" : "把灵感生成的新方向整理成可执行步骤、风险和下一次追问。",
     descriptionEn: "Turn an inspiration result into actionable steps.",
     category: "灵感",
     categoryEn: "Inspiration",
-    inputs: [{ ...template.inputs[0], label: canvasNodes ? "画布摘要" : "灵感内容", labelEn: canvasNodes ? "Canvas" : "Inspiration", placeholder: "这里已接入灵感温室结果，可直接运行或继续改写。" }],
+    inputs: [{ ...template.inputs[0], label: canvasNodes ? "画布摘要" : "灵感内容", labelEn: canvasNodes ? "Canvas" : "Inspiration", placeholder: "这里已接入灵感结果，可直接运行或继续改写。" }],
     nodes: canvasNodes ?? [
-      { id: "source", type: "notes", title: "读取灵感", titleEn: "Read inspiration", description: "接入灵感温室生成的方向和上下文", descriptionEn: "Read inspiration context" },
+      { id: "source", type: "notes", title: "读取灵感", titleEn: "Read inspiration", description: "接入灵感生成的方向和上下文", descriptionEn: "Read inspiration context" },
       { id: "transform", type: "transform", title: "拆解行动", titleEn: "Break into actions", description: "提炼下一步、依赖、风险和验证方式", descriptionEn: "Extract next actions and risks" },
       { id: "copy", type: "ai", title: "生成执行草稿", titleEn: "Draft execution plan", description: "输出可继续推进的行动草稿", descriptionEn: "Generate an execution draft" },
     ],
@@ -1511,16 +1511,14 @@ function orderedCanvasNodes(canvas: WorkflowCanvas) {
 }
 
 function workflowNodeTypeFromCanvas(type: string): WorkflowNodeType {
-  if (type === "trigger" || type === "workflow-trigger" || type === "webhook-ingress") return "source";
+  if (type === "trigger") return "source";
   if (type === "ai-chat") return "ai";
   if (type === "image-gen") return "image";
-  if (type === "send-message" || type === "chat-thread" || type === "contact-profile" || type === "calendar-event" || type === "notification-send") return "chat";
-  if (type === "note-create" || type === "notes-query" || type === "knowledge-search" || type === "file-asset" || type === "database-query" || type === "email-inbox" || type === "cloud-drive" || type === "sheet-row") return "notes";
+  if (type === "send-message" || type === "send-attachment" || type === "chat-thread") return "chat";
+  if (type === "note-create" || type === "note-save" || type === "note-delete" || type === "note-export" || type === "notes-query") return "notes";
   if (type === "agent-run") return "agent";
-  if (type === "image-studio") return "image";
-  if (type === "http-request" || type === "provider-models" || type === "api-health" || type === "memory-map" || type === "mcp-tool") return "mcp";
-  if (type === "condition" || type === "loop" || type === "delay" || type === "transform" || type === "token-usage" || type === "module-catalog" || type === "admin-audit") return "transform";
-  if (type === "cms-publish") return "chat";
+  if (type === "provider-models" || type === "api-health" || type === "memory-map" || type === "mcp-tool" || type === "http-request") return "mcp";
+  if (type === "token-usage") return "transform";
   return "transform";
 }
 
@@ -1534,7 +1532,7 @@ function WorkflowCanvasHandoffPreview(props: { canvas: WorkflowCanvas }) {
   const canvas = props.canvas;
   const summary = workflowCanvasSummary(canvas);
   return (
-    <div className="workflow-canvas-handoff" aria-label="灵感画布流程预览">
+    <div className="workflow-canvas-handoff" aria-label="灵感流程预览">
       <div className="workflow-canvas-handoff-head">
         <Workflow size={15} />
         <strong>画布流程</strong>
@@ -1668,9 +1666,9 @@ function loadWorkflowHandoff(): WorkflowHandoff | null {
       source: "inspiration",
       sourceId: parsed.sourceId || `handoff-${Date.now()}`,
       noteId: parsed.noteId || "",
-      title: parsed.title || "灵感温室结果",
+      title: parsed.title || "灵感结果",
       content: parsed.content,
-      mood: parsed.mood || "灵感温室",
+      mood: parsed.mood || "灵感",
       stage: parsed.stage || "seed",
       createdAt: parsed.createdAt || new Date().toISOString(),
       canvas: isWorkflowCanvas(parsed.canvas) ? parsed.canvas : undefined,

@@ -1,6 +1,6 @@
 # Python Backend
 
-Python/FastAPI backend for 4Ever. This directory is the migration target for replacing the Go backend while preserving the frontend API contract.
+Python/FastAPI backend for 4Ever. This is the active backend runtime for auth, chat, providers, images, maps, admin, token usage, Agent workflows, and backend-owned MCP calls.
 
 ## Run
 
@@ -43,7 +43,9 @@ uvicorn app.main:app --host 127.0.0.1 --port 7778
 - `GET /api/agents/runs/{run_id}/checkpoint`
 - `GET /api/agents/runs/{run_id}/checkpoints`
 
-Agent execution uses LangGraph `StateGraph`. SQLite table names and JSON payloads are kept compatible with the Go backend so the frontend and Token CLI can use the Python backend without API changes.
+Agent execution uses LangGraph `StateGraph`. SQLite table names and JSON payloads are kept stable so the frontend and Token CLI can use the Python backend without API changes.
+
+MCP runs in planned mode by default. Set `BIGMODEL_API_KEY` and `BIGMODEL_MCP_LIVE=1` only when the backend should make live remote BigModel MCP calls. API keys stay in backend environment variables and are never sent to the frontend.
 
 ## Checks
 

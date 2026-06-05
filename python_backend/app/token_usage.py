@@ -143,7 +143,7 @@ def router(db: Database) -> APIRouter:
     @api.get("/leaderboard")
     def leaderboard(request: Request, range: str = "30d", custom_start: str = "", custom_end: str = "") -> dict[str, Any]:
         require_user(request, db)
-        start, end = usage_range(range, custom_start, custom_end)
+        start, end = usage_range(range, custom_start, custom_end, all_window_days=184)
         delete_disabled_usage_keys(db, "")
         with db.connect() as conn:
             users = [row_to_dict(row) or {} for row in conn.execute("SELECT id, username, display_name FROM users").fetchall()]
@@ -356,7 +356,7 @@ def upsert_session(conn, api_key: dict[str, Any], device: dict[str, Any], sessio
         )
 
 
-def usage_range(value: str, custom_start: str, custom_end: str) -> tuple[datetime | None, datetime | None]:
+def usage_range(value: str, custom_start: str, custom_end: str, all_window_days: int | None = None) -> tuple[datetime | None, datetime | None]:
     if custom_start or custom_end:
         if not custom_start or not custom_end:
             raise HTTPException(status_code=422, detail="Custom range requires both custom_start and custom_end.")
@@ -372,6 +372,8 @@ def usage_range(value: str, custom_start: str, custom_end: str) -> tuple[datetim
         if end > start + timedelta(days=184):
             raise HTTPException(status_code=422, detail="Custom range cannot exceed 6 months.")
         return start, end
+    if value == "all" and all_window_days:
+        return rolling_day_range(all_window_days)
     if value == "all":
         return None, None
     days = {"1d": 1, "7d": 7, "30d": 30}.get(value)
@@ -380,6 +382,13 @@ def usage_range(value: str, custom_start: str, custom_end: str) -> tuple[datetim
     now_local = datetime.now(timezone.utc).astimezone(DISPLAY_TZ)
     end = datetime.combine(now_local.date(), time.max, DISPLAY_TZ).astimezone(timezone.utc)
     start = (datetime.combine(now_local.date(), time.min, DISPLAY_TZ) - timedelta(days=days - 1)).astimezone(timezone.utc)
+    return start, end
+
+
+def rolling_day_range(days: int) -> tuple[datetime, datetime]:
+    now_local = datetime.now(timezone.utc).astimezone(DISPLAY_TZ)
+    end = datetime.combine(now_local.date(), time.max, DISPLAY_TZ).astimezone(timezone.utc)
+    start = (datetime.combine(now_local.date(), time.min, DISPLAY_TZ) - timedelta(days=max(1, days) - 1)).astimezone(timezone.utc)
     return start, end
 
 

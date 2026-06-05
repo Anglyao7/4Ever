@@ -14,5 +14,5 @@ dist/
 .agent-home/
 .learnings/
 frontend-home.png
-backend/media/
+media/
 python_backend/media/

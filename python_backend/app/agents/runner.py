@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from app.agents.catalog import WORKFLOW_TEMPLATES, configured_agent, configured_mcp_server, workflow_policy
+from app.agents.mcp import arguments_for_tool, call_mcp_tool, render_mcp_output, select_mcp_server_for_node, tool_for_node
 from app.config import Settings
 from app.database import Database, json_dumps, json_loads, now_iso, row_to_dict
 
@@ -23,6 +24,8 @@ class AgentRunState(TypedDict, total=False):
     run_id: str
     source: str
     agent: dict[str, Any]
+    mcp_servers: list[dict[str, Any]]
+    settings: Settings
     graph_nodes: list[GraphNode]
     graph_plan: list[str]
     canvas: dict[str, Any]
@@ -61,6 +64,7 @@ def execute_run(
                 raise ValueError("MCP server is not allowed for this agent: " + str(server_id))
             if not server["enabled"]:
                 raise PermissionError("MCP server is disabled by admin policy: " + str(server_id))
+    selected_mcp_servers = _selected_mcp_servers(payload.get("mcp_server_ids") or [], settings, db)
 
     run_id = "run-" + uuid.uuid4().hex[:12]
     thread_id = resume_from.get("thread_id") if resume_from else ""
@@ -79,6 +83,8 @@ def execute_run(
         "run_id": run_id,
         "source": _first_input_value(payload.get("input") or {}),
         "agent": agent,
+        "mcp_servers": selected_mcp_servers,
+        "settings": settings,
         "graph_nodes": graph_nodes[start_index:],
         "graph_plan": [node["graph_step"] for node in graph_nodes] + (["persist"] if graph_nodes else []),
         "canvas": payload.get("canvas") or {},
@@ -448,7 +454,16 @@ def _render_node(node: GraphNode, state: AgentRunState) -> tuple[str, str]:
             "密钥由后端环境变量托管。",
         ] if part), "success"
     if node["type"] == "mcp":
-        return "\n".join(part for part in [canvas_note, "计划模式：MCP 工具调用由 Python 后端托管；启用 LIVE 后执行远端工具。"] if part), "success"
+        server = select_mcp_server_for_node(node, state.get("mcp_servers") or [])
+        settings = state.get("settings")
+        if not server:
+            return "\n".join(part for part in [canvas_note, "没有绑定 MCP Server。"] if part).strip(), "success"
+        if not settings:
+            return "\n".join(part for part in [canvas_note, "计划模式：MCP 工具调用由 Python 后端托管；缺少运行配置。"] if part), "success"
+        tool = tool_for_node(node, server)
+        result = call_mcp_tool(server, tool, arguments_for_tool(tool, source), settings)
+        status = "failed" if result.get("status") == "failed" else "success"
+        return "\n".join(part for part in [canvas_note, render_mcp_output(server, tool, result)] if part).strip(), status
     if node["type"] == "notes":
         return "\n".join(part for part in [canvas_note, _truncate(source, 120)] if part), "success"
     if node["type"] == "transform":
@@ -567,6 +582,17 @@ def _first_input_value(input_map: dict[str, Any]) -> str:
         if str(value).strip():
             return str(value)
     return ""
+
+
+def _selected_mcp_servers(server_ids: list[Any], settings: Settings | None, db: Database | None) -> list[dict[str, Any]]:
+    if not settings:
+        return []
+    servers: list[dict[str, Any]] = []
+    for server_id in server_ids:
+        server = configured_mcp_server(str(server_id), settings, db)
+        if server:
+            servers.append(server)
+    return servers
 
 
 def _resumed_graph_steps(run: dict[str, Any] | None, resume_after: str) -> list[str]:

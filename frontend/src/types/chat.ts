@@ -68,6 +68,7 @@ export interface ChatGroup {
 }
 
 export interface ChatConfig {
+  profileId?: string;
   provider: ProviderFormat;
   baseUrl: string;
   apiKey: string;
@@ -75,6 +76,8 @@ export interface ChatConfig {
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
+  supportsVision?: boolean;
+  fallbackModel?: string;
 }
 
 export interface ApiPersona {
@@ -133,7 +136,24 @@ export interface ChatResponse {
   model: string;
   content: string;
   usage?: Record<string, unknown>;
+  fallback?: {
+    from: string;
+    to: string;
+    reason?: string;
+  };
   raw?: Record<string, unknown>;
+}
+
+export type ChatStreamEventName = "run:start" | "message:chunk" | "message:done" | "token:usage" | "model:fallback" | "run:error";
+
+export interface ChatStreamEvent {
+  event: ChatStreamEventName;
+  data: Record<string, unknown>;
+}
+
+export interface ModelProfileSyncResponse {
+  profiles: ModelProfile[];
+  activeProfileId: string;
 }
 
 export interface ProviderModel {
@@ -179,7 +199,9 @@ export interface FriendProfile {
   display_name: string;
   status: string;
   bio: string;
+  location: string;
   avatar_url?: string | null;
+  cover_url?: string | null;
 }
 
 export interface FriendRequestRecord {

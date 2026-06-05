@@ -96,6 +96,7 @@ function getInitialTokenUsageView(): TokenUsageView {
 export default function TokenUsagePanel(props: { authToken: string; currentUser: AuthUser | null }) {
   const [view, setView] = useState<TokenUsageView>(() => getInitialTokenUsageView());
   const [trendMode, setTrendMode] = useState<TrendMode>("month");
+  const [customPanelOpen, setCustomPanelOpen] = useState(false);
   const [customStart, setCustomStart] = useState(() => isoDate(addDays(displayCalendarDate(new Date()), -29)));
   const [customEnd, setCustomEnd] = useState(() => displayIsoDate(new Date()));
   const [dashboard, setDashboard] = useState<TokenUsageDashboard>(emptyDashboard);
@@ -104,6 +105,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const [keys, setKeys] = useState<TokenUsageApiKey[]>([]);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, string | null>>({});
   const [keyDialog, setKeyDialog] = useState<{ mode: KeyDialogMode; key?: TokenUsageApiKey; name: string } | null>(null);
+  const [deleteKeyDialog, setDeleteKeyDialog] = useState<TokenUsageApiKey | null>(null);
   const [copied, setCopied] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -124,6 +126,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setKeys([]);
       setVisibleKeys({});
       setKeyDialog(null);
+      setDeleteKeyDialog(null);
       setCopied("");
       setLoading(false);
       return;
@@ -143,16 +146,16 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   }, [props.authToken, props.currentUser]);
 
   useEffect(() => {
-    if (trendMode !== "custom") return;
+    if (trendMode !== "custom" || !customPanelOpen) return;
     function handlePointerDown(event: PointerEvent) {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (trendControlsRef.current?.contains(target)) return;
-      setTrendMode("month");
+      setCustomPanelOpen(false);
     }
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [trendMode]);
+  }, [trendMode, customPanelOpen]);
 
   async function refresh() {
     setLoading(true);
@@ -166,7 +169,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       const [nextDashboard, nextAllTimeDashboard, nextLeaderboard, nextKeys] = await Promise.all([
         fetchTokenUsageDashboard(props.authToken, queryRange),
         fetchTokenUsageDashboard(props.authToken, "all"),
-        fetchTokenUsageLeaderboard(props.authToken, queryRange),
+        fetchTokenUsageLeaderboard(props.authToken, "all"),
         fetchTokenUsageKeys(props.authToken),
       ]);
       setDashboard(nextDashboard);
@@ -213,14 +216,20 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
 
   async function disableKey(key: TokenUsageApiKey) {
     if (!props.authToken) return;
-    if (!window.confirm(`停用 "${key.name}" 后，这个 Key 将不能继续上传数据。确定停用吗？`)) return;
     setLoading(true);
     setError("");
     try {
-      const updated = await updateTokenUsageKey(props.authToken, key.id, { status: "disabled" });
-      setKeys((current) => current.map((item) => item.id === updated.id ? updated : item));
+      await updateTokenUsageKey(props.authToken, key.id, { status: "disabled" });
+      setKeys((current) => current.filter((item) => item.id !== key.id));
+      setVisibleKeys((current) => {
+        const next = { ...current };
+        delete next[key.id];
+        return next;
+      });
+      setDeleteKeyDialog(null);
+      await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "CLI Key 停用失败");
+      setError(cause instanceof Error ? cause.message : "CLI Key 删除失败");
     } finally {
       setLoading(false);
     }
@@ -256,6 +265,10 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     setKeyDialog({ mode: "rename", key, name: key.name });
   }
 
+  function openDeleteKeyDialog(key: TokenUsageApiKey) {
+    setDeleteKeyDialog(key);
+  }
+
   function submitKeyDialog() {
     if (!keyDialog) return;
     const name = keyDialog.name.trim();
@@ -271,7 +284,8 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   }
 
   function selectTrendMode(mode: TrendMode) {
-    setTrendMode((current) => current === "custom" && mode === "custom" ? "month" : mode);
+    setTrendMode(mode);
+    setCustomPanelOpen((open) => mode === "custom" ? !open : false);
   }
 
   async function copyText(value: string, label: string) {
@@ -380,7 +394,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
                   </div>)}
                 </div>
               </div>
-              <div className="token-contribution-legend" aria-hidden="true"><span>少</span><i className="level-0" /><i className="level-1" /><i className="level-2" /><i className="level-3" /><i className="level-4" /><span>多</span></div>
+              <div className="token-contribution-legend" aria-hidden="true"><span>少</span><i className="level-0" /><i className="level-2" /><i className="level-4" /><i className="level-6" /><i className="level-8" /><span>多</span></div>
             </> : <p className="token-empty-line" role="status" aria-live="polite">同步后显示热力图</p>}
           </div>
         </article>
@@ -398,7 +412,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
               <div className="token-trend-controls" role="group" aria-label="趋势统计方式">
                 {(["day", "week", "month", "custom"] as TrendMode[]).map((mode) => <button key={mode} type="button" className={trendMode === mode ? "active" : ""} aria-pressed={trendMode === mode} onClick={() => selectTrendMode(mode)}>{trendModeLabel(mode)}</button>)}
               </div>
-              {trendMode === "custom" && <div className="token-trend-custom" aria-label="自定义趋势范围">
+              {trendMode === "custom" && customPanelOpen && <div className="token-trend-custom" aria-label="自定义趋势范围">
                 <label><span>开始</span><input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label>
                 <label><span>结束</span><input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label>
                 <small>最多 6 个月，按天均分。</small>
@@ -426,7 +440,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
         <StatsGrid overview={dashboard.overview} label={trendRangeLabel(trendMode, customStart, customEnd)} />
       </div> : view === "leaderboard" ? <section className="token-leaderboard-page" aria-busy={loading}>
         <article className="token-card token-leaderboard-main">
-          <div className="token-card-head"><Trophy size={18} /><div><strong>账户排行榜</strong><small>当前范围内按 Token 总量排序</small></div></div>
+          <div className="token-card-head"><Trophy size={18} /><div><strong>账户排行榜</strong><small>全部时期（近 6 个月）按 Token 总量排序</small></div></div>
           <div className="token-leaderboard-list expanded">
             {leaderboard.entries.map((entry) => <div key={entry.user_id}><span><Medal size={15} />#{entry.rank}</span><strong>{entry.display_name || entry.username}</strong><em>{formatNumber(entry.total_tokens)}</em><small>{formatDuration(entry.active_seconds)} · {entry.sessions} 个会话</small></div>)}
             {!leaderboard.entries.length && <p className="token-empty-line" role="status" aria-live="polite">暂无排行榜数据</p>}
@@ -451,9 +465,19 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
         onCreateKey={openCreateKeyDialog}
         onRevealKey={toggleKeyVisibility}
         onRenameKey={openRenameKeyDialog}
-        onDisableKey={disableKey}
+        onDisableKey={openDeleteKeyDialog}
         devices={dashboard.devices}
       />}
+
+      {deleteKeyDialog && createPortal(
+        <KeyDeleteDialog
+          apiKey={deleteKeyDialog}
+          loading={loading}
+          onCancel={() => setDeleteKeyDialog(null)}
+          onConfirm={() => void disableKey(deleteKeyDialog)}
+        />,
+        document.body
+      )}
 
       {keyDialog && createPortal(
         <KeyDialog
@@ -558,6 +582,48 @@ function KeyDialog(props: {
   );
 }
 
+function KeyDeleteDialog(props: {
+  apiKey: TokenUsageApiKey;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="token-dialog-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !props.loading && props.onCancel()}>
+      <div
+        className="token-dialog-box danger"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="token-key-delete-title"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !props.loading) props.onCancel();
+        }}
+      >
+        <div className="token-dialog-head">
+          <div>
+            <strong id="token-key-delete-title">删除 CLI Key</strong>
+            <small>这会同时删除该 Key 上传过的 Token bucket 和 session 数据。</small>
+          </div>
+          <button className="token-icon-button danger" type="button" onClick={props.onCancel} disabled={props.loading} aria-label="关闭">
+            <XCircle size={17} />
+          </button>
+        </div>
+        <div className="token-dialog-warning">
+          <strong>{props.apiKey.name}</strong>
+          <span>{props.apiKey.prefix}... 上传过的统计数据会从仪表盘、排行榜和热力图里移除。</span>
+        </div>
+        <div className="token-dialog-actions">
+          <button className="secondary-button compact" type="button" onClick={props.onCancel} disabled={props.loading}>取消</button>
+          <button className="secondary-button danger compact" type="button" disabled={props.loading} onClick={props.onConfirm}>
+            <XCircle size={15} />
+            <span>{props.loading ? "删除中" : "确认删除"}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Metric(props: { icon: React.ReactNode; label: string; value: string }) {
   return <div className="token-metric"><span>{props.icon}</span><small>{props.label}</small><strong>{props.value}</strong></div>;
 }
@@ -654,7 +720,7 @@ function GuideView(props: {
                 <div key={key.id} className={`token-key-item ${key.status !== "active" ? "disabled" : ""}`}>
                   <div className="token-key-main">
                     <strong>{key.name}</strong>
-                    <span>{key.prefix}... · {key.status === "active" ? "启用中" : "已停用"} · {key.last_used_at ? `上次同步 ${formatDate(key.last_used_at)}` : "等待同步"}</span>
+                    <span>{key.prefix}... · {key.status === "active" ? "启用中" : "不可用"} · {key.last_used_at ? `上次同步 ${formatDate(key.last_used_at)}` : "等待同步"}</span>
                   </div>
                   {Object.prototype.hasOwnProperty.call(props.visibleKeys, key.id) && (
                     <div className="token-secret-reveal">
@@ -685,7 +751,7 @@ function GuideView(props: {
                       <Pencil size={16} />
                     </button>
                     {key.status === "active" && (
-                      <button className="token-icon-button danger" type="button" onClick={() => props.onDisableKey(key)} title="停用 Key" aria-label="停用 Key">
+                      <button className="token-icon-button danger" type="button" onClick={() => props.onDisableKey(key)} title="删除 Key 和数据" aria-label="删除 Key 和数据">
                         <XCircle size={16} />
                       </button>
                     )}
@@ -927,9 +993,13 @@ function buildContributionHeatmap(cells: TokenUsageDashboard["heatmap"]): Contri
 function contributionLevel(value: number, peak: number) {
   if (value <= 0) return 0;
   const ratio = value / Math.max(1, peak);
-  if (ratio >= 0.75) return 4;
-  if (ratio >= 0.45) return 3;
-  if (ratio >= 0.18) return 2;
+  if (ratio >= 0.875) return 8;
+  if (ratio >= 0.75) return 7;
+  if (ratio >= 0.625) return 6;
+  if (ratio >= 0.5) return 5;
+  if (ratio >= 0.375) return 4;
+  if (ratio >= 0.25) return 3;
+  if (ratio >= 0.125) return 2;
   return 1;
 }
 
