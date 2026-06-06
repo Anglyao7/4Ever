@@ -1531,6 +1531,21 @@ def redact_sensitive_text(value: str) -> str:
     return TEXT_SECRET_BARE_PATTERN.sub(r"\1[redacted]", text)
 
 
+def provider_http_error_detail(response: httpx.Response, body: str | bytes | None = None) -> str:
+    if body is None:
+        text = response.text
+    elif isinstance(body, bytes):
+        text = body.decode("utf-8", "replace")
+    else:
+        text = str(body)
+    body_text = truncate_chat_event_text(text, CHAT_EVENT_ERROR_MAX_CHARS)
+    return f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {body_text}"
+
+
+def provider_request_error_detail(prefix: str, error: httpx.HTTPError) -> str:
+    return prefix + ": " + truncate_chat_event_text(str(error), CHAT_EVENT_ERROR_MAX_CHARS)
+
+
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
     event_data = sanitize_chat_event_payload(event, data)
     event_data.setdefault("run_id", run_id)
@@ -2118,9 +2133,9 @@ async def fetch_models(settings: Settings, payload: ProviderConnectionRequest) -
         async with httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as client:
             response = await client.get(url, headers=provider_headers(provider, payload.api_key))
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider model request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider model request failed", error)) from error
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {response.text}")
+        raise HTTPException(status_code=502, detail=provider_http_error_detail(response))
     try:
         data = response.json()
     except json.JSONDecodeError as error:
@@ -2279,9 +2294,9 @@ async def openai_post_json(settings: Settings, url: str, body: dict[str, Any], h
         async with httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as client:
             response = await client.post(url, headers=headers, json=body)
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider request failed", error)) from error
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {response.text}")
+        raise HTTPException(status_code=502, detail=provider_http_error_detail(response))
     try:
         return response.json()
     except json.JSONDecodeError as error:
@@ -2295,9 +2310,9 @@ async def _complete_chat_once(settings: Settings, payload: ChatCompletionRequest
         async with httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as client:
             response = await client.post(url, headers=headers, json=body)
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider request failed", error)) from error
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {response.text}")
+        raise HTTPException(status_code=502, detail=provider_http_error_detail(response))
     try:
         data = response.json()
     except json.JSONDecodeError as error:
@@ -2474,7 +2489,7 @@ async def _stream_openai(settings: Settings, payload: ChatCompletionRequest) -> 
             async with client.stream("POST", url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_openai_stream_line(line)
                     if event:
@@ -2482,7 +2497,7 @@ async def _stream_openai(settings: Settings, payload: ChatCompletionRequest) -> 
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 async def _stream_openai_with_messages(settings: Settings, payload: ChatCompletionRequest, messages: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
@@ -2495,7 +2510,7 @@ async def _stream_openai_with_messages(settings: Settings, payload: ChatCompleti
             async with client.stream("POST", url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_openai_stream_line(line)
                     if event:
@@ -2503,7 +2518,7 @@ async def _stream_openai_with_messages(settings: Settings, payload: ChatCompleti
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 async def _stream_anthropic_mcp_tool_loop(settings: Settings, database: Database, payload: ChatCompletionRequest) -> AsyncIterator[dict[str, Any]]:
@@ -2545,7 +2560,7 @@ async def _stream_anthropic(settings: Settings, payload: ChatCompletionRequest) 
             async with client.stream("POST", url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_anthropic_stream_line(line)
                     if event:
@@ -2553,7 +2568,7 @@ async def _stream_anthropic(settings: Settings, payload: ChatCompletionRequest) 
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 async def _stream_anthropic_with_messages(settings: Settings, payload: ChatCompletionRequest, messages: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
@@ -2566,7 +2581,7 @@ async def _stream_anthropic_with_messages(settings: Settings, payload: ChatCompl
             async with client.stream("POST", url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_anthropic_stream_line(line)
                     if event:
@@ -2574,7 +2589,7 @@ async def _stream_anthropic_with_messages(settings: Settings, payload: ChatCompl
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 async def _stream_gemini_mcp_tool_loop(settings: Settings, database: Database, payload: ChatCompletionRequest) -> AsyncIterator[dict[str, Any]]:
@@ -2616,7 +2631,7 @@ async def _stream_gemini(settings: Settings, payload: ChatCompletionRequest) -> 
             async with client.stream("POST", stream_url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_gemini_stream_line(line)
                     if event:
@@ -2624,7 +2639,7 @@ async def _stream_gemini(settings: Settings, payload: ChatCompletionRequest) -> 
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 async def _stream_gemini_with_contents(settings: Settings, payload: ChatCompletionRequest, contents: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
@@ -2637,7 +2652,7 @@ async def _stream_gemini_with_contents(settings: Settings, payload: ChatCompleti
             async with client.stream("POST", stream_url, headers=headers, json=body) as response:
                 if response.status_code >= 400:
                     text = await response.aread()
-                    raise HTTPException(status_code=502, detail=f"Provider returned HTTP {response.status_code} {response.reason_phrase}: {text.decode('utf-8', 'replace')}")
+                    raise HTTPException(status_code=502, detail=provider_http_error_detail(response, text))
                 async for line in response.aiter_lines():
                     event = parse_gemini_stream_line(line)
                     if event:
@@ -2645,7 +2660,7 @@ async def _stream_gemini_with_contents(settings: Settings, payload: ChatCompleti
     except HTTPException:
         raise
     except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Provider stream request failed: " + str(error)) from error
+        raise HTTPException(status_code=502, detail=provider_request_error_detail("Provider stream request failed", error)) from error
 
 
 def normalize_provider(provider: str | None) -> str:

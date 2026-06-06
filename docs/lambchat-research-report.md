@@ -1362,3 +1362,33 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 - 本次新增的是真实外部 smoke 的可执行入口，不等价于已经拿真实 API key 跑通过。
 - 上线前仍需要在有真实密钥的环境执行 `python scripts/ai_runtime_smoke.py`，并记录 OpenAI-compatible、Anthropic、Gemini 和 BigModel MCP 的实际结果。
 - smoke 只证明基础 streaming / tools/list / 显式 tools/call 连通性；复杂附件 vision、文档引用、fallback、限流恢复和长工具链仍需要单独端到端验证。
+
+## 本次后续落地记录（2026-06-07，Provider 非流式错误脱敏收口）
+
+本次继续收紧上线异常边界：之前已经覆盖 live streaming `run:error` 和 MCP HTTP 错误体，但模型列表接口、非流式 `/api/chat`、以及 provider tool-call loop 的非流式 JSON round 仍存在直接拼接上游 `response.text` 的路径。
+
+### 已完成
+
+- 新增统一 provider 错误格式化：
+  - `provider_http_error_detail()` 处理上游 4xx/5xx 响应体。
+  - `provider_request_error_detail()` 处理 `httpx.HTTPError`。
+  - 两者都复用现有 `truncate_chat_event_text()`，统一 secret-like 文本、Bearer token、嵌入式 data URL 脱敏和长度上限。
+- 替换以下路径的直接 `response.text` 暴露：
+  - `/api/catalog/provider/models` 和 `/api/catalog/provider/test` 的模型列表请求。
+  - 非流式 `/api/chat` 的 `_complete_chat_once()`。
+  - OpenAI-compatible / Anthropic / Gemini MCP tool-call loop 中的非流式 JSON provider round。
+  - OpenAI-compatible / Anthropic / Gemini streaming 分支的上游 HTTP 错误体。
+- 测试内本地 provider mock 增加 GET 支持，用于真实走 `httpx.AsyncClient.get()` 覆盖模型列表错误。
+
+### 已完成的验证
+
+- 新增测试：
+  - `test_provider_models_http_error_redacts_response_body`
+  - `test_non_stream_chat_http_error_is_redacted_in_response_and_replay`
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "http_error"`
+
+### 当前剩余边界
+
+- 这次收口的是 provider HTTP 错误文本暴露，不是完整上游错误分类器。
+- 真实 provider 的限流、连接超时、流中断和非标准错误结构仍需要通过外部 smoke 或受控外部环境继续验证。

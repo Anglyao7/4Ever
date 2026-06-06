@@ -57,13 +57,20 @@ class LocalStreamingProvider:
         parent = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parent.records.append({"method": "GET", "path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": {}})
+                self._write_route()
+
             def do_POST(self):
                 raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
                 try:
                     json_body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
                 except json.JSONDecodeError:
                     json_body = {}
-                parent.records.append({"path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": json_body})
+                parent.records.append({"method": "POST", "path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": json_body})
+                self._write_route()
+
+            def _write_route(self):
                 route = parent.routes.get(self.path) or parent.routes.get(self.path.split("?", 1)[0])
                 if not route:
                     self.send_response(404)
@@ -370,6 +377,68 @@ def test_provider_stream_http_error_is_redacted_in_live_sse_and_replay(tmp_path)
     assert "SECRET_PROVIDER_IMAGE" not in replay.text
     replay_error = [payload for payload in sse_data_payloads(replay.text) if payload.get("message")][0]
     assert replay_error == live_error
+
+
+def test_provider_models_http_error_redacts_response_body(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    app = FastAPI()
+    app.include_router(router(settings))
+    client = TestClient(app)
+    error_body = "provider models failed Authorization: Bearer MODEL_SECRET data:image/png;base64,MODEL_IMAGE " + ("long model error " * 120)
+
+    with LocalStreamingProvider({"/v1/models": {"status": 500, "content_type": "text/plain", "body": error_body}}) as server:
+        response = client.post(
+            "/api/catalog/provider/models",
+            json={"provider": "openai", "base_url": server.base_url, "api_key": "sk-models"},
+        )
+
+    assert response.status_code == 502, response.text
+    assert "MODEL_SECRET" not in response.text
+    assert "MODEL_IMAGE" not in response.text
+    assert "data:image/png;base64" not in response.text
+    assert "[redacted data URL]" in response.text
+    assert response.text.endswith('... [trimmed]"}')
+
+
+def test_non_stream_chat_http_error_is_redacted_in_response_and_replay(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    error_body = "chat failed token=CHAT_HTTP_SECRET data:image/png;base64,CHAT_IMAGE " + ("long chat error " * 120)
+
+    with LocalStreamingProvider({"/v1/chat/completions": {"status": 500, "content_type": "text/plain", "body": error_body}}) as server:
+        response = client.post(
+            "/api/chat",
+            json={
+                "provider": "openai",
+                "base_url": server.base_url,
+                "api_key": "sk-chat",
+                "model": "gpt-4.1-mini",
+                "messages": [{"role": "user", "content": "触发非流式错误"}],
+            },
+        )
+
+    assert response.status_code == 502, response.text
+    assert "CHAT_HTTP_SECRET" not in response.text
+    assert "CHAT_IMAGE" not in response.text
+    assert "data:image/png;base64" not in response.text
+    assert "[redacted data URL]" in response.text
+
+    runs = client.get("/api/chat/runs")
+    assert runs.status_code == 200, runs.text
+    run = runs.json()["runs"][0]
+    assert run["status"] == "failed"
+    events = client.get(f"/api/chat/runs/{run['id']}/events")
+    assert events.status_code == 200, events.text
+    assert "CHAT_HTTP_SECRET" not in events.text
+    assert "CHAT_IMAGE" not in events.text
+    assert "data:image/png;base64" not in events.text
+    replay_error = [payload for payload in sse_data_payloads(events.text) if payload.get("message")][0]
+    assert "[redacted data URL]" in replay_error["message"]
+    assert replay_error["message"].endswith("... [trimmed]")
 
 
 def test_chat_run_messages_redact_attachment_payloads(tmp_path):
