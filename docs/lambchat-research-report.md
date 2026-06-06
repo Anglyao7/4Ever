@@ -1121,3 +1121,27 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 - readiness 仍是只读自检，不会自动修复目录权限、生成生产 secret 或迁移对象存储。
 - 当前检查只证明运行条件存在，不等价于真实 provider / MCP 外部调用成功。
 - 后续上线前仍需要接入真实 OpenAI-compatible、Anthropic、Gemini 和 BigModel MCP 的外部 E2E，覆盖成功、超时、fallback、工具调用和附件引用链路。
+
+## 本次后续落地记录（2026-06-06，聊天事件 run_id 协议收口）
+
+本次按代码 review 发现的兼容性风险继续收口第四项“普通聊天事件继续增强”：流式路径已经有 `run_id`，但非流式 `/api/chat` 的部分持久化事件仍需要依赖 `run:start` 推断 run 归属。
+
+### 已完成
+
+- `emit_chat_event()` 现在会为所有聊天事件 payload 自动补充 `run_id`。
+- 非流式 `/api/chat` 的 `message:done`、`run:error`、工具事件、引用事件、usage 事件 replay 时都带同一个 `run_id`。
+- 流式 `_stream_chat_events()` 下发 provider chunk、token usage、planned MCP tool、live MCP tool、fallback 等事件时，统一使用 `emit_chat_event()` 返回的 payload，保证实时 SSE 和历史 replay 一致。
+- `run:start` 仍保留原有 provider、model、vision 信息；新增逻辑不会覆盖已经显式传入的 `run_id`。
+
+### 已完成的验证
+
+- 更新流式聊天运行测试，覆盖 live SSE 中每个 `data` payload 都带同一个 `run_id`，并且历史 replay 保持一致。
+- 更新非流式 Gemini MCP 工具调用测试，覆盖 `/api/chat/runs/{run_id}/events` replay 中每个事件 payload 都带同一个 `run_id`。
+- 定向运行受影响测试：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "stream_chat_persists_run_and_mcp_tool_events or non_stream_chat_gemini_live_mcp_uses_native_tool_loop"`
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "chat_gemini_live_mcp_uses_native_function_call_loop"`
+
+### 当前剩余边界
+
+- 这次修复的是事件协议一致性，不等价于真实外部 provider / MCP E2E 已完成。
+- 后续仍需要用真实 API key 或受控 mock server 覆盖 OpenAI-compatible、Anthropic、Gemini 原生流式和 BigModel MCP live 的上线前完整链路。

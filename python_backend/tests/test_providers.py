@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -12,6 +13,14 @@ from app.agents.mcp import list_mcp_tools, load_mcp_tool_schema_cache, store_mcp
 from app.config import Settings
 from app.database import Database, now_iso
 from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
+
+
+def sse_data_payloads(text: str) -> list[dict]:
+    payloads = []
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            payloads.append(json.loads(line.removeprefix("data: ")))
+    return payloads
 
 
 def test_openai_stream_delta_becomes_chat_event():
@@ -1244,16 +1253,22 @@ def test_stream_chat_persists_run_and_mcp_tool_events(tmp_path, monkeypatch):
     assert "event: tool:start" in body
     assert "event: tool:result" in body
     assert "event: message:done" in body
+    live_payloads = sse_data_payloads(body)
+    live_run_id = live_payloads[0]["run_id"]
+    assert live_run_id
+    assert all(payload.get("run_id") == live_run_id for payload in live_payloads)
 
     runs = client.get("/api/chat/runs", headers=headers)
     assert runs.status_code == 200, runs.text
     run = runs.json()["runs"][0]
+    assert run["id"] == live_run_id
     assert run["status"] == "success"
     assert run["event_count"] >= 6
     events = client.get(f"/api/chat/runs/{run['id']}/events", headers=headers)
     assert events.status_code == 200, events.text
     assert "event: thought:summary" in events.text
     assert "event: tool:result" in events.text
+    assert all(payload.get("run_id") == run["id"] for payload in sse_data_payloads(events.text))
 
 
 def test_stream_chat_emits_source_references_for_document_chunks(tmp_path, monkeypatch):
@@ -1715,8 +1730,14 @@ def test_chat_gemini_live_mcp_uses_native_function_call_loop(tmp_path, monkeypat
     assert chat.status_code == 200, chat.text
     assert chat.json()["provider"] == "gemini"
     assert chat.json()["content"] == "Gemini 非流式工具结果"
-    assert chat.json()["run_id"]
+    run_id = chat.json()["run_id"]
+    assert run_id
     assert seen_function_responses == 1
+    events = client.get(f"/api/chat/runs/{run_id}/events", headers=headers)
+    assert events.status_code == 200, events.text
+    replay_payloads = sse_data_payloads(events.text)
+    assert replay_payloads
+    assert all(payload.get("run_id") == run_id for payload in replay_payloads)
 
 
 def test_stream_chat_openai_live_mcp_supports_multi_round_tool_loop(tmp_path, monkeypatch):

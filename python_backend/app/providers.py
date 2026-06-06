@@ -1460,7 +1460,9 @@ def create_chat_run(database: Database, user_id: str, payload: ChatCompletionReq
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
-    item = {"event": event, "data": data}
+    event_data = dict(data)
+    event_data.setdefault("run_id", run_id)
+    item = {"event": event, "data": event_data}
     with database.connect() as conn:
         row = conn.execute("SELECT events_json FROM chat_runs WHERE id = ?", (run_id,)).fetchone()
         events = json_loads(row["events_json"] if row else "[]", [])
@@ -2194,8 +2196,8 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
         if not use_tool_loop:
             payload, tool_events = apply_mcp_context(settings, database, payload)
             for event in tool_events:
-                emit_chat_event(database, run_id, event["event"], event["data"])
-                yield sse_event(event["event"], event["data"])
+                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                yield sse_event(stored_event["event"], stored_event["data"])
         if use_tool_loop:
             if provider == "anthropic":
                 tool_stream = _stream_anthropic_mcp_tool_loop(settings, database, payload)
@@ -2209,8 +2211,8 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                     content_parts.append(str(event["data"]["content"]))
                 if event["event"] == "token:usage":
                     usage = event["data"].get("usage")
-                emit_chat_event(database, run_id, event["event"], event["data"])
-                yield sse_event(event["event"], event["data"])
+                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                yield sse_event(stored_event["event"], stored_event["data"])
         elif provider in {"openai", "anthropic", "gemini"}:
             async for event in _stream_provider(settings, provider, payload):
                 if event["event"] == "message:chunk" and event["data"].get("content"):
@@ -2218,24 +2220,24 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                     content_parts.append(str(event["data"]["content"]))
                 if event["event"] == "token:usage":
                     usage = event["data"].get("usage")
-                emit_chat_event(database, run_id, event["event"], event["data"])
-                yield sse_event(event["event"], event["data"])
+                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                yield sse_event(stored_event["event"], stored_event["data"])
         else:
             response = await complete_chat(settings, payload)
             content = response["content"]
             if response.get("fallback"):
-                emit_chat_event(database, run_id, "model:fallback", response["fallback"])
-                yield sse_event("model:fallback", response["fallback"])
+                fallback_event = emit_chat_event(database, run_id, "model:fallback", response["fallback"])
+                yield sse_event(fallback_event["event"], fallback_event["data"])
                 completed_model = response["fallback"]["to"]
             if content:
                 emitted_content = True
                 content_parts.append(content)
-                emit_chat_event(database, run_id, "message:chunk", {"content": content})
-                yield sse_event("message:chunk", {"content": content})
+                chunk_event = emit_chat_event(database, run_id, "message:chunk", {"content": content})
+                yield sse_event(chunk_event["event"], chunk_event["data"])
             if response.get("usage") is not None:
                 usage = response["usage"]
-                emit_chat_event(database, run_id, "token:usage", {"usage": response["usage"]})
-                yield sse_event("token:usage", {"usage": response["usage"]})
+                usage_event = emit_chat_event(database, run_id, "token:usage", {"usage": response["usage"]})
+                yield sse_event(usage_event["event"], usage_event["data"])
         citation = source_citation_check_payload("".join(content_parts), references)
         if citation:
             citation_event = emit_chat_event(database, run_id, "source:citation-check", citation)
@@ -2249,16 +2251,16 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
         fallback = fallback_model(payload)
         if provider in {"openai", "anthropic", "gemini"} and fallback and not emitted_content:
             fallback_data = {"from": payload.model, "to": fallback, "reason": str(primary_error.detail)}
-            emit_chat_event(database, run_id, "model:fallback", fallback_data)
-            yield sse_event("model:fallback", fallback_data)
+            fallback_event = emit_chat_event(database, run_id, "model:fallback", fallback_data)
+            yield sse_event(fallback_event["event"], fallback_event["data"])
             try:
                 async for event in _stream_provider(settings, provider, payload.model_copy(update={"model": fallback, "fallback_model": None})):
                     if event["event"] == "message:chunk" and event["data"].get("content"):
                         content_parts.append(str(event["data"]["content"]))
                     if event["event"] == "token:usage":
                         usage = event["data"].get("usage")
-                    emit_chat_event(database, run_id, event["event"], event["data"])
-                    yield sse_event(event["event"], event["data"])
+                    stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                    yield sse_event(stored_event["event"], stored_event["data"])
                 citation = source_citation_check_payload("".join(content_parts), references)
                 if citation:
                     citation_event = emit_chat_event(database, run_id, "source:citation-check", citation)
