@@ -8,8 +8,9 @@ from pydantic import BaseModel
 from app.agents.catalog import configured_agent, configured_mcp_server, find_agent, find_mcp_server, list_configured_agents, list_configured_mcp_servers
 from app.auth import public_media_url, require_admin
 from app.config import Settings
-from app.database import Database, now_iso, row_to_dict
+from app.database import Database, json_dumps, now_iso, row_to_dict
 from app.modules import BLUEPRINTS, enabled_map, ensure_initial_settings
+from app.providers import cleanup_chat_attachment_orphans, migrate_public_chat_attachments_to_private
 
 
 class RoleUpdate(BaseModel):
@@ -28,6 +29,11 @@ class ToggleUpdate(BaseModel):
 class AgentPromptUpdate(BaseModel):
     prompt_version: str
     system_prompt: str
+
+
+class AttachmentMaintenanceRequest(BaseModel):
+    dry_run: bool = True
+    min_age_seconds: int = 3600
 
 
 def router(db: Database, settings: Settings) -> APIRouter:
@@ -194,6 +200,21 @@ def router(db: Database, settings: Settings) -> APIRouter:
             out.append({**record, "actor_name": actor_name})
         return out
 
+    @api.post("/chat-attachments/migrate-private")
+    def migrate_chat_attachments(request: Request, payload: AttachmentMaintenanceRequest) -> dict[str, int | bool]:
+        current = require_admin(request, db)
+        result = migrate_public_chat_attachments_to_private(settings, db, payload.dry_run)
+        audit_admin_action(db, current["id"], "chat_attachment.migrate_private", "chat_attachment", "*", {**result, "dry_run": payload.dry_run})
+        return {**result, "dry_run": payload.dry_run}
+
+    @api.post("/chat-attachments/cleanup-orphans")
+    def cleanup_chat_attachments(request: Request, payload: AttachmentMaintenanceRequest) -> dict[str, int | bool]:
+        current = require_admin(request, db)
+        min_age_seconds = max(0, int(payload.min_age_seconds or 0))
+        result = cleanup_chat_attachment_orphans(settings, db, payload.dry_run, min_age_seconds)
+        audit_admin_action(db, current["id"], "chat_attachment.cleanup_orphans", "chat_attachment", "*", {**result, "dry_run": payload.dry_run, "min_age_seconds": min_age_seconds})
+        return {**result, "dry_run": payload.dry_run, "min_age_seconds": min_age_seconds}
+
     return api
 
 
@@ -202,6 +223,14 @@ def scalar_count(conn, table: str, where: str = "") -> int:
     if where:
         query += " WHERE " + where
     return int(conn.execute(query).fetchone()["count"])
+
+
+def audit_admin_action(db: Database, actor_id: str, action: str, target_type: str, target_id: str, detail: dict[str, Any]) -> None:
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO admin_audit_logs (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (actor_id, action, target_type, target_id, json_dumps(detail), now_iso()),
+        )
 
 
 def admin_user(db: Database, user: dict[str, Any]) -> dict[str, Any]:

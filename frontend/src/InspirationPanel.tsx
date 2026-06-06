@@ -53,7 +53,7 @@ const tutorialSteps: TutorialStep[] = [
 
 const lenses = ["产品机会", "用户情绪", "反常识", "技术组合", "叙事表达", "商业路径"];
 
-export default function InspirationPanel() {
+export default function InspirationPanel(props: { authToken?: string }) {
   const formRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -131,7 +131,8 @@ export default function InspirationPanel() {
       "输出 4 个新灵感方向。每个方向包含：标题、洞察、可执行原型、一个可继续追问的问题。用 Markdown，保持具体。",
     ].filter(Boolean).join("\n");
     try {
-      const response = await sendChat(configFromProfile(activeProfile), [{ role: "user", content: prompt } as ChatMessage]);
+      const backendOwnedProfile = Boolean(props.authToken && activeProfile.apiKeySet);
+      const response = await sendChat(configFromProfile(activeProfile, backendOwnedProfile), [{ role: "user", content: prompt } as ChatMessage], props.authToken ?? "");
       setResults((current) => [{ id: createId(), title: `${lens} · ${brief.trim().slice(0, 24)}`, body: response.content, createdAt: new Date().toISOString() }, ...current]);
       setFollowUp("");
     } catch (cause) {
@@ -401,11 +402,12 @@ function activeUsableProfile(profiles: ModelProfile[]) {
 }
 
 function isUsableProfile(profile: ModelProfile | undefined) {
-  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && profile.apiKey.trim());
+  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && (profile.apiKey.trim() || profile.apiKeySet));
 }
 
-function configFromProfile(profile: ModelProfile): ChatConfig {
+function configFromProfile(profile: ModelProfile, backendOwned = false): ChatConfig {
   return {
+    profileId: backendOwned ? profile.id : undefined,
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,

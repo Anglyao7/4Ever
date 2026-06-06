@@ -1,32 +1,50 @@
 import { type Dispatch, type RefObject, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Check, Download, FileText, LogIn, MessageSquareText, Paperclip, Plus, Search, SendHorizonal, Settings, UserPlus, Users, X } from "lucide-react";
+import { Bot, Brain, Check, Download, FileText, LogIn, MessageSquareText, Paperclip, PlugZap, Plus, Search, SendHorizonal, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
 import {
   acceptFriendRequest,
+  deleteAiMemory,
+  deleteAiPersona,
+  fetchAgentCatalog,
+  fetchChatDocumentChunkDetail,
+  fetchChatRunEvents,
+  fetchChatRuns,
   fetchDirectMessages,
+  fetchAiMemories,
+  fetchAiPersonas,
   fetchFriendSummary,
   fetchModelProfiles,
   rejectFriendRequest,
+  retainAiMemory,
   requestFriend,
   searchUsers,
+  saveAiPersona,
   sendDirectMessage,
   streamChat,
+  uploadChatAttachment,
 } from "./services/api";
 import { resolveMediaUrl } from "./services/api";
 import type { AuthUser, UserSearchResult } from "./types/auth";
-import type { ChatAttachment, ChatConfig, ChatMessage, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, ModelProfile } from "./types/chat";
+import type { AiMemory, AiPersona, ChatAttachment, ChatConfig, ChatDocumentChunkDetail, ChatMessage, ChatRunRecord, ChatSourceReference, ChatStreamEvent, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, ModelProfile } from "./types/chat";
+import type { McpServer } from "./types/workflow";
 
 const profilesKey = "4ever.model.profiles";
 const activeProfileKey = "4ever.model.activeProfile";
 const messagesKey = "4ever.react.chat.messages";
 const aiContactKey = "4ever.react.chat.aiContact";
+const aiMcpServersKey = "4ever.react.chat.mcpServers";
 const aiMessagesStorageError = "AI 会话保存失败，请检查浏览器存储空间后再继续发送。";
 
 type ChatMode = "people" | "ai";
 type UiLanguage = "zh" | "en";
 type DialogType = "add-friend" | "new-group" | "new-ai" | null;
 type AIContactProfile = {
+  id?: string;
   name: string;
   persona: string;
+  role?: string;
+  notes?: string;
+  defaultProfileId?: string;
+  memoryStrategy?: AiPersona["memoryStrategy"];
 };
 type DirectMessageView = DirectMessageRecord & {
   local_id?: string;
@@ -42,6 +60,16 @@ type ChatProfilePopover = {
   x: number;
   y: number;
   side: "left" | "right";
+};
+type ChatRunTimelineStatus = "running" | "success" | "failed" | "planned" | "info";
+type ChatRunTimelineItem = {
+  id: string;
+  title: string;
+  detail: string;
+  status: ChatRunTimelineStatus;
+  event: ChatStreamEvent["event"];
+  createdAt: string;
+  references?: ChatSourceReference[];
 };
 
 const copy = {
@@ -84,6 +112,31 @@ const copy = {
     aiName: "名字",
     aiPersona: "性格",
     saveAiProfile: "保存",
+    deleteAiProfile: "删除",
+    aiPersonaList: "AI 联系人",
+    defaultModel: "默认模型",
+    memoryStrategy: "记忆策略",
+    memoryRecords: "长期记忆",
+    memoryPlaceholder: "写入一条需要长期记住的事实、偏好或背景",
+    saveMemory: "记住",
+    noMemories: "还没有长期记忆",
+    loadingMemories: "正在加载记忆...",
+    mcpTools: "MCP 工具",
+    noMcpTools: "暂无可用 MCP",
+    runStarted: "运行开始",
+    runDone: "运行完成",
+    runHistory: "运行记录",
+    loadingRuns: "正在加载运行记录...",
+    noRuns: "暂无运行记录",
+    thoughtSummary: "思考摘要",
+    sourceReferences: "来源引用",
+    citationCheck: "引用校验",
+    toolRunning: "工具执行中",
+    toolFinished: "工具完成",
+    toolFailed: "工具失败",
+    fallbackModel: "模型切换",
+    tokenUsage: "Token 用量",
+    runError: "运行错误",
     addFriendMenu: "添加好友",
     newGroupMenu: "新建群组",
     newAiMenu: "新建AI",
@@ -139,6 +192,31 @@ const copy = {
     aiName: "Name",
     aiPersona: "Persona",
     saveAiProfile: "Save",
+    deleteAiProfile: "Delete",
+    aiPersonaList: "AI Contacts",
+    defaultModel: "Default Model",
+    memoryStrategy: "Memory",
+    memoryRecords: "Long-term Memory",
+    memoryPlaceholder: "Add a fact, preference, or context to remember",
+    saveMemory: "Remember",
+    noMemories: "No memories yet",
+    loadingMemories: "Loading memories...",
+    mcpTools: "MCP Tools",
+    noMcpTools: "No MCP available",
+    runStarted: "Run started",
+    runDone: "Run finished",
+    runHistory: "Run History",
+    loadingRuns: "Loading runs...",
+    noRuns: "No runs yet",
+    thoughtSummary: "Reasoning summary",
+    sourceReferences: "Source references",
+    citationCheck: "Citation check",
+    toolRunning: "Tool running",
+    toolFinished: "Tool finished",
+    toolFailed: "Tool failed",
+    fallbackModel: "Model fallback",
+    tokenUsage: "Token usage",
+    runError: "Run error",
     addFriendMenu: "Add Friend",
     newGroupMenu: "New Group",
     newAiMenu: "New AI",
@@ -182,6 +260,21 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [aiContact, setAiContact] = useState<AIContactProfile>(loadAIContact);
   const [aiDraft, setAiDraft] = useState<AIContactProfile>(() => loadAIContact());
+  const [aiPersonas, setAiPersonas] = useState<AiPersona[]>([]);
+  const [aiMemories, setAiMemories] = useState<AiMemory[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryAction, setMemoryAction] = useState("");
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(loadSelectedMcpServerIds);
+  const [mcpError, setMcpError] = useState("");
+  const [activeRunId, setActiveRunId] = useState("");
+  const [chatRunTimeline, setChatRunTimeline] = useState<ChatRunTimelineItem[]>([]);
+  const [chatRuns, setChatRuns] = useState<ChatRunRecord[]>([]);
+  const [chatRunLoading, setChatRunLoading] = useState(false);
+  const [chatRunAction, setChatRunAction] = useState("");
+  const [sourceDetail, setSourceDetail] = useState<ChatDocumentChunkDetail | null>(null);
+  const [sourceDetailLoading, setSourceDetailLoading] = useState("");
   const [aiEditorOpen, setAiEditorOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [aiAttachments, setAiAttachments] = useState<ChatAttachment[]>([]);
@@ -201,7 +294,9 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const aiFileInputRef = useRef<HTMLInputElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
-  const activeProfile = useMemo(() => activeUsableProfile(profiles), [profiles]);
+  const globalActiveProfile = useMemo(() => activeUsableProfile(profiles), [profiles]);
+  const activeProfile = useMemo(() => activeProfileForContact(profiles, aiContact, globalActiveProfile), [profiles, aiContact.defaultProfileId, globalActiveProfile]);
+  const availableMcpServers = useMemo(() => mcpServers.filter((server) => server.enabled), [mcpServers]);
   const selectedFriend = summary.friends.find((friend) => friend.user.id === selectedFriendId)?.user ?? null;
   const outgoingIds = useMemo(() => new Set(summary.outgoing_requests.map((request) => request.addressee.id)), [summary.outgoing_requests]);
   const friendIds = useMemo(() => new Set(summary.friends.map((friend) => friend.user.id)), [summary.friends]);
@@ -237,7 +332,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
 
   useEffect(() => {
     let cancelled = false;
-    fetchModelProfiles().then((remote) => {
+    fetchModelProfiles(props.authToken).then((remote) => {
       if (cancelled || !remote.profiles.length) return;
       setProfiles(remote.profiles);
       setBackendProfileIds(new Set(remote.profiles.map((profile) => profile.id)));
@@ -246,7 +341,108 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     return () => {
       cancelled = true;
     };
+  }, [props.authToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!props.authToken) {
+      const localContact = loadAIContact();
+      setAiContact(localContact);
+      setAiDraft(localContact);
+      setAiPersonas([]);
+      setAiMemories([]);
+      setMemoryDraft("");
+      return () => {
+        cancelled = true;
+      };
+    }
+    fetchAiPersonas(props.authToken).then(async (remote) => {
+      if (cancelled) return;
+      const persona = remote.personas.find((item) => item.enabled) ?? remote.personas[0];
+      setAiPersonas(remote.personas);
+      if (persona) {
+        const nextContact = aiContactFromPersona(persona);
+        persistAIContactSnapshot(nextContact);
+        setAiContact(nextContact);
+        setAiDraft(nextContact);
+        return;
+      }
+      const saved = await saveAiPersona(props.authToken, aiContactToPersona(loadAIContact(), globalActiveProfile?.id ?? ""));
+      if (cancelled) return;
+      setAiPersonas([saved.persona]);
+      const nextContact = aiContactFromPersona(saved.persona);
+      persistAIContactSnapshot(nextContact);
+      setAiContact(nextContact);
+      setAiDraft(nextContact);
+    }).catch((cause) => {
+      if (!cancelled) setError((current) => current || (cause instanceof Error ? `AI 联系人加载失败：${cause.message}` : "AI 联系人加载失败"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAgentCatalog()
+      .then((catalog) => {
+        if (cancelled) return;
+        setMcpServers(catalog.mcp_servers ?? []);
+        setMcpError("");
+      })
+      .catch((cause) => {
+        if (!cancelled) setMcpError(cause instanceof Error ? cause.message : "MCP 服务加载失败");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!mcpServers.length) return;
+    const availableIds = new Set(availableMcpServers.map((server) => server.id));
+    setSelectedMcpServerIds((current) => {
+      const next = current.filter((serverId) => availableIds.has(serverId));
+      return sameStringList(current, next) ? current : next;
+    });
+  }, [availableMcpServers, mcpServers.length]);
+
+  useEffect(() => {
+    persistSelectedMcpServerIds(selectedMcpServerIds);
+  }, [selectedMcpServerIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!props.authToken || !aiContact.id) {
+      setAiMemories([]);
+      setMemoryDraft("");
+      setMemoryLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setMemoryLoading(true);
+    fetchAiMemories(props.authToken, aiContact.id, "", 12)
+      .then((response) => {
+        if (!cancelled) setAiMemories(response.memories);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError((current) => current || (cause instanceof Error ? `记忆加载失败：${cause.message}` : "记忆加载失败"));
+      })
+      .finally(() => {
+        if (!cancelled) setMemoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken, aiContact.id]);
+
+  useEffect(() => {
+    if (!props.authToken || !aiEditorOpen) {
+      return;
+    }
+    void refreshChatRuns();
+  }, [props.authToken, aiEditorOpen]);
 
   useEffect(() => {
     resetDirectComposer();
@@ -488,7 +684,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     clearAttachmentLimitError();
   }
 
-  async function attachFiles(fileList: FileList | null, currentAttachments: ChatAttachment[], setAttachments: Dispatch<SetStateAction<ChatAttachment[]>>, resetInput: () => void, setErrorMessage: (message: string) => void, clearErrorMessage: () => void) {
+  async function attachFiles(fileList: FileList | null, currentAttachments: ChatAttachment[], setAttachments: Dispatch<SetStateAction<ChatAttachment[]>>, resetInput: () => void, setErrorMessage: (message: string) => void, clearErrorMessage: () => void, authToken = "") {
     if (!fileList) return;
     const remaining = Math.max(0, 4 - currentAttachments.length);
     const files = Array.from(fileList).slice(0, remaining);
@@ -498,7 +694,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
       clearErrorMessage();
     }
     try {
-      const nextAttachments = await Promise.all(files.map(fileToAttachment));
+      const nextAttachments = await Promise.all(files.map((file) => fileToAttachment(file, authToken)));
       setAttachments((current) => [...current, ...nextAttachments].slice(0, 4));
     } catch (cause) {
       setErrorMessage(cause instanceof Error ? cause.message : "附件读取失败");
@@ -515,7 +711,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   function attachAIFiles(fileList: FileList | null) {
     void attachFiles(fileList, aiAttachments, setAiAttachments, () => {
       if (aiFileInputRef.current) aiFileInputRef.current.value = "";
-    }, setError, () => setError((current) => current === t.maxAttachments ? "" : current));
+    }, setError, () => setError((current) => current === t.maxAttachments ? "" : current), props.authToken);
   }
 
   function removeAIAttachment(attachmentId: string) {
@@ -533,16 +729,277 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     }
   }
 
-  function saveAIContact() {
+  async function saveAIContact() {
     const nextProfile = normalizeAIContact(aiDraft);
-    try {
-      localStorage.setItem(aiContactKey, JSON.stringify(nextProfile));
-    } catch {
-      // AI contact profile is nice-to-have; the chat should keep working if storage is blocked.
+    if (props.authToken) {
+      try {
+        const saved = await saveAiPersona(props.authToken, aiContactToPersona(nextProfile, activeProfile?.id ?? ""));
+        const backendContact = aiContactFromPersona(saved.persona);
+        setAiPersonas((current) => upsertPersonaList(current, saved.persona));
+        persistAIContactSnapshot(backendContact);
+        setAiContact(backendContact);
+        setAiDraft(backendContact);
+        setAiEditorOpen(false);
+        setError("");
+        return;
+      } catch (cause) {
+        setError(cause instanceof Error ? `AI 联系人保存失败：${cause.message}` : "AI 联系人保存失败");
+        return;
+      }
     }
+    persistAIContactSnapshot(nextProfile);
     setAiContact(nextProfile);
     setAiDraft(nextProfile);
     setAiEditorOpen(false);
+  }
+
+  function selectAIContact(persona: AiPersona) {
+    const nextContact = aiContactFromPersona(persona);
+    persistAIContactSnapshot(nextContact);
+    setAiContact(nextContact);
+    setAiDraft(nextContact);
+    setMemoryDraft("");
+  }
+
+  async function deleteCurrentAIContact() {
+    if (!props.authToken || !aiContact.id) return;
+    try {
+      await deleteAiPersona(props.authToken, aiContact.id);
+      const remaining = aiPersonas.filter((persona) => persona.id !== aiContact.id);
+      setAiPersonas(remaining);
+      const next = remaining[0] ? aiContactFromPersona(remaining[0]) : normalizeAIContact(defaultAIContact());
+      persistAIContactSnapshot(next);
+      setAiContact(next);
+      setAiDraft(next);
+      setAiMemories([]);
+      setMemoryDraft("");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `AI 联系人删除失败：${cause.message}` : "AI 联系人删除失败");
+    }
+  }
+
+  async function retainCurrentMemory() {
+    const content = memoryDraft.trim();
+    if (!props.authToken || !content || memoryAction) return;
+    setMemoryAction("retain");
+    try {
+      const saved = await retainAiMemory(props.authToken, {
+        personaId: aiContact.id ?? "",
+        content,
+        source: "manual",
+        metadata: { persona_name: aiContact.name },
+      });
+      setAiMemories((current) => [saved.memory, ...current.filter((memory) => memory.id !== saved.memory.id)].slice(0, 12));
+      setMemoryDraft("");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `记忆保存失败：${cause.message}` : "记忆保存失败");
+    } finally {
+      setMemoryAction((current) => current === "retain" ? "" : current);
+    }
+  }
+
+  async function deleteCurrentMemory(memoryId: string) {
+    if (!props.authToken || !memoryId || memoryAction) return;
+    const actionId = `memory:${memoryId}`;
+    setMemoryAction(actionId);
+    try {
+      await deleteAiMemory(props.authToken, memoryId);
+      setAiMemories((current) => current.filter((memory) => memory.id !== memoryId));
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `记忆删除失败：${cause.message}` : "记忆删除失败");
+    } finally {
+      setMemoryAction((current) => current === actionId ? "" : current);
+    }
+  }
+
+  function toggleMcpServer(serverId: string) {
+    setSelectedMcpServerIds((current) => {
+      if (current.includes(serverId)) {
+        return current.filter((id) => id !== serverId);
+      }
+      return current.length >= 3 ? current : [...current, serverId];
+    });
+  }
+
+  function handleAIStreamEvent(event: ChatStreamEvent) {
+    const now = new Date().toISOString();
+    if (event.event === "run:start") {
+      const runId = eventString(event.data, "run_id");
+      if (runId) setActiveRunId(runId);
+      upsertChatRunTimeline({
+        id: "run",
+        event: event.event,
+        title: t.runStarted,
+        detail: [eventString(event.data, "provider"), eventString(event.data, "model"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "running",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "thought:summary") {
+      const stage = eventString(event.data, "stage") || "context";
+      upsertChatRunTimeline({
+        id: `thought:${stage}`,
+        event: event.event,
+        title: t.thoughtSummary,
+        detail: eventString(event.data, "summary"),
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "source:references") {
+      const references = sourceReferencesFromEvent(event.data);
+      const detail = references
+        .slice(0, 3)
+        .map((item) => {
+          return [item.ref, item.attachmentName].filter(Boolean).join(" · ");
+        })
+        .filter(Boolean)
+        .join("；");
+      upsertChatRunTimeline({
+        id: "source:references",
+        event: event.event,
+        title: `${t.sourceReferences} · ${Number(event.data.count || references.length) || references.length}`,
+        detail,
+        status: "info",
+        createdAt: now,
+        references,
+      });
+      return;
+    }
+    if (event.event === "source:citation-check") {
+      const status = eventString(event.data, "status");
+      const unknownRefs = eventStringList(event.data, "unknown_refs");
+      upsertChatRunTimeline({
+        id: "source:citation-check",
+        event: event.event,
+        title: t.citationCheck,
+        detail: citationCheckDetail(event.data, language),
+        status: status === "cited" && !unknownRefs.length ? "success" : "failed",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "tool:start") {
+      const id = chatToolTimelineId(event.data);
+      upsertChatRunTimeline({
+        id,
+        event: event.event,
+        title: `${t.toolRunning} · ${eventString(event.data, "server_name") || eventString(event.data, "server_id") || "MCP"}`,
+        detail: [eventString(event.data, "tool_name"), jsonPreview(event.data.arguments)].filter(Boolean).join(" · "),
+        status: "running",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "tool:result") {
+      const id = chatToolTimelineId(event.data);
+      const errorMessage = eventString(event.data, "error");
+      const status = eventString(event.data, "status");
+      const failed = status === "failed" || Boolean(errorMessage);
+      upsertChatRunTimeline({
+        id,
+        event: event.event,
+        title: `${failed ? t.toolFailed : t.toolFinished} · ${eventString(event.data, "server_name") || eventString(event.data, "server_id") || "MCP"}`,
+        detail: [eventString(event.data, "tool_name"), errorMessage || eventString(event.data, "reason") || jsonPreview(event.data.result)].filter(Boolean).join(" · "),
+        status: failed ? "failed" : status === "planned" ? "planned" : "success",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "model:fallback") {
+      upsertChatRunTimeline({
+        id: "model:fallback",
+        event: event.event,
+        title: t.fallbackModel,
+        detail: [eventString(event.data, "from"), eventString(event.data, "to"), eventString(event.data, "reason")].filter(Boolean).join(" · "),
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "token:usage") {
+      const detail = usagePreview(event.data.usage);
+      upsertChatRunTimeline({
+        id: "token:usage",
+        event: event.event,
+        title: t.tokenUsage,
+        detail,
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "message:done") {
+      const runId = eventString(event.data, "run_id") || activeRunId;
+      upsertChatRunTimeline({
+        id: "run",
+        event: event.event,
+        title: t.runDone,
+        detail: [eventString(event.data, "provider"), eventString(event.data, "model"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "success",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "run:error") {
+      const runId = eventString(event.data, "run_id") || activeRunId;
+      upsertChatRunTimeline({
+        id: "run:error",
+        event: event.event,
+        title: t.runError,
+        detail: [eventString(event.data, "message"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "failed",
+        createdAt: now,
+      });
+    }
+  }
+
+  function upsertChatRunTimeline(item: ChatRunTimelineItem) {
+    setChatRunTimeline((current) => {
+      const existing = current.find((eventItem) => eventItem.id === item.id);
+      if (existing) {
+        return current.map((eventItem) => eventItem.id === item.id ? { ...eventItem, ...item, createdAt: existing.createdAt } : eventItem);
+      }
+      return [...current, item].slice(-8);
+    });
+  }
+
+  async function refreshChatRuns() {
+    if (!props.authToken) return;
+    setChatRunLoading(true);
+    try {
+      const response = await fetchChatRuns(props.authToken, 8);
+      setChatRuns(response.runs);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `运行记录加载失败：${cause.message}` : "运行记录加载失败");
+    } finally {
+      setChatRunLoading(false);
+    }
+  }
+
+  async function replayChatRun(runId: string) {
+    if (!props.authToken || !runId || chatRunAction) return;
+    const actionId = `run:${runId}`;
+    setChatRunAction(actionId);
+    try {
+      const events = await fetchChatRunEvents(props.authToken, runId);
+      setActiveRunId(runId);
+      setChatRunTimeline([]);
+      setSourceDetail(null);
+      events.forEach(handleAIStreamEvent);
+      setAiEditorOpen(false);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `运行事件回放失败：${cause.message}` : "运行事件回放失败");
+    } finally {
+      setChatRunAction((current) => current === actionId ? "" : current);
+    }
   }
 
   async function submitAi() {
@@ -560,17 +1017,26 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     if (aiFileInputRef.current) aiFileInputRef.current.value = "";
     setSending(true);
     setError("");
+    setActiveRunId("");
+    setChatRunTimeline([]);
+    setSourceDetail(null);
     const assistantMessage: ChatMessage = { id: `msg-${Date.now()}-ai`, role: "assistant", content: "", createdAt: new Date().toISOString() };
     let streamedContent = "";
     try {
-      const finalContent = await streamChat(configFromProfile(activeProfile, aiContact, backendProfileIds.has(activeProfile.id)), messagesForAIProvider(pendingMessages), (chunk) => {
-        streamedContent += chunk;
-        setMessages((current) => {
-          const withAssistant = current.some((message) => message.id === assistantMessage.id) ? current : [...current, assistantMessage];
-          return withAssistant.map((message) => message.id === assistantMessage.id ? { ...message, content: streamedContent } : message);
-        });
-        window.requestAnimationFrame(() => scrollAIToBottom(prefersReducedMotion() ? "auto" : "smooth"));
-      });
+      const finalContent = await streamChat(
+        configFromProfile(activeProfile, aiContact, backendProfileIds.has(activeProfile.id), selectedMcpServerIds),
+        messagesForAIProvider(pendingMessages),
+        (chunk) => {
+          streamedContent += chunk;
+          setMessages((current) => {
+            const withAssistant = current.some((message) => message.id === assistantMessage.id) ? current : [...current, assistantMessage];
+            return withAssistant.map((message) => message.id === assistantMessage.id ? { ...message, content: streamedContent } : message);
+          });
+          window.requestAnimationFrame(() => scrollAIToBottom(prefersReducedMotion() ? "auto" : "smooth"));
+        },
+        handleAIStreamEvent,
+        props.authToken,
+      );
       const contentToSave = finalContent || streamedContent;
       if (!contentToSave.trim()) {
         setError("AI 没有返回内容。");
@@ -587,6 +1053,20 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
       setError(cause instanceof Error ? cause.message : "发送失败");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function openSourceReference(reference: ChatSourceReference) {
+    if (!props.authToken || !reference.ref || sourceDetailLoading) return;
+    setSourceDetailLoading(reference.ref);
+    try {
+      const detail = await fetchChatDocumentChunkDetail(props.authToken, reference.ref);
+      setSourceDetail(detail);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `引用详情加载失败：${cause.message}` : "引用详情加载失败");
+    } finally {
+      setSourceDetailLoading((current) => current === reference.ref ? "" : current);
     }
   }
 
@@ -636,10 +1116,26 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     closeDialog();
   }
 
-  function handleCreateAi() {
+  async function handleCreateAi() {
     if (!newAiName.trim()) return;
-    // TODO: 实现创建AI的逻辑
-    console.log("创建AI:", { name: newAiName, persona: newAiPersona });
+    const nextContact = normalizeAIContact({ name: newAiName, persona: newAiPersona });
+    if (props.authToken) {
+      try {
+        const saved = await saveAiPersona(props.authToken, aiContactToPersona(nextContact, activeProfile?.id ?? ""));
+        const backendContact = aiContactFromPersona(saved.persona);
+        setAiPersonas((current) => upsertPersonaList(current, saved.persona));
+        persistAIContactSnapshot(backendContact);
+        setAiContact(backendContact);
+        setAiDraft(backendContact);
+      } catch (cause) {
+        setError(cause instanceof Error ? `AI 联系人创建失败：${cause.message}` : "AI 联系人创建失败");
+        return;
+      }
+    } else {
+      persistAIContactSnapshot(nextContact);
+      setAiContact(nextContact);
+      setAiDraft(nextContact);
+    }
     closeDialog();
     setMode("ai");
   }
@@ -767,14 +1263,79 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
             </div>
             {aiEditorOpen ? <div className="ai-contact-settings-page">
               <div className="ai-contact-settings-card">
+                {!!aiPersonas.length && <div className="ai-contact-persona-list" aria-label={t.aiPersonaList}>
+                  <strong>{t.aiPersonaList}</strong>
+                  <div className="chat-persona-strip">
+                    {aiPersonas.map((persona) => (
+                      <button key={persona.id} type="button" className={persona.id === aiContact.id ? "active" : ""} onClick={() => selectAIContact(persona)}>
+                        <span>{persona.name.slice(0, 1).toUpperCase()}</span>
+                        <strong>{persona.name}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>}
                 <div className="ai-contact-settings-preview">
                   <span className="user-avatar"><Bot size={18} /></span>
                   <div><strong>{aiDraft.name || aiContact.name}</strong><small>{activeProfile ? `${providerLabel(activeProfile.provider, language)} · ${activeProfile.model}` : t.unavailableAi}</small></div>
                 </div>
                 <label><span>{t.aiName}</span><input value={aiDraft.name} onChange={(event) => setAiDraft((current) => ({ ...current, name: event.target.value }))} /></label>
                 <label><span>{t.aiPersona}</span><textarea rows={6} value={aiDraft.persona} onChange={(event) => setAiDraft((current) => ({ ...current, persona: event.target.value }))} /></label>
+                <label><span>{t.defaultModel}</span><select value={aiDraft.defaultProfileId || activeProfile?.id || ""} onChange={(event) => setAiDraft((current) => ({ ...current, defaultProfileId: event.target.value }))}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model}</option>)}</select></label>
+                <label><span>{t.memoryStrategy}</span><select value={aiDraft.memoryStrategy ?? "recall-retain"} onChange={(event) => setAiDraft((current) => ({ ...current, memoryStrategy: event.target.value as AiPersona["memoryStrategy"] }))}>
+                  <option value="recall-retain">Recall + retain</option>
+                  <option value="recall">Recall only</option>
+                  <option value="retain">Retain only</option>
+                  <option value="off">Off</option>
+                </select></label>
+                {props.authToken && <div className="ai-contact-memory-panel" aria-label={t.memoryRecords}>
+                  <div className="ai-contact-section-title"><Brain size={15} /><strong>{t.memoryRecords}</strong></div>
+                  <div className="ai-memory-retain-row">
+                    <textarea rows={2} value={memoryDraft} placeholder={t.memoryPlaceholder} onChange={(event) => setMemoryDraft(event.target.value)} />
+                    <button className="secondary-button compact" type="button" disabled={!memoryDraft.trim() || memoryAction === "retain"} onClick={retainCurrentMemory}><Plus size={14} /><span>{t.saveMemory}</span></button>
+                  </div>
+                  <div className="ai-memory-list">
+                    {memoryLoading && <p className="react-empty-line" role="status" aria-live="polite">{t.loadingMemories}</p>}
+                    {!memoryLoading && aiMemories.map((memory) => (
+                      <div key={memory.id} className="ai-memory-row">
+                        <p>{memory.content}</p>
+                        <small>{memory.source || "manual"} · {formatTime(memory.createdAt, language)}</small>
+                        <button type="button" aria-label={`删除记忆：${memory.content.slice(0, 24)}`} disabled={memoryAction === `memory:${memory.id}`} onClick={() => deleteCurrentMemory(memory.id)}><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                    {!memoryLoading && !aiMemories.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noMemories}</p>}
+                  </div>
+                </div>}
+                <div className="ai-contact-mcp-panel" aria-label={t.mcpTools}>
+                  <div className="ai-contact-section-title"><PlugZap size={15} /><strong>{t.mcpTools}</strong></div>
+                  {availableMcpServers.length ? <div className="ai-mcp-chip-list">
+                    {availableMcpServers.map((server) => {
+                      const selected = selectedMcpServerIds.includes(server.id);
+                      return (
+                        <button key={server.id} type="button" className={`workflow-mcp-chip ${selected ? "active" : ""}`} aria-pressed={selected} title={`${server.name} · ${mcpAvailabilityLabel(server, language)}`} onClick={() => toggleMcpServer(server.id)}>
+                          <PlugZap size={14} />
+                          <span>{server.name}</span>
+                          <em>{server.tool_names[0] ?? "tool"} · {mcpAvailabilityLabel(server, language)}</em>
+                        </button>
+                      );
+                    })}
+                  </div> : <p className="react-empty-line" role="status" aria-live="polite">{mcpError || t.noMcpTools}</p>}
+                </div>
+                {props.authToken && <div className="ai-contact-runs-panel" aria-label={t.runHistory}>
+                  <div className="ai-contact-section-title"><MessageSquareText size={15} /><strong>{t.runHistory}</strong></div>
+                  <div className="ai-run-list">
+                    {chatRunLoading && <p className="react-empty-line" role="status" aria-live="polite">{t.loadingRuns}</p>}
+                    {!chatRunLoading && chatRuns.map((run) => (
+                      <button key={run.id} type="button" className={`ai-run-row ${run.status}`} disabled={chatRunAction === `run:${run.id}`} onClick={() => replayChatRun(run.id)}>
+                        <span><strong>{run.model || run.provider || "AI Run"}</strong><small>{formatChatRunMeta(run, language)}</small></span>
+                        <em>{chatRunStatusLabel(run.status, language)}</em>
+                      </button>
+                    ))}
+                    {!chatRunLoading && !chatRuns.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noRuns}</p>}
+                  </div>
+                </div>}
                 <div className="ai-contact-editor-actions">
                   <button className="primary-action compact" type="button" onClick={saveAIContact}><Check size={14} /><span>{t.saveAiProfile}</span></button>
+                  {props.authToken && aiContact.id && <button className="secondary-button compact" type="button" onClick={deleteCurrentAIContact}><Trash2 size={14} /><span>{t.deleteAiProfile}</span></button>}
                 </div>
               </div>
             </div> : <>
@@ -784,6 +1345,8 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
                 <div className="react-message-stack"><time className="react-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, language)}</time><div className="react-message-bubble">{message.content && <p>{message.content}</p>}<MessageAttachments attachments={chatAttachmentsToDirect(message.attachments)} onPreview={setPreviewAttachment} /></div></div>
               </div>)}
               {sending && messages[messages.length - 1]?.role !== "assistant" && <div className="react-message assistant pending"><ChatMessageAvatar kind="ai" aiContact={aiContact} /><div className="react-message-stack"><time className="react-message-time" dateTime={new Date().toISOString()}>{formatTime(undefined, language)}</time><div className="react-message-bubble"><p>{t.typing}</p></div></div></div>}
+              <ChatRunTimeline items={chatRunTimeline} language={language} sourceDetailLoading={sourceDetailLoading} onOpenSourceReference={openSourceReference} />
+              {sourceDetail && <SourceDetailPanel detail={sourceDetail} language={language} onClose={() => setSourceDetail(null)} />}
               {!messages.length && (activeProfile ? <div className="react-empty-line" role="status" aria-live="polite">{t.startAi}</div> : <div className="chat-model-empty" role="status" aria-live="polite"><Bot size={18} /><div><strong>{t.unavailableAi}</strong><small>{t.modelRequired}</small></div><button className="secondary-button compact" type="button" onClick={openModelHub}>{t.configureModel}</button></div>)}
             </div>
             {error && <p className="react-error-line" role="alert">{error}</p>}
@@ -961,6 +1524,63 @@ function MessageAttachments(props: { attachments: DirectAttachment[]; onPreview:
   );
 }
 
+function ChatRunTimeline(props: { items: ChatRunTimelineItem[]; language: UiLanguage; sourceDetailLoading?: string; onOpenSourceReference?: (reference: ChatSourceReference) => void }) {
+  if (!props.items.length) return null;
+  return (
+    <div className="chat-run-timeline" aria-label={props.language === "en" ? "AI run events" : "AI 运行事件"} aria-live="polite">
+      {props.items.map((item) => (
+        <div key={item.id} className={`chat-run-event ${item.status}`}>
+          <span className="chat-run-event-icon">{chatRunEventIcon(item)}</span>
+          <div>
+            <strong>{item.title}</strong>
+            {item.detail && <small>{item.detail}</small>}
+            {!!item.references?.length && <div className="source-reference-actions">
+              {item.references.slice(0, 6).map((reference) => (
+                <button
+                  key={reference.ref}
+                  type="button"
+                  className="source-reference-button"
+                  disabled={props.sourceDetailLoading === reference.ref}
+                  onClick={() => props.onOpenSourceReference?.(reference)}
+                >
+                  <FileText size={12} />
+                  <span>{reference.ref.split("#").pop() || reference.ref}</span>
+                </button>
+              ))}
+            </div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function chatRunEventIcon(item: ChatRunTimelineItem) {
+  if (item.status === "failed") return <X size={13} />;
+  if (item.status === "success") return <Check size={13} />;
+  if (item.event.startsWith("thought:")) return <Brain size={13} />;
+  if (item.event.startsWith("source:")) return <FileText size={13} />;
+  if (item.event.startsWith("tool:")) return <PlugZap size={13} />;
+  return <Bot size={13} />;
+}
+
+function SourceDetailPanel(props: { detail: ChatDocumentChunkDetail; language: UiLanguage; onClose: () => void }) {
+  const title = props.language === "en" ? "Source detail" : "引用详情";
+  const chunkLabel = props.language === "en" ? `Chunk ${props.detail.chunk.chunkIndex + 1}` : `第 ${props.detail.chunk.chunkIndex + 1} 段`;
+  return (
+    <section className="source-detail-panel" aria-label={title}>
+      <div className="source-detail-header">
+        <div>
+          <strong>{props.detail.attachment.name}</strong>
+          <small>{[props.detail.ref, chunkLabel, formatBytes(props.detail.attachment.size)].filter(Boolean).join(" · ")}</small>
+        </div>
+        <button type="button" aria-label={props.language === "en" ? "Close source detail" : "关闭引用详情"} onClick={props.onClose}><X size={14} /></button>
+      </div>
+      <pre>{props.detail.chunk.content}</pre>
+    </section>
+  );
+}
+
 function ImagePreviewDialog(props: { attachment: DirectAttachment; onClose: () => void }) {
   const url = resolveMediaUrl(props.attachment.data_url);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -1026,22 +1646,35 @@ function messagesForAIProvider(messages: ChatMessage[]): ChatMessage[] {
       return message;
     }
     const summary = message.attachments.map((attachment, index) => `${index + 1}. ${attachment.name} · ${attachment.kind} · ${formatBytes(attachment.size)}`).join("\n");
-    const content = [message.content?.trim(), `用户随消息附带了本地文件/照片，当前只提供附件元数据，不传送文件内容：\n${summary}`].filter(Boolean).join("\n\n");
-    return { ...message, content, attachments: undefined };
+    const content = [message.content?.trim(), `用户随消息附带了本地文件/照片。支持图片理解的模型会由后端读取图片，其余模型只参考附件元数据：\n${summary}`].filter(Boolean).join("\n\n");
+    return { ...message, content };
   });
 }
 
-function fileToAttachment(file: File): Promise<ChatAttachment> {
+function fileToAttachment(file: File, authToken = ""): Promise<ChatAttachment> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve({
-      id: `att-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      name: file.name,
-      type: file.type || "application/octet-stream",
-      size: file.size,
-      kind: file.type.startsWith("image/") ? "image" : "file",
-      dataUrl: String(reader.result || ""),
-    });
+    reader.onload = async () => {
+      const attachment: ChatAttachment = {
+        id: `att-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        kind: file.type.startsWith("image/") ? "image" : "file",
+        dataUrl: String(reader.result || ""),
+      };
+      if (!authToken) {
+        resolve(attachment);
+        return;
+      }
+      try {
+        const uploaded = await uploadChatAttachment(authToken, attachment);
+        resolve({ ...uploaded, dataUrl: attachment.dataUrl });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "unknown error";
+        reject(new Error(`附件上传失败：${message}`));
+      }
+    };
     reader.onerror = () => reject(new Error("附件读取失败"));
     reader.readAsDataURL(file);
   });
@@ -1077,8 +1710,13 @@ function activeUsableProfile(profiles: ModelProfile[]) {
   return isUsableProfile(active) ? active : profiles.find(isUsableProfile);
 }
 
+function activeProfileForContact(profiles: ModelProfile[], aiContact: AIContactProfile, fallback?: ModelProfile) {
+  const defaultProfile = aiContact.defaultProfileId ? profiles.find((profile) => profile.id === aiContact.defaultProfileId) : undefined;
+  return isUsableProfile(defaultProfile) ? defaultProfile : fallback;
+}
+
 function isUsableProfile(profile: ModelProfile | undefined) {
-  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && profile.apiKey.trim());
+  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && (profile.apiKey.trim() || profile.apiKeySet));
 }
 
 function loadMessages(): ChatMessage[] {
@@ -1104,8 +1742,13 @@ function normalizeAIContact(profile?: Partial<AIContactProfile> | null): AIConta
   const name = profile?.name?.trim() || fallback.name;
   const persona = profile?.persona?.trim() || fallback.persona;
   return {
+    id: profile?.id?.trim() || undefined,
     name: name.slice(0, 40),
     persona: persona.slice(0, 500),
+    role: profile?.role?.trim().slice(0, 240) || fallback.role,
+    notes: profile?.notes?.trim().slice(0, 1000) || "",
+    defaultProfileId: profile?.defaultProfileId?.trim().slice(0, 64) || "",
+    memoryStrategy: profile?.memoryStrategy ?? fallback.memoryStrategy,
   };
 }
 
@@ -1113,7 +1756,50 @@ function defaultAIContact(): AIContactProfile {
   return {
     name: "知己",
     persona: "温和、真诚、像长期陪伴的联系人一样聊天。回复自然一点，少说说明式的话，多关注对方当下的感受。",
+    role: "AI 联系人",
+    notes: "",
+    defaultProfileId: "",
+    memoryStrategy: "recall-retain",
   };
+}
+
+function persistAIContactSnapshot(profile: AIContactProfile) {
+  try {
+    localStorage.setItem(aiContactKey, JSON.stringify(profile));
+  } catch {
+    // AI contact profile is nice-to-have; backend persona keeps the authoritative copy when signed in.
+  }
+}
+
+function aiContactFromPersona(persona: AiPersona): AIContactProfile {
+  return normalizeAIContact({
+    id: persona.id,
+    name: persona.name,
+    persona: persona.temperament || persona.notes || persona.role,
+    role: persona.role,
+    notes: persona.notes,
+    defaultProfileId: persona.defaultProfileId,
+    memoryStrategy: persona.memoryStrategy,
+  });
+}
+
+function aiContactToPersona(contact: AIContactProfile, defaultProfileId: string): AiPersona {
+  const normalized = normalizeAIContact(contact);
+  return {
+    id: normalized.id || "default-ai-contact",
+    name: normalized.name,
+    role: normalized.role || "AI 联系人",
+    temperament: normalized.persona,
+    notes: normalized.notes || "",
+    defaultProfileId: normalized.defaultProfileId || defaultProfileId,
+    memoryStrategy: normalized.memoryStrategy ?? "recall-retain",
+    enabled: true,
+  };
+}
+
+function upsertPersonaList(personas: AiPersona[], persona: AiPersona): AiPersona[] {
+  const without = personas.filter((item) => item.id !== persona.id);
+  return [persona, ...without];
 }
 
 function readStorageValue(key: string) {
@@ -1122,6 +1808,112 @@ function readStorageValue(key: string) {
   } catch {
     return null;
   }
+}
+
+function loadSelectedMcpServerIds(): string[] {
+  try {
+    const parsed = JSON.parse(readStorageValue(aiMcpServersKey) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, 3) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSelectedMcpServerIds(serverIds: string[]) {
+  try {
+    localStorage.setItem(aiMcpServersKey, JSON.stringify(serverIds.slice(0, 3)));
+  } catch {
+    // MCP selection is local convenience; the backend still enforces server allowlists.
+  }
+}
+
+function sameStringList(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function eventString(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function eventStringList(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+}
+
+function citationCheckDetail(data: Record<string, unknown>, language: UiLanguage) {
+  const sourceCount = typeof data.source_count === "number" ? data.source_count : 0;
+  const citedCount = typeof data.cited_count === "number" ? data.cited_count : 0;
+  const missingCount = typeof data.missing_count === "number" ? data.missing_count : Math.max(sourceCount - citedCount, 0);
+  const unknownRefs = eventStringList(data, "unknown_refs");
+  const citationFormat = eventString(data, "citation_format");
+  const prefix = language === "en"
+    ? `Cited ${citedCount}/${sourceCount || citedCount}`
+    : `已引用 ${citedCount}/${sourceCount || citedCount}`;
+  const format = citationFormat
+    ? language === "en" ? `format ${citationFormat}` : `格式 ${citationFormat}`
+    : "";
+  const missing = missingCount > 0
+    ? language === "en" ? `missing ${missingCount}` : `缺少 ${missingCount}`
+    : "";
+  const unknown = unknownRefs.length
+    ? language === "en" ? `unknown ${unknownRefs.slice(0, 3).join(", ")}` : `未知引用 ${unknownRefs.slice(0, 3).join("、")}`
+    : "";
+  return [prefix, format, missing, unknown].filter(Boolean).join(language === "en" ? "; " : "；");
+}
+
+function sourceReferencesFromEvent(data: Record<string, unknown>): ChatSourceReference[] {
+  const rawReferences = Array.isArray(data.references) ? data.references : [];
+  return rawReferences
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const record = item as Record<string, unknown>;
+      const ref = eventString(record, "ref");
+      if (!ref) return null;
+      return {
+        ref,
+        attachmentId: eventString(record, "attachment_id"),
+        attachmentName: eventString(record, "attachment_name"),
+        chunkIndex: typeof record.chunk_index === "number" ? record.chunk_index : 0,
+        preview: eventString(record, "preview"),
+      };
+    })
+    .filter((item): item is ChatSourceReference => Boolean(item));
+}
+
+function chatToolTimelineId(data: Record<string, unknown>) {
+  return ["tool", eventString(data, "server_id"), eventString(data, "tool_name")].filter(Boolean).join(":") || `tool:${Date.now()}`;
+}
+
+function shortRunId(runId: string) {
+  return runId ? `run ${runId.slice(0, 8)}` : "";
+}
+
+function jsonPreview(value: unknown, maxLength = 120) {
+  if (value === undefined || value === null || value === "") return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function usagePreview(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return jsonPreview(value, 80);
+  }
+  const item = value as Record<string, unknown>;
+  const total = numericUsage(item.total_tokens) ?? numericUsage(item.totalTokens) ?? numericUsage(item.totalTokenCount);
+  const input = numericUsage(item.prompt_tokens) ?? numericUsage(item.input_tokens) ?? numericUsage(item.promptTokenCount);
+  const output = numericUsage(item.completion_tokens) ?? numericUsage(item.output_tokens) ?? numericUsage(item.candidatesTokenCount);
+  const parts = [
+    total !== undefined ? `total ${total}` : "",
+    input !== undefined ? `in ${input}` : "",
+    output !== undefined ? `out ${output}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : jsonPreview(value, 80);
+}
+
+function numericUsage(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function persistProfileSnapshot(profiles: ModelProfile[], activeProfileId: string) {
@@ -1160,18 +1952,22 @@ function scheduleScrollToBottom(ref: RefObject<HTMLElement | null>, behavior: Sc
   return () => timers.forEach((timer) => window.clearTimeout(timer));
 }
 
-function configFromProfile(profile: ModelProfile, aiContact?: AIContactProfile, backendOwned = false): ChatConfig {
+function configFromProfile(profile: ModelProfile, aiContact?: AIContactProfile, backendOwned = false, mcpServerIds: string[] = []): ChatConfig {
+  const useBackendPersona = backendOwned && Boolean(aiContact?.id);
   return {
     profileId: backendOwned ? profile.id : undefined,
+    personaId: useBackendPersona ? aiContact?.id : undefined,
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
-    systemPrompt: aiContact ? aiSystemPrompt(backendOwned ? undefined : profile.systemPrompt, aiContact) : backendOwned ? "" : profile.systemPrompt ?? "",
+    systemPrompt: useBackendPersona ? "" : aiContact ? aiSystemPrompt(backendOwned ? undefined : profile.systemPrompt, aiContact) : backendOwned ? "" : profile.systemPrompt ?? "",
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
     supportsVision: profile.supportsVision,
     fallbackModel: profile.fallbackModel ?? "",
+    memoryStrategy: aiContact?.memoryStrategy ?? "recall",
+    mcpServerIds: mcpServerIds.slice(0, 3),
   };
 }
 
@@ -1193,6 +1989,27 @@ function formatTime(value: string | undefined, language: UiLanguage) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(Number.isNaN(date.getTime()) ? new Date() : date);
+}
+
+function mcpAvailabilityLabel(server: McpServer, language: UiLanguage) {
+  if (!server.enabled) return language === "en" ? "Disabled" : "待启用";
+  if (server.live_enabled) return language === "en" ? "Live" : "实时可用";
+  if (server.configured) return language === "en" ? "Planned" : "计划模式";
+  return language === "en" ? "Waiting for env" : "等待配置";
+}
+
+function chatRunStatusLabel(status: string, language: UiLanguage) {
+  if (status === "success") return language === "en" ? "Done" : "完成";
+  if (status === "failed") return language === "en" ? "Failed" : "失败";
+  if (status === "running") return language === "en" ? "Running" : "运行中";
+  return status || (language === "en" ? "Run" : "运行");
+}
+
+function formatChatRunMeta(run: ChatRunRecord, language: UiLanguage) {
+  const time = formatTime(run.startedAt || run.createdAt, language);
+  const tools = run.mcpServerIds.length ? `${run.mcpServerIds.length} MCP` : "";
+  const events = run.eventCount ? `${run.eventCount} events` : "";
+  return [time, tools, events].filter(Boolean).join(" · ");
 }
 
 function AddFriendDialog(props: {

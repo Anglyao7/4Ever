@@ -34,6 +34,16 @@ class Database:
         with self.connect() as conn:
             for statement in _CREATE_TABLES:
                 conn.execute(statement)
+            for statement in _OPTIONAL_CREATE_TABLES:
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+            for statement in _OPTIONAL_DATA_MIGRATIONS:
+                try:
+                    conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
             for table, columns in _SCHEMA_UPDATES.items():
                 existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
                 for name, spec in columns.items():
@@ -136,10 +146,13 @@ _CREATE_TABLES = [
     """
     CREATE TABLE IF NOT EXISTS model_profiles (
       id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      public_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       provider TEXT NOT NULL,
       base_url TEXT NOT NULL,
       api_key TEXT,
+      api_key_encrypted TEXT NOT NULL DEFAULT '',
       model TEXT NOT NULL,
       system_prompt TEXT,
       temperature REAL NOT NULL DEFAULT 0.7,
@@ -152,6 +165,77 @@ _CREATE_TABLES = [
       pet_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ai_personas (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      public_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT '',
+      temperament TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      default_profile_id TEXT NOT NULL DEFAULT '',
+      memory_strategy TEXT NOT NULL DEFAULT 'recall',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ai_memories (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      persona_id TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      persona_id TEXT NOT NULL DEFAULT '',
+      profile_id TEXT NOT NULL DEFAULT '',
+      provider TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'running',
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      events_json TEXT NOT NULL DEFAULT '[]',
+      usage_json TEXT NOT NULL DEFAULT '{}',
+      mcp_server_ids_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_attachments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT '',
+      size INTEGER NOT NULL DEFAULT 0,
+      kind TEXT NOT NULL DEFAULT 'file',
+      path TEXT NOT NULL DEFAULT '',
+      sha256 TEXT NOT NULL DEFAULT '',
+      text_excerpt TEXT NOT NULL DEFAULT '',
+      text_truncated INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_document_chunks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      attachment_id TEXT NOT NULL DEFAULT '',
+      chunk_index INTEGER NOT NULL DEFAULT 0,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )
     """,
     """
@@ -169,6 +253,18 @@ _CREATE_TABLES = [
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS mcp_tool_schema_cache (
+      server_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      input_schema_json TEXT NOT NULL DEFAULT '{}',
+      raw_tool_json TEXT NOT NULL DEFAULT '{}',
+      discovered_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(server_id, tool_name)
     )
     """,
     """
@@ -350,8 +446,39 @@ _CREATE_TABLES = [
     """,
 ]
 
+_OPTIONAL_CREATE_TABLES = [
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS chat_document_chunks_fts USING fts5(
+      id UNINDEXED,
+      user_id UNINDEXED,
+      attachment_id UNINDEXED,
+      chunk_index UNINDEXED,
+      content,
+      tokenize = 'unicode61'
+    )
+    """,
+]
+
+_OPTIONAL_DATA_MIGRATIONS = [
+    """
+    DELETE FROM chat_document_chunks_fts
+    WHERE id NOT IN (SELECT id FROM chat_document_chunks)
+    """,
+    """
+    INSERT INTO chat_document_chunks_fts (id, user_id, attachment_id, chunk_index, content)
+    SELECT c.id, c.user_id, c.attachment_id, c.chunk_index, c.content
+    FROM chat_document_chunks c
+    WHERE NOT EXISTS (
+      SELECT 1 FROM chat_document_chunks_fts f WHERE f.id = c.id
+    )
+    """,
+]
+
 _SCHEMA_UPDATES = {
     "model_profiles": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "public_id": "TEXT NOT NULL DEFAULT ''",
+        "api_key_encrypted": "TEXT NOT NULL DEFAULT ''",
         "supports_vision": "INTEGER NOT NULL DEFAULT 0",
         "fallback_model": "TEXT NOT NULL DEFAULT ''",
         "enabled": "INTEGER NOT NULL DEFAULT 1",
@@ -423,9 +550,72 @@ _SCHEMA_UPDATES = {
         "created_at": "TEXT",
         "updated_at": "TEXT",
     },
+    "ai_personas": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "public_id": "TEXT NOT NULL DEFAULT ''",
+        "default_profile_id": "TEXT NOT NULL DEFAULT ''",
+        "memory_strategy": "TEXT NOT NULL DEFAULT 'recall'",
+        "enabled": "INTEGER NOT NULL DEFAULT 1",
+    },
+    "ai_memories": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "persona_id": "TEXT NOT NULL DEFAULT ''",
+        "source": "TEXT NOT NULL DEFAULT 'manual'",
+        "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+    },
+    "chat_runs": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "persona_id": "TEXT NOT NULL DEFAULT ''",
+        "profile_id": "TEXT NOT NULL DEFAULT ''",
+        "provider": "TEXT NOT NULL DEFAULT ''",
+        "model": "TEXT NOT NULL DEFAULT ''",
+        "status": "TEXT NOT NULL DEFAULT 'running'",
+        "messages_json": "TEXT NOT NULL DEFAULT '[]'",
+        "events_json": "TEXT NOT NULL DEFAULT '[]'",
+        "usage_json": "TEXT NOT NULL DEFAULT '{}'",
+        "mcp_server_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+        "started_at": "TEXT",
+        "ended_at": "TEXT",
+        "created_at": "TEXT",
+    },
+    "chat_attachments": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "content_type": "TEXT NOT NULL DEFAULT ''",
+        "size": "INTEGER NOT NULL DEFAULT 0",
+        "kind": "TEXT NOT NULL DEFAULT 'file'",
+        "path": "TEXT NOT NULL DEFAULT ''",
+        "sha256": "TEXT NOT NULL DEFAULT ''",
+        "text_excerpt": "TEXT NOT NULL DEFAULT ''",
+        "text_truncated": "INTEGER NOT NULL DEFAULT 0",
+        "created_at": "TEXT",
+    },
+    "chat_document_chunks": {
+        "user_id": "TEXT NOT NULL DEFAULT ''",
+        "attachment_id": "TEXT NOT NULL DEFAULT ''",
+        "chunk_index": "INTEGER NOT NULL DEFAULT 0",
+        "created_at": "TEXT",
+    },
+    "mcp_tool_schema_cache": {
+        "description": "TEXT NOT NULL DEFAULT ''",
+        "input_schema_json": "TEXT NOT NULL DEFAULT '{}'",
+        "raw_tool_json": "TEXT NOT NULL DEFAULT '{}'",
+        "discovered_at": "TEXT",
+        "updated_at": "TEXT",
+    },
 }
 
 _INDEXES = [
+    "CREATE INDEX IF NOT EXISTS ix_model_profiles_user_id ON model_profiles(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_model_profiles_public_id ON model_profiles(public_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ai_personas_user_id ON ai_personas(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ai_personas_public_id ON ai_personas(public_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ai_memories_user_id ON ai_memories(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ai_memories_persona_id ON ai_memories(persona_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_runs_user_id ON chat_runs(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_runs_created_at ON chat_runs(created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_attachments_user_id ON chat_attachments(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_document_chunks_user_attachment ON chat_document_chunks(user_id, attachment_id)",
+    "CREATE INDEX IF NOT EXISTS ix_mcp_tool_schema_cache_server ON mcp_tool_schema_cache(server_id)",
     "CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_id ON auth_sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_actor_id ON admin_audit_logs(actor_id)",
     "CREATE INDEX IF NOT EXISTS ix_direct_messages_sender_id ON direct_messages(sender_id)",

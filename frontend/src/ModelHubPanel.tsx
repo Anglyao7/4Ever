@@ -23,7 +23,7 @@ const defaultPet = {
   dailyQuestCount: 0,
 };
 
-export default function ModelHubPanel() {
+export default function ModelHubPanel(props: { authToken?: string }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [profiles, setProfiles] = useState<ModelProfile[]>(loadProfiles);
   const [activeId, setActiveId] = useState(() => loadActiveProfileId() || (profiles[0]?.id ?? ""));
@@ -35,8 +35,8 @@ export default function ModelHubPanel() {
   const [availableModels, setAvailableModels] = useState<ProviderModel[]>([]);
   const activeProfile = profiles.find((profile) => profile.id === activeId) ?? profiles[0] ?? null;
   const draft = activeProfile ?? createProfile("默认 API", providers[0]);
-  const canSave = Boolean(draft.name.trim() && draft.baseUrl.trim() && draft.model.trim() && draft.apiKey.trim());
-  const canCheckModels = Boolean(draft.name.trim() && draft.baseUrl.trim() && draft.apiKey.trim());
+  const canSave = Boolean(draft.name.trim() && draft.baseUrl.trim() && draft.model.trim() && profileHasApiKey(draft));
+  const canCheckModels = Boolean(draft.name.trim() && draft.baseUrl.trim() && profileHasApiKey(draft));
   const missingFields = requiredProfileFields(draft);
   const missingConnectionFields = requiredConnectionFields(draft);
   const statusTone = messageTone(message);
@@ -48,7 +48,7 @@ export default function ModelHubPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchModelProfiles().then((remote) => {
+    fetchModelProfiles(props.authToken).then((remote) => {
       if (cancelled) return;
       if (remote.profiles.length) {
         const nextActiveId = remote.activeProfileId || remote.profiles[0].id;
@@ -56,21 +56,21 @@ export default function ModelHubPanel() {
         setProfiles(remote.profiles);
         setActiveId(nextActiveId);
       } else if (profiles.length) {
-        void syncModelProfiles(profiles, activeId).catch(() => undefined);
+        void syncModelProfiles(profiles, activeId, props.authToken).catch(() => undefined);
       }
     }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [props.authToken]);
 
   useEffect(() => {
     if (!profiles.length) return;
     const timer = window.setTimeout(() => {
-      void syncModelProfiles(profiles, activeId).catch(() => undefined);
+      void syncModelProfiles(profiles, activeId, props.authToken).catch(() => undefined);
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [profiles, activeId]);
+  }, [profiles, activeId, props.authToken]);
 
   function commit(nextProfiles: ModelProfile[], nextActiveId = activeId) {
     const previousProfiles = readStorageValue(profilesKey);
@@ -104,7 +104,7 @@ export default function ModelHubPanel() {
     const nextProfiles = profiles.length ? profiles : [draft];
     if (!commit(nextProfiles, draft.id)) return;
     try {
-      await syncModelProfiles(nextProfiles, draft.id);
+      await syncModelProfiles(nextProfiles, draft.id, props.authToken);
       setMessage("已确认这组全局当前配置，并同步到后端。");
     } catch (error) {
       setMessage(error instanceof Error ? `已保存到本地，后端同步失败：${error.message}` : "已保存到本地，后端同步失败。");
@@ -166,7 +166,7 @@ export default function ModelHubPanel() {
     setTestingConnection(true);
     setMessage("正在测试连接并读取模型列表...");
     try {
-      const result = await testProviderConnection(configFromProfile(draft));
+      const result = await testProviderConnection(configFromProfile(draft), props.authToken);
       const models = result.models ?? [];
       setAvailableModels(models);
       setMessage(result.ok ? `连接成功，已读取 ${result.model_count} 个模型。` : result.message);
@@ -186,7 +186,7 @@ export default function ModelHubPanel() {
     setFetchingModels(true);
     setMessage("正在获取当前 API 的模型列表...");
     try {
-      const result = await fetchProviderModels(configFromProfile(draft));
+      const result = await fetchProviderModels(configFromProfile(draft), props.authToken);
       setAvailableModels(result.models);
       setMessage(result.models.length ? `已获取 ${result.models.length} 个模型，点击下方模型即可选用。` : "连接成功，但当前 API 没有返回模型列表。");
     } catch (error) {
@@ -353,6 +353,7 @@ function restoreStorageValue(key: string, value: string | null) {
 
 function configFromProfile(profile: ModelProfile): ChatConfig {
   return {
+    profileId: profile.id,
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
@@ -370,7 +371,7 @@ function requiredProfileFields(profile: ModelProfile) {
     ["API 名称", profile.name],
     ["接口地址", profile.baseUrl],
     ["模型", profile.model],
-    ["API Key", profile.apiKey],
+    ["API Key", profileHasApiKey(profile) ? "set" : ""],
   ].filter(([, value]) => !String(value ?? "").trim()).map(([label]) => label);
 }
 
@@ -378,8 +379,12 @@ function requiredConnectionFields(profile: ModelProfile) {
   return [
     ["API 名称", profile.name],
     ["接口地址", profile.baseUrl],
-    ["API Key", profile.apiKey],
+    ["API Key", profileHasApiKey(profile) ? "set" : ""],
   ].filter(([, value]) => !String(value ?? "").trim()).map(([label]) => label);
+}
+
+function profileHasApiKey(profile: ModelProfile) {
+  return Boolean(profile.apiKey.trim() || profile.apiKeySet);
 }
 
 function providerLabel(provider: ProviderFormat) {

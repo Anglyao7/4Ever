@@ -323,11 +323,11 @@ function App() {
             }}
           />
         ) : activeModuleId === "inspiration" ? (
-          <InspirationCanvasPanel />
+          <InspirationCanvasPanel authToken={authToken} />
         ) : activeModuleId === "notes" ? (
           <NotesPanel />
         ) : activeModuleId === "provider-hub" ? (
-          <ModelHubPanel />
+          <ModelHubPanel authToken={authToken} />
         ) : activeModuleId === "chat" ? (
           <ChatPanel authToken={authToken} currentUser={currentUser} language={language} />
         ) : activeModuleId === "memory-map" ? (

@@ -17,7 +17,7 @@ const nodeLibraryGroups: Array<{ category: NodeTemplate["category"]; title: stri
   { category: "data", title: "系统数据" },
 ];
 
-export default function InspirationCanvasPanel() {
+export default function InspirationCanvasPanel(props: { authToken?: string }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvas, setCanvas] = useState<WorkflowCanvas>(loadCanvas);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -357,7 +357,7 @@ export default function InspirationCanvasPanel() {
         {/* AI 助手面板 */}
         {showAIAssistant && (
           <div className="canvas-ai-drawer">
-            <AIWorkflowAssistant onGenerateWorkflow={handleAIGenerateWorkflow} />
+            <AIWorkflowAssistant authToken={props.authToken ?? ""} onGenerateWorkflow={handleAIGenerateWorkflow} />
           </div>
         )}
 

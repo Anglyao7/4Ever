@@ -9,6 +9,7 @@ const profilesKey = "4ever.model.profiles";
 const activeProfileKey = "4ever.model.activeProfile";
 
 type AIAssistantProps = {
+  authToken?: string;
   onGenerateWorkflow: (nodes: WorkflowNode[], connections?: NodeConnection[]) => void;
 };
 
@@ -19,7 +20,7 @@ type AssistantMessage = {
   timestamp: string;
 };
 
-export default function AIWorkflowAssistant({ onGenerateWorkflow }: AIAssistantProps) {
+export default function AIWorkflowAssistant({ authToken = "", onGenerateWorkflow }: AIAssistantProps) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -107,23 +108,25 @@ JSON 格式示例：
     setError("");
 
     try {
+      const backendOwnedProfile = Boolean(authToken && activeProfile.apiKeySet);
       const chatMessages: ChatMessage[] = [
-        { role: "system", content: buildSystemPrompt() },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: input.trim() },
       ];
 
       const response = await sendChat(
         {
+          profileId: backendOwnedProfile ? activeProfile.id : undefined,
           provider: activeProfile.provider,
           baseUrl: activeProfile.baseUrl,
           apiKey: activeProfile.apiKey,
           model: activeProfile.model,
-          systemPrompt: "",
+          systemPrompt: buildSystemPrompt(),
           temperature: 0.7,
           maxTokens: 4000,
         },
-        chatMessages
+        chatMessages,
+        authToken
       );
 
       const assistantMessage: AssistantMessage = {

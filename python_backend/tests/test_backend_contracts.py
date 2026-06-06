@@ -179,7 +179,15 @@ def test_token_usage_leaderboard_all_means_last_six_months():
 
     now = datetime.now(timezone.utc)
     old_day = now - timedelta(days=220)
-    for raw_key, stamp, total in [(recent_key, now, 12345), (old_key, old_day, 999999)]:
+    cutoff = now - timedelta(days=184)
+    with database.connect() as conn:
+        current_max = conn.execute(
+            "SELECT COALESCE(MAX(total_tokens), 0) AS total FROM token_usage_buckets WHERE bucket_start >= ?",
+            (cutoff.isoformat().replace("+00:00", "Z"),),
+        ).fetchone()["total"]
+    recent_total = int(current_max or 0) + 9_000_000_000
+    old_total = recent_total + 9_000_000_000
+    for raw_key, stamp, total in [(recent_key, now, recent_total), (old_key, old_day, old_total)]:
         ingest = client.post(
             "/api/token-usage/ingest",
             headers={"Authorization": f"Bearer {raw_key}"},

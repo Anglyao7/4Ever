@@ -8,12 +8,14 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.database import Database, json_dumps, json_loads, now_iso, row_to_dict
 
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
+GENERIC_TOOL_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": True}
 
 
-def list_mcp_tools(server: dict[str, Any], settings: Settings) -> dict[str, Any]:
+def list_mcp_tools(server: dict[str, Any], settings: Settings, database: Database | None = None) -> dict[str, Any]:
     if not server.get("configured"):
         return planned_mcp_result(server, "tools/list", {}, f"{server['required_env']} is not configured.")
     if not server.get("live_enabled"):
@@ -22,7 +24,16 @@ def list_mcp_tools(server: dict[str, Any], settings: Settings) -> dict[str, Any]
         result = mcp_json_rpc(server, "tools/list", {}, settings)
     except Exception as error:
         return {"status": "failed", "error": _truncate(str(error), 600)}
-    return {"status": "success", "result": redact_and_trim(result, settings.mcp_result_max_chars)}
+    cache_error = ""
+    if database:
+        try:
+            store_mcp_tool_schema_cache(database, server, result)
+        except Exception as error:
+            cache_error = _truncate(str(error), 600)
+    response = {"status": "success", "result": redact_and_trim(result, settings.mcp_result_max_chars)}
+    if cache_error:
+        response["cache_error"] = cache_error
+    return response
 
 
 def call_mcp_tool(server: dict[str, Any], tool_name: str, arguments: dict[str, Any] | None, settings: Settings) -> dict[str, Any]:
@@ -97,12 +108,126 @@ def mcp_json_rpc(server: dict[str, Any], method: str, params: dict[str, Any], se
 
 
 def tool_names_from_result(result: dict[str, Any], fallback: list[str]) -> list[str]:
-    if result.get("status") != "success":
-        return fallback
-    body = result.get("result") if isinstance(result.get("result"), dict) else {}
-    tools = body.get("tools") if isinstance(body, dict) else []
-    names = [str(item.get("name")) for item in tools if isinstance(item, dict) and item.get("name")]
+    names = [item["name"] for item in tool_schemas_from_result(result, fallback)]
     return names or fallback
+
+
+def mcp_tool_schemas_for_server(server: dict[str, Any], settings: Settings, database: Database | None = None) -> list[dict[str, Any]]:
+    allowlist = [str(name) for name in (server.get("tool_names") or []) if str(name)]
+    cached = load_mcp_tool_schema_cache(database, str(server.get("id") or ""), allowlist) if database else []
+    cached_by_name = {item["name"]: item for item in cached}
+    fallback_by_name = {item["name"]: item for item in fallback_mcp_tool_schemas(server)}
+    return [cached_by_name.get(name) or fallback_by_name[name] for name in allowlist if name in cached_by_name or name in fallback_by_name]
+
+
+def fallback_mcp_tool_schemas(server: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": str(tool_name),
+            "description": f"{server.get('name') or server.get('id')} MCP tool: {tool_name}",
+            "input_schema": dict(GENERIC_TOOL_SCHEMA),
+            "cached": False,
+        }
+        for tool_name in list(server.get("tool_names") or [])
+        if str(tool_name)
+    ]
+
+
+def tool_schemas_from_result(result: dict[str, Any], fallback: list[str]) -> list[dict[str, Any]]:
+    if result.get("status") != "success":
+        return []
+    body = result.get("result") if isinstance(result.get("result"), dict) else {}
+    return tool_schemas_from_payload(body, fallback)
+
+
+def tool_schemas_from_payload(payload: dict[str, Any], allowlist: list[str]) -> list[dict[str, Any]]:
+    allowed = {str(name) for name in allowlist if str(name)}
+    tools = payload.get("tools") if isinstance(payload, dict) else []
+    by_name: dict[str, dict[str, Any]] = {}
+    for item in tools if isinstance(tools, list) else []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name or name not in allowed:
+            continue
+        schema = item.get("inputSchema") if isinstance(item.get("inputSchema"), dict) else item.get("input_schema")
+        if not isinstance(schema, dict):
+            schema = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+        by_name[name] = {
+            "name": name,
+            "description": str(item.get("description") or ""),
+            "input_schema": normalize_tool_input_schema(schema),
+            "raw": item,
+            "cached": True,
+        }
+    return [by_name[name] for name in allowlist if name in by_name]
+
+
+def normalize_tool_input_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return dict(GENERIC_TOOL_SCHEMA)
+    clean = {str(key): value for key, value in schema.items() if isinstance(key, str)}
+    if clean.get("type") != "object":
+        if isinstance(clean.get("properties"), dict) or isinstance(clean.get("required"), list):
+            clean["type"] = "object"
+        else:
+            return dict(GENERIC_TOOL_SCHEMA)
+    if not isinstance(clean.get("properties"), dict):
+        clean["properties"] = {}
+    return clean
+
+
+def store_mcp_tool_schema_cache(database: Database, server: dict[str, Any], payload: dict[str, Any]) -> None:
+    server_id = str(server.get("id") or "")
+    if not server_id:
+        return
+    schemas = tool_schemas_from_payload(payload, [str(name) for name in (server.get("tool_names") or [])])
+    now = now_iso()
+    with database.connect() as conn:
+        conn.execute("DELETE FROM mcp_tool_schema_cache WHERE server_id = ?", (server_id,))
+        for item in schemas:
+            conn.execute(
+                """
+                INSERT INTO mcp_tool_schema_cache (server_id, tool_name, description, input_schema_json, raw_tool_json, discovered_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    server_id,
+                    item["name"],
+                    item["description"],
+                    json_dumps(item["input_schema"]),
+                    json_dumps(item.get("raw") or {}),
+                    now,
+                    now,
+                ),
+            )
+
+
+def load_mcp_tool_schema_cache(database: Database | None, server_id: str, allowlist: list[str]) -> list[dict[str, Any]]:
+    if not database or not server_id:
+        return []
+    allowed = [str(name) for name in allowlist if str(name)]
+    if not allowed:
+        return []
+    with database.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM mcp_tool_schema_cache WHERE server_id = ?",
+            (server_id,),
+        ).fetchall()
+    by_name: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        record = row_to_dict(row) or {}
+        name = str(record.get("tool_name") or "")
+        if name not in allowed:
+            continue
+        by_name[name] = {
+            "name": name,
+            "description": str(record.get("description") or ""),
+            "input_schema": normalize_tool_input_schema(json_loads(record.get("input_schema_json"), {})),
+            "cached": True,
+            "updated_at": str(record.get("updated_at") or ""),
+        }
+    return [by_name[name] for name in allowed if name in by_name]
 
 
 def select_mcp_server_for_node(node: dict[str, Any], servers: list[dict[str, Any]]) -> dict[str, Any] | None:

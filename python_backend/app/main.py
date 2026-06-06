@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import admin, auth, direct_chat, images, maps, modules, providers, token_usage
 from app.agents.catalog import catalog, configured_mcp_server
-from app.agents.mcp import call_mcp_tool, list_mcp_tools, tool_names_from_result
+from app.agents.mcp import call_mcp_tool, list_mcp_tools, mcp_tool_schemas_for_server, tool_names_from_result
 from app.agents.runner import (
     RUN_EVENTS,
     cancel_saved_run,
@@ -40,6 +40,7 @@ app.add_middleware(
     allow_headers=["Origin", "Content-Type", "Authorization"],
 )
 settings.media_root.mkdir(parents=True, exist_ok=True)
+settings.private_media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/api/media", StaticFiles(directory=settings.media_root), name="media")
 
 app.include_router(providers.router(settings, database))
@@ -103,7 +104,8 @@ def mcp_tools(server_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="MCP server not found.")
     if not server["enabled"]:
         raise HTTPException(status_code=403, detail="MCP server is disabled by admin policy.")
-    result = list_mcp_tools(server, settings)
+    result = list_mcp_tools(server, settings, database)
+    tool_schemas = mcp_tool_schemas_for_server(server, settings, database)
     return {
         "server_id": server["id"],
         "server_name": server["name"],
@@ -113,8 +115,10 @@ def mcp_tools(server_id: str) -> dict[str, Any]:
         "live_enabled": server["live_enabled"],
         "status": result.get("status", "planned"),
         "tools": tool_names_from_result(result, server["tool_names"]),
+        "tool_schemas": [{"name": item["name"], "description": item.get("description", ""), "input_schema": item.get("input_schema", {}), "cached": bool(item.get("cached"))} for item in tool_schemas],
         "reason": result.get("reason", ""),
         "error": result.get("error", ""),
+        "cache_error": result.get("cache_error", ""),
     }
 
 

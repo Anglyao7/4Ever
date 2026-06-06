@@ -1,8 +1,19 @@
 import type {
+  AiMemory,
+  AiMemoryListResponse,
+  AiMemoryRetainPayload,
+  AiMemoryRetainResponse,
+  AiPersona,
+  AiPersonaListResponse,
+  AiPersonaSaveResponse,
   ChatAttachment,
   ChatConfig,
+  ChatDocumentChunkDetail,
+  ChatDocumentChunkSearchResponse,
   ChatMessage,
   ChatResponse,
+  ChatRunListResponse,
+  ChatRunRecord,
   ChatSendPayload,
   ChatStreamEvent,
   DirectMessageRecord,
@@ -38,6 +49,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
+}
+
+function authHeaders(token = ""): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export function getApiBaseUrl() {
@@ -694,10 +709,11 @@ export async function fetchTokenUsageLeaderboard(token: string, range = "30d"): 
   return response.json();
 }
 
-export async function testProviderConnection(config: ChatConfig): Promise<ProviderConnectionResponse> {
+export async function testProviderConnection(config: ChatConfig, authToken = ""): Promise<ProviderConnectionResponse> {
   const response = await fetch(apiUrl("/api/catalog/provider/test"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(providerConnectionPayload(config)),
@@ -711,10 +727,11 @@ export async function testProviderConnection(config: ChatConfig): Promise<Provid
   return response.json();
 }
 
-export async function fetchProviderModels(config: ChatConfig): Promise<ProviderModelsResponse> {
+export async function fetchProviderModels(config: ChatConfig, authToken = ""): Promise<ProviderModelsResponse> {
   const response = await fetch(apiUrl("/api/catalog/provider/models"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(providerConnectionPayload(config)),
@@ -728,8 +745,10 @@ export async function fetchProviderModels(config: ChatConfig): Promise<ProviderM
   return response.json();
 }
 
-export async function fetchModelProfiles(): Promise<ModelProfileSyncResponse> {
-  const response = await fetch(apiUrl("/api/catalog/model-profiles"));
+export async function fetchModelProfiles(authToken = ""): Promise<ModelProfileSyncResponse> {
+  const response = await fetch(apiUrl("/api/catalog/model-profiles"), {
+    headers: authHeaders(authToken),
+  });
   if (!response.ok) {
     const detail = await readError(response);
     throw new Error(detail);
@@ -737,10 +756,11 @@ export async function fetchModelProfiles(): Promise<ModelProfileSyncResponse> {
   return modelProfileResponseFromApi(await response.json());
 }
 
-export async function syncModelProfiles(profiles: ModelProfile[], activeProfileId: string): Promise<ModelProfileSyncResponse> {
+export async function syncModelProfiles(profiles: ModelProfile[], activeProfileId: string, authToken = ""): Promise<ModelProfileSyncResponse> {
   const response = await fetch(apiUrl("/api/catalog/model-profiles"), {
     method: "PUT",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -755,6 +775,180 @@ export async function syncModelProfiles(profiles: ModelProfile[], activeProfileI
   return modelProfileResponseFromApi(await response.json());
 }
 
+export async function fetchAiPersonas(authToken = ""): Promise<AiPersonaListResponse> {
+  const response = await fetch(apiUrl("/api/chat/personas"), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { personas?: unknown[] };
+  return { personas: Array.isArray(data.personas) ? data.personas.map(aiPersonaFromApi).filter((item): item is AiPersona => Boolean(item)) : [] };
+}
+
+export async function saveAiPersona(authToken: string, persona: AiPersona): Promise<AiPersonaSaveResponse> {
+  const response = await fetch(apiUrl("/api/chat/personas"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(aiPersonaToApi(persona)),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json();
+  const saved = aiPersonaFromApi(data.persona);
+  if (!saved) {
+    throw new Error("Persona response is invalid.");
+  }
+  return { persona: saved };
+}
+
+export async function deleteAiPersona(authToken: string, personaId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/api/chat/personas/${encodeURIComponent(personaId)}`), {
+    method: "DELETE",
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+}
+
+export async function fetchAiMemories(authToken = "", personaId = "", query = "", limit = 12): Promise<AiMemoryListResponse> {
+  const params = new URLSearchParams({
+    persona_id: personaId,
+    q: query,
+    limit: String(limit),
+  });
+  const response = await fetch(apiUrl(`/api/chat/memory/recall?${params.toString()}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { memories?: unknown[] };
+  return { memories: Array.isArray(data.memories) ? data.memories.map(aiMemoryFromApi).filter((item): item is AiMemory => Boolean(item)) : [] };
+}
+
+export async function retainAiMemory(authToken: string, payload: AiMemoryRetainPayload): Promise<AiMemoryRetainResponse> {
+  const response = await fetch(apiUrl("/api/chat/memory/retain"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      persona_id: payload.personaId ?? "",
+      content: payload.content,
+      source: payload.source ?? "manual",
+      metadata: payload.metadata ?? {},
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json();
+  const memory = aiMemoryFromApi(data.memory);
+  if (!memory) {
+    throw new Error("Memory response is invalid.");
+  }
+  return { memory };
+}
+
+export async function deleteAiMemory(authToken: string, memoryId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/api/chat/memory/${encodeURIComponent(memoryId)}`), {
+    method: "DELETE",
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+}
+
+export async function uploadChatAttachment(authToken: string, attachment: ChatAttachment): Promise<ChatAttachment> {
+  const dataBase64 = typeof attachment.dataUrl === "string" ? attachment.dataUrl.split(",", 2)[1] ?? "" : "";
+  const response = await fetch(apiUrl("/api/chat/attachments"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      filename: attachment.name,
+      content_type: attachment.type,
+      data_base64: dataBase64,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as Record<string, unknown>;
+  return {
+    ...attachment,
+    id: stringField(data.id) || attachment.id,
+    name: stringField(data.name) || attachment.name,
+    type: stringField(data.type) || attachment.type,
+    size: numberField(data.size, attachment.size),
+    kind: data.kind === "image" ? "image" : "file",
+    uploaded: Boolean(data.uploaded),
+  };
+}
+
+export async function fetchChatRuns(authToken = "", limit = 12): Promise<ChatRunListResponse> {
+  const response = await fetch(apiUrl(`/api/chat/runs?limit=${encodeURIComponent(String(limit))}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { runs?: unknown[] };
+  return { runs: Array.isArray(data.runs) ? data.runs.map(chatRunFromApi).filter((item): item is ChatRunRecord => Boolean(item)) : [] };
+}
+
+export async function fetchChatRunEvents(authToken: string, runId: string): Promise<ChatStreamEvent[]> {
+  const response = await fetch(apiUrl(`/api/chat/runs/${encodeURIComponent(runId)}/events`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return parseChatStreamEvents(await response.text());
+}
+
+export async function fetchChatAttachmentChunks(authToken: string, attachmentId: string, query = "", limit = 6): Promise<ChatDocumentChunkSearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(apiUrl(`/api/chat/attachments/${encodeURIComponent(attachmentId)}/chunks?${params.toString()}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return chatDocumentChunkSearchFromApi(await response.json());
+}
+
+export async function fetchChatDocumentChunkDetail(authToken: string, ref: string): Promise<ChatDocumentChunkDetail> {
+  const response = await fetch(apiUrl(`/api/chat/document-chunks/${encodeURIComponent(ref)}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return chatDocumentChunkDetailFromApi(await response.json());
+}
+
 function tokenUsageRangeQuery(range: string) {
   const [start, end] = range.startsWith("custom:") ? range.slice("custom:".length).split(":") : [];
   if (start && end) {
@@ -763,10 +957,11 @@ function tokenUsageRangeQuery(range: string) {
   return new URLSearchParams({ range }).toString();
 }
 
-export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Promise<ChatResponse> {
+export async function sendChat(config: ChatConfig, messages: ChatMessage[], authToken = ""): Promise<ChatResponse> {
   const response = await fetch(apiUrl("/api/chat"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(chatPayload(config, messages)),
@@ -785,10 +980,12 @@ export async function streamChat(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
   onEvent?: (event: ChatStreamEvent) => void,
+  authToken = "",
 ): Promise<string> {
   const response = await fetch(apiUrl("/api/chat/stream"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(chatPayload(config, messages)),
@@ -874,14 +1071,32 @@ function parseChatStreamEvent(block: string): ChatStreamEvent | null {
   }
 }
 
+function parseChatStreamEvents(text: string): ChatStreamEvent[] {
+  return text
+    .split(/\n\n+/)
+    .map(parseChatStreamEvent)
+    .filter((event): event is ChatStreamEvent => Boolean(event));
+}
+
 function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
   const outboundMessages = messages.map((message) => ({
     role: message.role,
     content: message.content,
+    attachments: (message.attachments ?? []).slice(0, 4).map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      type: attachment.type,
+      size: attachment.size,
+      kind: attachment.kind,
+      data_url: attachment.uploaded ? undefined : attachment.dataUrl,
+      uploaded: attachment.uploaded,
+    })),
   }));
 
   return {
     profile_id: config.profileId,
+    persona_id: config.personaId,
+    contact_id: config.personaId,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
@@ -891,6 +1106,8 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
     max_tokens: config.maxTokens,
     supports_vision: config.supportsVision,
     fallback_model: config.fallbackModel,
+    memory_strategy: config.memoryStrategy,
+    mcp_server_ids: config.mcpServerIds ?? [],
     messages: outboundMessages,
   };
 }
@@ -921,6 +1138,7 @@ export async function generateImage(config: ImageGenerationConfig): Promise<Imag
 
 function providerConnectionPayload(config: ChatConfig) {
   return {
+    profile_id: config.profileId,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
@@ -970,6 +1188,7 @@ function modelProfileFromApi(value: unknown): ModelProfile | null {
     provider,
     baseUrl: stringField(item.base_url),
     apiKey: stringField(item.api_key),
+    apiKeySet: Boolean(item.api_key_set),
     model,
     systemPrompt: stringField(item.system_prompt),
     temperature: numberField(item.temperature, 0.7),
@@ -978,6 +1197,145 @@ function modelProfileFromApi(value: unknown): ModelProfile | null {
     fallbackModel: stringField(item.fallback_model),
     persona: profilePersonaFromApi(item.persona, name),
     pet: profilePetFromApi(item.pet),
+  };
+}
+
+function aiPersonaToApi(persona: AiPersona) {
+  return {
+    id: persona.id,
+    name: persona.name,
+    role: persona.role,
+    temperament: persona.temperament,
+    notes: persona.notes,
+    default_profile_id: persona.defaultProfileId,
+    memory_strategy: persona.memoryStrategy,
+    enabled: persona.enabled,
+  };
+}
+
+function aiPersonaFromApi(value: unknown): AiPersona | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const name = stringField(item.name);
+  if (!id || !name) {
+    return null;
+  }
+  const strategy = stringField(item.memory_strategy);
+  return {
+    id,
+    name,
+    role: stringField(item.role),
+    temperament: stringField(item.temperament),
+    notes: stringField(item.notes),
+    defaultProfileId: stringField(item.default_profile_id),
+    memoryStrategy: isMemoryStrategy(strategy) ? strategy : "recall",
+    enabled: item.enabled !== false,
+    createdAt: stringField(item.created_at),
+    updatedAt: stringField(item.updated_at),
+  };
+}
+
+function isMemoryStrategy(value: string): value is AiPersona["memoryStrategy"] {
+  return value === "off" || value === "recall" || value === "retain" || value === "recall-retain";
+}
+
+function aiMemoryFromApi(value: unknown): AiMemory | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const content = stringField(item.content);
+  if (!id || !content) {
+    return null;
+  }
+  return {
+    id,
+    personaId: stringField(item.persona_id),
+    content,
+    source: stringField(item.source),
+    metadata: objectField(item.metadata) ?? {},
+    createdAt: stringField(item.created_at),
+    updatedAt: stringField(item.updated_at),
+  };
+}
+
+function chatRunFromApi(value: unknown): ChatRunRecord | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    personaId: stringField(item.persona_id),
+    profileId: stringField(item.profile_id),
+    provider: stringField(item.provider),
+    model: stringField(item.model),
+    status: stringField(item.status),
+    eventCount: numberField(item.event_count, 0),
+    usage: objectField(item.usage) ?? {},
+    mcpServerIds: stringArrayField(item.mcp_server_ids),
+    startedAt: stringField(item.started_at),
+    endedAt: stringField(item.ended_at),
+    createdAt: stringField(item.created_at),
+  };
+}
+
+function chatDocumentChunkSearchFromApi(value: unknown): ChatDocumentChunkSearchResponse {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    attachment: chatDocumentChunkAttachmentFromApi(item.attachment),
+    chunks: Array.isArray(item.chunks) ? item.chunks.map(chatDocumentChunkFromApi).filter((chunk): chunk is ChatDocumentChunkDetail["chunk"] => Boolean(chunk)) : [],
+  };
+}
+
+function chatDocumentChunkDetailFromApi(value: unknown): ChatDocumentChunkDetail {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    ref: stringField(item.ref),
+    attachment: chatDocumentChunkAttachmentFromApi(item.attachment),
+    chunk: chatDocumentChunkFromApi(item.chunk) ?? {
+      attachmentId: "",
+      chunkIndex: 0,
+      content: "",
+      createdAt: "",
+    },
+  };
+}
+
+function chatDocumentChunkAttachmentFromApi(value: unknown): ChatDocumentChunkDetail["attachment"] {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    id: stringField(item.id),
+    name: stringField(item.name) || "attachment",
+    type: stringField(item.type),
+    size: numberField(item.size, 0),
+    kind: stringField(item.kind) || "file",
+    createdAt: stringField(item.created_at),
+  };
+}
+
+function chatDocumentChunkFromApi(value: unknown): ChatDocumentChunkDetail["chunk"] | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const content = stringField(item.content);
+  if (!content) {
+    return null;
+  }
+  return {
+    attachmentId: stringField(item.attachment_id),
+    chunkIndex: numberField(item.chunk_index, 0),
+    content,
+    createdAt: stringField(item.created_at),
   };
 }
 
@@ -995,6 +1353,10 @@ function numberField(value: unknown, fallback: number) {
 
 function objectField(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringArrayField(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function profilePersonaFromApi(value: unknown, fallbackName: string): ModelProfile["persona"] {

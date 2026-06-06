@@ -43,8 +43,12 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:7777", "http://127.0.0.1:7777")
     database_url: str = "sqlite:///./4ever.db"
     media_root: Path = Path("media")
+    private_media_root: Path = Path("private-media")
     avatar_upload_dirname: str = "avatars"
     profile_cover_dirname: str = "profile-covers"
+    chat_attachment_upload_dirname: str = "chat-attachments"
+    chat_attachment_url_secret: str = ""
+    chat_attachment_url_ttl_seconds: int = 600
     tencent_map_key: str = ""
     tencent_map_signature_key: str = ""
     bigmodel_mcp_live: bool = False
@@ -56,6 +60,7 @@ class Settings:
     agent_synthesis_model: str = ""
     agent_synthesis_live: bool = False
     agent_graph_runtime: str = "langgraph"
+    model_profile_encryption_key: str = ""
 
 
 def load_settings() -> Settings:
@@ -65,6 +70,7 @@ def load_settings() -> Settings:
     _load_env_file(root / ".env")
     database_url = _normalize_database_url(base_dir, os.getenv("DATABASE_URL", "sqlite:///./4ever.db"))
     media_root = Path(os.getenv("MEDIA_ROOT", str(base_dir / "media"))).resolve()
+    private_media_root = Path(os.getenv("PRIVATE_MEDIA_ROOT", str(base_dir / "private-media"))).resolve()
     origins = tuple(item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:7777,http://127.0.0.1:7777").split(",") if item.strip())
     return Settings(
         base_dir=base_dir,
@@ -75,8 +81,12 @@ def load_settings() -> Settings:
         cors_origins=origins or ("http://localhost:7777", "http://127.0.0.1:7777"),
         database_url=database_url,
         media_root=media_root,
+        private_media_root=private_media_root,
         avatar_upload_dirname=os.getenv("AVATAR_UPLOAD_DIRNAME", "avatars"),
         profile_cover_dirname=os.getenv("PROFILE_COVER_DIRNAME", "profile-covers"),
+        chat_attachment_upload_dirname=os.getenv("CHAT_ATTACHMENT_UPLOAD_DIRNAME", "chat-attachments"),
+        chat_attachment_url_secret=os.getenv("CHAT_ATTACHMENT_URL_SECRET", "").strip(),
+        chat_attachment_url_ttl_seconds=_int_env("CHAT_ATTACHMENT_URL_TTL_SECONDS", 600),
         tencent_map_key=os.getenv("TENCENT_MAP_KEY", ""),
         tencent_map_signature_key=os.getenv("TENCENT_MAP_SIGNATURE_KEY", ""),
         bigmodel_mcp_live=_bool_env("BIGMODEL_MCP_LIVE"),
@@ -88,6 +98,7 @@ def load_settings() -> Settings:
         agent_synthesis_model=os.getenv("AGENT_SYNTHESIS_MODEL", "").strip(),
         agent_synthesis_live=_bool_env("AGENT_SYNTHESIS_LIVE"),
         agent_graph_runtime=os.getenv("AGENT_GRAPH_RUNTIME", "langgraph").strip().lower() or "langgraph",
+        model_profile_encryption_key=os.getenv("MODEL_PROFILE_ENCRYPTION_KEY", "").strip(),
     )
 
 

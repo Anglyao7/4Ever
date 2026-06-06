@@ -9,6 +9,7 @@ export interface ChatAttachment {
   size: number;
   kind: "image" | "file";
   dataUrl?: string;
+  uploaded?: boolean;
 }
 
 export interface ChatReplyReference {
@@ -69,6 +70,7 @@ export interface ChatGroup {
 
 export interface ChatConfig {
   profileId?: string;
+  personaId?: string;
   provider: ProviderFormat;
   baseUrl: string;
   apiKey: string;
@@ -78,6 +80,8 @@ export interface ChatConfig {
   maxTokens: number;
   supportsVision?: boolean;
   fallbackModel?: string;
+  memoryStrategy?: "off" | "recall" | "retain" | "recall-retain";
+  mcpServerIds?: string[];
 }
 
 export interface ApiPersona {
@@ -118,6 +122,7 @@ export interface ModelProfile extends Omit<ChatConfig, "systemPrompt"> {
   id: string;
   name: string;
   systemPrompt?: string;
+  apiKeySet?: boolean;
   persona: ApiPersona;
   pet: ApiPet;
 }
@@ -144,16 +149,114 @@ export interface ChatResponse {
   raw?: Record<string, unknown>;
 }
 
-export type ChatStreamEventName = "run:start" | "message:chunk" | "message:done" | "token:usage" | "model:fallback" | "run:error";
+export type ChatStreamEventName = "run:start" | "thought:summary" | "source:references" | "source:citation-check" | "message:chunk" | "message:done" | "token:usage" | "model:fallback" | "tool:start" | "tool:result" | "run:error";
 
 export interface ChatStreamEvent {
   event: ChatStreamEventName;
   data: Record<string, unknown>;
 }
 
+export interface ChatSourceReference {
+  ref: string;
+  attachmentId: string;
+  attachmentName: string;
+  chunkIndex: number;
+  preview: string;
+}
+
+export interface ChatDocumentChunk {
+  attachmentId: string;
+  chunkIndex: number;
+  content: string;
+  createdAt?: string;
+}
+
+export interface ChatDocumentChunkDetail {
+  ref: string;
+  attachment: {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    kind: string;
+    createdAt?: string;
+  };
+  chunk: ChatDocumentChunk;
+}
+
+export interface ChatDocumentChunkSearchResponse {
+  attachment: ChatDocumentChunkDetail["attachment"];
+  chunks: ChatDocumentChunk[];
+}
+
+export interface ChatRunRecord {
+  id: string;
+  personaId: string;
+  profileId: string;
+  provider: string;
+  model: string;
+  status: "running" | "success" | "failed" | string;
+  eventCount: number;
+  usage: Record<string, unknown>;
+  mcpServerIds: string[];
+  startedAt?: string;
+  endedAt?: string;
+  createdAt?: string;
+}
+
+export interface ChatRunListResponse {
+  runs: ChatRunRecord[];
+}
+
 export interface ModelProfileSyncResponse {
   profiles: ModelProfile[];
   activeProfileId: string;
+}
+
+export interface AiPersona {
+  id: string;
+  name: string;
+  role: string;
+  temperament: string;
+  notes: string;
+  defaultProfileId: string;
+  memoryStrategy: "off" | "recall" | "retain" | "recall-retain";
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiPersonaListResponse {
+  personas: AiPersona[];
+}
+
+export interface AiPersonaSaveResponse {
+  persona: AiPersona;
+}
+
+export interface AiMemory {
+  id: string;
+  personaId: string;
+  content: string;
+  source: string;
+  metadata: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiMemoryListResponse {
+  memories: AiMemory[];
+}
+
+export interface AiMemoryRetainPayload {
+  personaId?: string;
+  content: string;
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AiMemoryRetainResponse {
+  memory: AiMemory;
 }
 
 export interface ProviderModel {
