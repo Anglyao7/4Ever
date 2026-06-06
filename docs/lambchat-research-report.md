@@ -1322,3 +1322,43 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 这是基于常见 secret-like 文本模式的防护，不是完整 DLP 或内容安全分类器。
 - 真实 provider / BigModel MCP 的错误结构、限流结构和超时行为仍需要外部 smoke test 证明。
+
+## 本次后续落地记录（2026-06-07，外部 AI runtime smoke 入口）
+
+本次补齐上线兼容验证的执行入口：在本地 mock E2E 和错误脱敏测试之外，新增一个可选外部 smoke runner，用于部署前用真实 API key 验证 OpenAI-compatible、Anthropic、Gemini 原生流式和 BigModel MCP live 基础连通性。
+
+### 已完成
+
+- 新增 `app.runtime_smoke`：
+  - Provider smoke 会复用现有 `_stream_provider()` 原生流式路径。
+  - OpenAI-compatible、Anthropic、Gemini 分别读取 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。
+  - 支持 `*_BASE_URL` 和 `*_MODEL` 覆盖，便于测试 OpenAI-compatible 代理或不同模型。
+  - 未配置密钥时返回 `skipped`，不会让 CI 或本地开发依赖外部服务。
+- 新增 `scripts/ai_runtime_smoke.py` CLI：
+  - 输出 non-sensitive JSON。
+  - 缺少环境变量的项目自动跳过。
+  - 如果有失败项，进程返回非 0，方便部署流水线接入。
+- BigModel MCP smoke：
+  - `BIGMODEL_API_KEY` + `BIGMODEL_MCP_LIVE=1` 满足时，对 `AI_RUNTIME_SMOKE_MCP_SERVERS` 执行 `tools/list`。
+  - 只有显式配置 `AI_RUNTIME_SMOKE_MCP_TOOL_CALLS` 时才执行 `tools/call`，格式为 `server_id|tool_name|source`。
+  - 输出只包含工具数量、工具名、参数 key 和结果结构摘要，不输出 MCP 原始结果正文。
+- 输出脱敏：
+  - 不输出 prompt。
+  - 不输出模型回复正文。
+  - 不输出 MCP result body。
+  - 不输出 API key、Bearer token、secret-like 文本或嵌入式 data URL。
+- `.env.example` 和 `python_backend/README.md` 已补充 smoke 相关变量和运行方法。
+
+### 已完成的验证
+
+- 新增测试：
+  - `test_runtime_smoke_skips_when_external_credentials_are_missing`
+  - `test_runtime_smoke_sanitizes_secret_like_text_and_data_urls`
+  - `test_runtime_smoke_provider_success_does_not_emit_prompt_or_response`
+  - `test_mcp_smoke_skips_when_live_flag_is_disabled_without_leaking_key`
+
+### 当前剩余边界
+
+- 本次新增的是真实外部 smoke 的可执行入口，不等价于已经拿真实 API key 跑通过。
+- 上线前仍需要在有真实密钥的环境执行 `python scripts/ai_runtime_smoke.py`，并记录 OpenAI-compatible、Anthropic、Gemini 和 BigModel MCP 的实际结果。
+- smoke 只证明基础 streaming / tools/list / 显式 tools/call 连通性；复杂附件 vision、文档引用、fallback、限流恢复和长工具链仍需要单独端到端验证。
