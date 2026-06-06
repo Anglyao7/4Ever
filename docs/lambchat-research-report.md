@@ -1392,3 +1392,36 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 这次收口的是 provider HTTP 错误文本暴露，不是完整上游错误分类器。
 - 真实 provider 的限流、连接超时、流中断和非标准错误结构仍需要通过外部 smoke 或受控外部环境继续验证。
+
+## 本次后续落地记录（2026-06-07，Agent workflow 输出持久化脱敏）
+
+本次把安全边界从普通聊天扩展到现有 Agent workflow：`workflow_agent_runs` 和 `workflow_agent_checkpoints` 会保存 `input_json`、`canvas_json`、`node_results_json`、`events_json` 和 `node_result_json`。如果 MCP 节点返回包含 secret-like 文本、Bearer token、data URL 或超长内容，原先可能进入 API 响应、SSE replay 和 SQLite 持久化记录。
+
+### 已完成
+
+- Agent runner 新增本地输出 sanitizer：
+  - 覆盖 `api_key=...`、`token=...`、`secret=...`、`password=...`、`Authorization: Bearer ...`。
+  - 覆盖任意位置的嵌入式 `data:*;base64,...`。
+  - 所有 Agent run 字符串值按统一上限截断。
+  - 节点 `output` 超长时写入 bounded preview，并标记 `output_truncated=true`。
+- 覆盖返回和持久化边界：
+  - `POST /api/agents/runs` 返回的 run。
+  - `GET /api/agents/runs/{run_id}` 和列表读取。
+  - `GET /api/agents/runs/{run_id}/events` SSE replay。
+  - `workflow_agent_runs.input_json`、`canvas_json`、`node_results_json`、`events_json`。
+  - `workflow_agent_checkpoints.node_result_json` 和 checkpoint events。
+- 没有扩大 checkpoint 列表 API 的字段结构；只对已有保存和读取内容做脱敏。
+
+### 已完成的验证
+
+- 新增测试：
+  - `test_agent_mcp_node_output_is_redacted_and_trimmed_in_response_replay_and_storage`
+- 该测试模拟 MCP 节点返回 secret-like 文本、Bearer token、data URL 和超长内容，并验证：
+  - run 响应不含原文。
+  - Agent SSE replay 不含原文。
+  - SQLite 原始 `workflow_agent_runs` / `workflow_agent_checkpoints` JSON 字段不含原文。
+
+### 当前剩余边界
+
+- 这是 Agent workflow 的输出级防护，不等价于完整数据分级或 DLP。
+- 已有历史数据库中旧 run 如果曾保存过敏感内容，本次只在读取时做二次脱敏；如需彻底清理旧 SQLite 原文，还需要单独迁移/清理脚本。

@@ -61,7 +61,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 7778
 - `GET /api/agents/runs/{run_id}/checkpoint`
 - `GET /api/agents/runs/{run_id}/checkpoints`
 
-Agent execution uses LangGraph `StateGraph`. SQLite table names and JSON payloads are kept stable so the frontend and Token CLI can use the Python backend without API changes.
+Agent execution uses LangGraph `StateGraph`. SQLite table names and JSON payloads are kept stable so the frontend and Token CLI can use the Python backend without API changes. Agent run records, node results, checkpoints, and SSE replay redact secret-like text and embedded data URLs before returning or persisting workflow output; long node output is stored as a bounded preview with `output_truncated=true`.
 
 MCP runs in planned mode by default. Set `BIGMODEL_API_KEY` and `BIGMODEL_MCP_LIVE=1` only when the backend should make live remote BigModel MCP calls. API keys stay in backend environment variables and are never sent to the frontend.
 

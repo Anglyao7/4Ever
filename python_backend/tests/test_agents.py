@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, database
 
 
 client = TestClient(app)
@@ -88,6 +88,67 @@ def test_agent_mcp_node_uses_python_mcp_client_planned_output():
     assert "Tool: webSearchPrime" in mcp_results[0]["output"]
     assert "Tool: webReader" in mcp_results[1]["output"]
     assert "计划调用 BigModel" in mcp_results[0]["output"]
+
+
+def test_agent_mcp_node_output_is_redacted_and_trimmed_in_response_replay_and_storage(monkeypatch):
+    secret_body = "api_key=AGENT_NODE_SECRET Authorization: Bearer AGENT_NODE_BEARER data:image/png;base64,AGENT_NODE_IMAGE " + ("agent output " * 420)
+
+    def fake_call_mcp_tool(server, tool_name, arguments, settings):
+        return {
+            "status": "success",
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "result": {
+                "token": "AGENT_RESULT_TOKEN",
+                "content": [{"type": "text", "text": secret_body}],
+            },
+        }
+
+    monkeypatch.setattr("app.agents.runner.call_mcp_tool", fake_call_mcp_tool)
+    response = client.post(
+        "/api/agents/runs",
+        json={
+            "template_id": "agent-research-brief",
+            "agent_id": "research-agent",
+            "mcp_server_ids": ["bigmodel-web-search"],
+            "input": {"query": "查一下 api_key=AGENT_INPUT_SECRET data:image/png;base64,AGENT_INPUT_IMAGE"},
+            "source": "manual",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    run = response.json()
+    run_dump = response.text
+    assert "AGENT_NODE_SECRET" not in run_dump
+    assert "AGENT_NODE_BEARER" not in run_dump
+    assert "AGENT_NODE_IMAGE" not in run_dump
+    assert "AGENT_RESULT_TOKEN" not in run_dump
+    assert "AGENT_INPUT_SECRET" not in run_dump
+    assert "AGENT_INPUT_IMAGE" not in run_dump
+    assert "[redacted data URL]" in run_dump
+    mcp_result = [result for result in run["node_results"] if result["type"] == "mcp"][0]
+    assert mcp_result["output_truncated"] is True
+    assert mcp_result["output"].endswith("... [trimmed]")
+
+    events = client.get(f"/api/agents/runs/{run['id']}/events")
+    assert events.status_code == 200, events.text
+    assert "AGENT_NODE_SECRET" not in events.text
+    assert "AGENT_NODE_BEARER" not in events.text
+    assert "AGENT_NODE_IMAGE" not in events.text
+    assert "AGENT_RESULT_TOKEN" not in events.text
+    assert "[redacted data URL]" in events.text
+
+    with database.connect() as conn:
+        row = conn.execute("SELECT input_json, node_results_json, events_json FROM workflow_agent_runs WHERE id = ?", (run["id"],)).fetchone()
+        checkpoint = conn.execute("SELECT node_result_json, events_json FROM workflow_agent_checkpoints WHERE run_id = ? AND node_id = ?", (run["id"], "search")).fetchone()
+    stored = row["input_json"] + row["node_results_json"] + row["events_json"] + checkpoint["node_result_json"] + checkpoint["events_json"]
+    assert "AGENT_NODE_SECRET" not in stored
+    assert "AGENT_NODE_BEARER" not in stored
+    assert "AGENT_NODE_IMAGE" not in stored
+    assert "AGENT_RESULT_TOKEN" not in stored
+    assert "AGENT_INPUT_SECRET" not in stored
+    assert "AGENT_INPUT_IMAGE" not in stored
+    assert "[redacted data URL]" in stored
 
 
 def test_canvas_run_preserves_runtime_binding_in_node_output():

@@ -36,6 +36,10 @@ class AgentRunState(TypedDict, total=False):
 
 RUNS: dict[str, dict[str, Any]] = {}
 RUN_EVENTS: dict[str, list[dict[str, Any]]] = {}
+AGENT_VALUE_MAX_CHARS = 3000
+DATA_URL_PATTERN = re.compile(r"data:[A-Za-z0-9.+/-]+(?:;[A-Za-z0-9_.=+/-]+)*;base64,[A-Za-z0-9+/=_-]+", re.IGNORECASE)
+TEXT_SECRET_QUOTED_PATTERN = re.compile(r"([\"']?\b(?:authorization|api[_-]?key|token|secret|password)\b[\"']?\s*[:=]\s*[\"'])(?:Bearer\s+)?[^\"']+([\"'])", re.IGNORECASE)
+TEXT_SECRET_BARE_PATTERN = re.compile(r"(\b(?:authorization|api[_-]?key|token|secret|password)\b\s*[:=]\s*)(?:Bearer\s+)?[^\s,;}]+", re.IGNORECASE)
 
 
 def execute_run(
@@ -122,10 +126,12 @@ def execute_run(
     }
     final_event = "run.failed" if status == "failed" else "run.finished"
     final_state["events"].append({"event": final_event, "data": {"run_id": run_id, "status": status, "ended_at": ended}})
+    run = sanitize_agent_run(run)
+    events = sanitize_agent_events(final_state["events"])
     RUNS[run_id] = run
-    RUN_EVENTS[run_id] = final_state["events"]
+    RUN_EVENTS[run_id] = events
     if db:
-        save_run(db, run, final_state["events"])
+        save_run(db, run, events)
     return run
 
 
@@ -196,6 +202,8 @@ def checkpoints(run_id: str) -> dict[str, Any]:
 
 
 def save_run(db: Database, run: dict[str, Any], events: list[dict[str, Any]]) -> None:
+    run = sanitize_agent_run(run)
+    events = sanitize_agent_events(events)
     ended_at = run.get("ended_at") or None
     with db.connect() as conn:
         conn.execute(
@@ -267,7 +275,7 @@ def save_run(db: Database, run: dict[str, Any], events: list[dict[str, Any]]) ->
 
 
 def run_from_record(record: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return sanitize_agent_run({
         "id": record["id"],
         "thread_id": record.get("thread_id") or "",
         "checkpoint_id": record.get("checkpoint_id") or "",
@@ -286,7 +294,7 @@ def run_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "reviewed_at": record.get("reviewed_at") or "",
         "started_at": record.get("started_at") or "",
         "ended_at": record.get("ended_at") or "",
-    }
+    })
 
 
 def load_run(db: Database, run_id: str) -> dict[str, Any] | None:
@@ -304,7 +312,7 @@ def list_saved_runs(db: Database, limit: int) -> list[dict[str, Any]]:
 def load_events(db: Database, run_id: str) -> list[dict[str, Any]]:
     with db.connect() as conn:
         record = row_to_dict(conn.execute("SELECT events_json FROM workflow_agent_runs WHERE id = ?", (run_id,)).fetchone())
-    return json_loads(record.get("events_json") if record else None, [])
+    return sanitize_agent_events(json_loads(record.get("events_json") if record else None, []))
 
 
 def update_review(db: Database, run_id: str, status: str, note: str) -> dict[str, Any] | None:
@@ -327,6 +335,7 @@ def cancel_saved_run(db: Database, run_id: str) -> dict[str, Any] | None:
     run["ended_at"] = ended_at
     events = load_events(db, run_id)
     events.append({"event": "run.cancelled", "data": {"run_id": run_id, "status": "canceled", "reason": "cancelled by user", "ended_at": ended_at}})
+    events = sanitize_agent_events(events)
     with db.connect() as conn:
         conn.execute("UPDATE workflow_agent_runs SET status = ?, ended_at = ?, events_json = ? WHERE id = ?", ("canceled", ended_at, json_dumps(events), run_id))
     RUNS[run_id] = run
@@ -414,6 +423,71 @@ def _events_until_step(events: list[dict[str, Any]], graph_step: str) -> list[di
         if isinstance(data, dict) and data.get("graph_step") == graph_step:
             break
     return out
+
+
+def sanitize_agent_run(run: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in run.items():
+        if key == "node_results" and isinstance(value, list):
+            out[key] = [sanitize_agent_node_result(item) for item in value if isinstance(item, dict)]
+        else:
+            out[str(key)] = sanitize_agent_value(value)
+    return out
+
+
+def sanitize_agent_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        sanitized.append({str(key): sanitize_agent_value(value) for key, value in event.items()})
+    return sanitized
+
+
+def sanitize_agent_node_result(result: dict[str, Any]) -> dict[str, Any]:
+    out = {str(key): sanitize_agent_value(value) for key, value in result.items() if key != "output"}
+    if "output" in result:
+        output, truncated = sanitize_agent_text(str(result.get("output") or ""), AGENT_VALUE_MAX_CHARS)
+        out["output"] = output
+        if truncated:
+            out["output_truncated"] = True
+    return out
+
+
+def sanitize_agent_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return sanitize_agent_text(value, AGENT_VALUE_MAX_CHARS)[0]
+    if isinstance(value, list):
+        return [sanitize_agent_value(item) for item in value]
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if _agent_secret_key(key_text):
+                out[key_text] = "[redacted]"
+            elif key_text in {"data_url", "dataUrl"}:
+                out[key_text] = "[redacted data URL]"
+            elif key_text == "output" and isinstance(item, str):
+                out[key_text], truncated = sanitize_agent_text(item, AGENT_VALUE_MAX_CHARS)
+                if truncated:
+                    out["output_truncated"] = True
+            else:
+                out[key_text] = sanitize_agent_value(item)
+        return out
+    return value
+
+
+def sanitize_agent_text(value: str, limit: int) -> tuple[str, bool]:
+    text = DATA_URL_PATTERN.sub("[redacted data URL]", str(value or ""))
+    text = TEXT_SECRET_QUOTED_PATTERN.sub(r"\1[redacted]\2", text)
+    text = TEXT_SECRET_BARE_PATTERN.sub(r"\1[redacted]", text)
+    if len(text) <= limit:
+        return text, False
+    return text[:limit].rstrip() + "... [trimmed]", True
+
+
+def _agent_secret_key(key: str) -> bool:
+    return bool(re.search(r"(authorization|api[_-]?key|token|secret|password)", key, re.IGNORECASE))
 
 
 def _node_callable(node: GraphNode):
