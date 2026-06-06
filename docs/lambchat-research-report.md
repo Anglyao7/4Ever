@@ -1260,3 +1260,36 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 - 这是本地 HTTP mock 级 E2E，证明 URL/header/body/SSE 协议和本地 parser 兼容；不是 provider 官方服务的真实外部 E2E。
 - 后续仍需要用真实 API key 或受控外部 mock 覆盖 provider 4xx/5xx、连接超时、流中断、非 JSON/SSE 异常和真实 token usage 差异。
 - BigModel MCP live 的真实 JSON-RPC initialize/tools/list/tools/call 链路仍需要单独 E2E。
+
+## 本次后续落地记录（2026-06-07，MCP live 本地 JSON-RPC E2E）
+
+本次推进第五项“聊天接入 MCP 工具”和上线兼容验证：新增本地 MCP JSON-RPC mock server 测试，让 MCP client 真实走 `httpx.post()`，覆盖 live mode 关键协议，而不是只 monkeypatch `mcp_json_rpc()`。
+
+### 已完成
+
+- 新增测试内 `LocalMcpJsonRpcServer`，在本地随机端口接收真实 JSON-RPC HTTP POST。
+- 覆盖 `initialize` 请求：
+  - `Authorization: Bearer ...`。
+  - `MCP-Protocol-Version: 2025-06-18`。
+  - 服务端返回 `Mcp-Session-Id`。
+- 覆盖 `notifications/initialized` 和后续业务请求会带上 `Mcp-Session-Id`。
+- 覆盖 `tools/list` JSON 响应：
+  - `list_mcp_tools()` 返回 success。
+  - `mcp_tool_schema_cache` 写入 allowlist 内的 `webSearchPrime` schema。
+- 覆盖 `tools/call` SSE 响应：
+  - `call_mcp_tool()` 能从 `text/event-stream` 的 `data:` 中 unwrap JSON-RPC result。
+  - 工具参数按 `{"name": "...", "arguments": ...}` 发送。
+  - MCP result 中的 secret-like 字段会被 redacted，长结果会按 `MCP_RESULT_MAX_CHARS` 裁剪。
+
+### 已完成的验证
+
+- 新增测试：
+  - `test_mcp_live_tools_list_uses_http_json_rpc_session_and_caches_schema`
+  - `test_mcp_live_tool_call_accepts_sse_result_and_redacts_payload`
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "mcp_live"`
+
+### 当前剩余边界
+
+- 这是本地 JSON-RPC mock 级 E2E，证明本地协议实现、session 传递、SSE unwrap 和 redaction/trim 兼容；不是 BigModel 官方服务真实外部 smoke test。
+- 上线前如果开启 `BIGMODEL_MCP_LIVE=1`，仍需要用真实 `BIGMODEL_API_KEY` 验证 `tools/list`、`webSearchPrime`、`webReader` 和 `zread` 的真实响应结构、超时、错误码和限流行为。

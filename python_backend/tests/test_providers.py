@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import admin, auth
-from app.agents.mcp import list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
+from app.agents.mcp import call_mcp_tool, list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
 from app.config import Settings
 from app.database import Database, now_iso
 from app.providers import (
@@ -97,6 +97,83 @@ class LocalStreamingProvider:
             raise RuntimeError("Local streaming provider is not running.")
         host, port = self.server.server_address
         return f"http://{host}:{port}"
+
+
+class LocalMcpJsonRpcServer:
+    def __init__(self, tool_result: dict[str, Any] | None = None, stream_tool_result: bool = False):
+        self.tool_result = tool_result or {"content": [{"type": "text", "text": "MCP ok"}]}
+        self.stream_tool_result = stream_tool_result
+        self.records: list[dict[str, Any]] = []
+        self.server: ThreadingHTTPServer | None = None
+        self.thread: threading.Thread | None = None
+
+    def __enter__(self):
+        parent = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+                try:
+                    json_body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+                except json.JSONDecodeError:
+                    json_body = {}
+                method = str(json_body.get("method") or "")
+                parent.records.append({"path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": json_body})
+                if method == "initialize":
+                    payload = {"jsonrpc": "2.0", "id": json_body.get("id"), "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "local-mcp"}}}
+                    self._write_json(payload, {"Mcp-Session-Id": "local-session-1"})
+                elif method == "notifications/initialized":
+                    self._write_json({"jsonrpc": "2.0", "result": {}})
+                elif method == "tools/list":
+                    self._write_json({"jsonrpc": "2.0", "id": json_body.get("id"), "result": mcp_tools_list_payload()})
+                elif method == "tools/call":
+                    payload = {"jsonrpc": "2.0", "id": json_body.get("id"), "result": parent.tool_result}
+                    if parent.stream_tool_result:
+                        self._write_sse(payload)
+                    else:
+                        self._write_json(payload)
+                else:
+                    self._write_json({"jsonrpc": "2.0", "error": {"code": -32601, "message": "method not found"}}, status=400)
+
+            def _write_json(self, payload: dict[str, Any], headers: dict[str, str] | None = None, status: int = 200):
+                body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                for key, value in (headers or {}).items():
+                    self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _write_sse(self, payload: dict[str, Any]):
+                body = ("data: " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                return
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+        if self.thread:
+            self.thread.join(timeout=2)
+
+    @property
+    def endpoint(self) -> str:
+        if not self.server:
+            raise RuntimeError("Local MCP JSON-RPC server is not running.")
+        host, port = self.server.server_address
+        return f"http://{host}:{port}/mcp"
 
 
 async def collect_provider_stream_events(settings: Settings, provider: str, payload: ChatCompletionRequest) -> list[dict[str, Any]]:
@@ -360,6 +437,57 @@ def test_mcp_tools_list_success_updates_schema_cache(tmp_path, monkeypatch):
     assert cached[0]["description"] == "Search the web"
     assert cached[0]["input_schema"]["required"] == ["query"]
     assert cached[0]["input_schema"]["properties"]["query"]["type"] == "string"
+
+
+def test_mcp_live_tools_list_uses_http_json_rpc_session_and_caches_schema(tmp_path, monkeypatch):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", bigmodel_mcp_live=True)
+    database = Database(settings)
+    database.migrate()
+    monkeypatch.setenv("BIGMODEL_API_KEY", "bigmodel-live-key")
+
+    with LocalMcpJsonRpcServer() as mcp_server:
+        server = {**mcp_schema_test_server(), "endpoint": mcp_server.endpoint}
+        result = list_mcp_tools(server, settings, database)
+
+    assert result["status"] == "success"
+    assert result["result"]["tools"][0]["name"] == "webSearchPrime"
+    assert [record["json"]["method"] for record in mcp_server.records] == ["initialize", "notifications/initialized", "tools/list"]
+    assert all(record["headers"]["authorization"] == "Bearer bigmodel-live-key" for record in mcp_server.records)
+    assert all(record["headers"]["mcp-protocol-version"] == "2025-06-18" for record in mcp_server.records)
+    assert "mcp-session-id" not in mcp_server.records[0]["headers"]
+    assert mcp_server.records[1]["headers"]["mcp-session-id"] == "local-session-1"
+    assert mcp_server.records[2]["headers"]["mcp-session-id"] == "local-session-1"
+
+    cached = load_mcp_tool_schema_cache(database, "bigmodel-web-search", ["webSearchPrime"])
+    assert cached[0]["name"] == "webSearchPrime"
+    assert cached[0]["input_schema"]["required"] == ["query"]
+
+
+def test_mcp_live_tool_call_accepts_sse_result_and_redacts_payload(tmp_path, monkeypatch):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", bigmodel_mcp_live=True, mcp_result_max_chars=260)
+    monkeypatch.setenv("BIGMODEL_API_KEY", "bigmodel-live-key")
+    tool_result = {
+        "content": [{"type": "text", "text": "LIVE_MCP_RESULT"}],
+        "api_key": "SECRET_FROM_TOOL",
+        "items": [{"title": "Large result", "body": "MCP_BODY_" * 200}],
+    }
+
+    with LocalMcpJsonRpcServer(tool_result=tool_result, stream_tool_result=True) as mcp_server:
+        server = {**mcp_schema_test_server(), "endpoint": mcp_server.endpoint}
+        result = call_mcp_tool(server, "webSearchPrime", {"query": "local mcp"}, settings)
+
+    assert result["status"] == "success"
+    assert result["tool_name"] == "webSearchPrime"
+    assert result["arguments"] == {"query": "local mcp"}
+    encoded = json.dumps(result, ensure_ascii=False)
+    assert "SECRET_FROM_TOOL" not in encoded
+    assert "MCP_BODY_" * 80 not in encoded
+    assert "trimmed" in encoded
+
+    assert [record["json"]["method"] for record in mcp_server.records] == ["initialize", "notifications/initialized", "tools/call"]
+    call_payload = mcp_server.records[2]["json"]
+    assert call_payload["params"] == {"name": "webSearchPrime", "arguments": {"query": "local mcp"}}
+    assert mcp_server.records[2]["headers"]["mcp-session-id"] == "local-session-1"
 
 
 def test_mcp_tools_list_cache_failure_does_not_hide_live_result(tmp_path, monkeypatch):
