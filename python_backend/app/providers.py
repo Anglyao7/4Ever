@@ -374,6 +374,7 @@ CHAT_MCP_TOOL_LOOP_MAX_ROUNDS = 3
 CHAT_EVENT_TOOL_RESULT_MAX_CHARS = 900
 CHAT_EVENT_TOOL_ARGUMENT_MAX_CHARS = 800
 CHAT_EVENT_ERROR_MAX_CHARS = 800
+DATA_URL_PATTERN = re.compile(r"data:[A-Za-z0-9.+/-]+(?:;[A-Za-z0-9_.=+/-]+)*;base64,[A-Za-z0-9+/=_-]+", re.IGNORECASE)
 CHAT_ATTACHMENT_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -1506,7 +1507,7 @@ def sanitize_chat_run_attachment(attachment: Any) -> Any:
 
 def sanitize_chat_run_value(value: Any) -> Any:
     if isinstance(value, str):
-        return "[redacted data URL]" if looks_like_data_url(value) else value
+        return redact_data_urls(value)
     if isinstance(value, list):
         return [sanitize_chat_run_value(item) for item in value]
     if isinstance(value, dict):
@@ -1515,8 +1516,11 @@ def sanitize_chat_run_value(value: Any) -> Any:
 
 
 def looks_like_data_url(value: str) -> bool:
-    head = value[:128].lower()
-    return head.startswith("data:") and "base64," in head
+    return DATA_URL_PATTERN.search(str(value or "")[:4096]) is not None
+
+
+def redact_data_urls(value: str) -> str:
+    return DATA_URL_PATTERN.sub("[redacted data URL]", str(value or ""))
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -1567,7 +1571,7 @@ def bounded_chat_event_value(value: Any, max_chars: int) -> tuple[Any, bool]:
 
 def sanitize_chat_event_value(value: Any) -> Any:
     if isinstance(value, str):
-        return truncate_chat_event_text(value, CHAT_EVENT_TOOL_RESULT_MAX_CHARS) if looks_like_data_url(value) else value
+        return redact_data_urls(value)
     if isinstance(value, list):
         return [sanitize_chat_event_value(item) for item in value]
     if isinstance(value, dict):
@@ -1585,7 +1589,7 @@ def sanitize_chat_event_value(value: Any) -> Any:
 
 
 def truncate_chat_event_text(value: str, limit: int) -> str:
-    text = "[redacted data URL]" if looks_like_data_url(value) else value
+    text = redact_data_urls(value)
     return text if len(text) <= limit else text[:limit].rstrip() + "... [trimmed]"
 
 
@@ -2395,19 +2399,19 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                 return
             except HTTPException as fallback_error:
                 error_data = {"message": f"Primary model failed: {primary_error.detail}. Fallback model failed: {fallback_error.detail}", "run_id": run_id}
-                emit_chat_event(database, run_id, "run:error", error_data)
+                error_event = emit_chat_event(database, run_id, "run:error", error_data)
                 finish_chat_run(database, run_id, "failed")
-                yield sse_event("run:error", error_data)
+                yield sse_event(error_event["event"], error_event["data"])
                 return
         error_data = {"message": str(primary_error.detail), "run_id": run_id}
-        emit_chat_event(database, run_id, "run:error", error_data)
+        error_event = emit_chat_event(database, run_id, "run:error", error_data)
         finish_chat_run(database, run_id, "failed")
-        yield sse_event("run:error", error_data)
+        yield sse_event(error_event["event"], error_event["data"])
     except Exception as error:
         error_data = {"message": str(error), "run_id": run_id}
-        emit_chat_event(database, run_id, "run:error", error_data)
+        error_event = emit_chat_event(database, run_id, "run:error", error_data)
         finish_chat_run(database, run_id, "failed")
-        yield sse_event("run:error", error_data)
+        yield sse_event(error_event["event"], error_event["data"])
 
 
 async def _stream_provider(settings: Settings, provider: str, payload: ChatCompletionRequest) -> AsyncIterator[dict[str, Any]]:

@@ -1197,3 +1197,28 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 当前裁剪策略是事件层 UI/replay 防护，不是外部工具内容安全分类器。
 - 真实 BigModel MCP live E2E 仍需要验证返回结构、错误结构、超时结构是否符合当前裁剪和前端展示预期。
+
+## 本次后续落地记录（2026-06-06，流式错误事件脱敏一致性）
+
+本次继续收紧第四项“普通聊天事件继续增强”的上线兼容边界：`run:error` 持久化时会经过 `emit_chat_event()`，但实时流式 SSE 曾经直接下发原始 `error_data`。这会造成 live SSE 和 replay 不一致，也可能在 provider 错误详情里带出嵌入式 data URL 或超长响应片段。
+
+### 已完成
+
+- `run:error` 的实时 SSE 现在统一使用 `emit_chat_event()` 返回的 payload。
+- 主模型失败、fallback 也失败、普通 HTTPException 失败和兜底 Exception 失败三条流式错误路径都使用同一套脱敏/裁剪逻辑。
+- data URL 红线从“字符串开头匹配”升级为“字符串任意位置匹配”，可处理 `Provider failed data:image/...;base64,...` 这类嵌入式错误详情。
+- `messages_json` 快照和聊天事件 payload 都复用新的嵌入式 data URL 红线逻辑。
+
+### 已完成的验证
+
+- 新增 `test_stream_chat_error_event_is_redacted_in_live_sse_and_replay`，覆盖：
+  - 流式 provider 抛出包含嵌入式 data URL 和长错误详情的 HTTPException。
+  - live SSE 的 `run:error` 不包含原始 data URL body，且被裁剪。
+  - `/api/chat/runs/{run_id}/events` replay 中的 `run:error` 和 live SSE payload 完全一致。
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "stream_chat_error_event_is_redacted_in_live_sse_and_replay or tool_result_events_are_redacted_and_trimmed"`
+
+### 当前剩余边界
+
+- 这次修复的是错误事件协议和脱敏一致性，不等价于真实 provider HTTP 错误响应结构已全部验证。
+- 后续仍需要本地 HTTP mock server 或真实 API key E2E 覆盖 OpenAI-compatible、Anthropic、Gemini 的 4xx/5xx、超时和流中断场景。

@@ -1359,6 +1359,65 @@ def test_stream_chat_persists_run_and_mcp_tool_events(tmp_path, monkeypatch):
     assert all(payload.get("run_id") == run["id"] for payload in sse_data_payloads(events.text))
 
 
+def test_stream_chat_error_event_is_redacted_in_live_sse_and_replay(tmp_path, monkeypatch):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    auth_payload = sign_up(client, "run-error")
+    headers = {"Authorization": f"Bearer {auth_payload['token']}"}
+
+    response = client.put(
+        "/api/catalog/model-profiles",
+        headers=headers,
+        json={
+            "active_profile_id": "profile-main",
+            "profiles": [
+                {
+                    "id": "profile-main",
+                    "name": "Main",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-run",
+                    "model": "gpt-4o-mini",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    async def fake_stream_openai(settings, payload):
+        raise HTTPException(status_code=502, detail="Provider failed data:image/png;base64,SECRET_ERROR_IMAGE " + ("long error " * 200))
+        yield {"event": "message:chunk", "data": {"content": "unreachable"}}
+
+    monkeypatch.setattr("app.providers._stream_openai", fake_stream_openai)
+    stream = client.post(
+        "/api/chat/stream",
+        headers=headers,
+        json={"profile_id": "profile-main", "messages": [{"role": "user", "content": "触发错误"}]},
+    )
+
+    assert stream.status_code == 200, stream.text
+    assert "event: run:error" in stream.text
+    assert "SECRET_ERROR_IMAGE" not in stream.text
+    live_error = [payload for payload in sse_data_payloads(stream.text) if payload.get("message")][0]
+    assert "[redacted data URL]" in live_error["message"]
+    assert live_error["message"].endswith("... [trimmed]")
+    assert len(live_error["message"]) <= 820
+
+    runs = client.get("/api/chat/runs", headers=headers)
+    run = runs.json()["runs"][0]
+    assert run["status"] == "failed"
+    events = client.get(f"/api/chat/runs/{run['id']}/events", headers=headers)
+    assert events.status_code == 200, events.text
+    assert "SECRET_ERROR_IMAGE" not in events.text
+    replay_error = [payload for payload in sse_data_payloads(events.text) if payload.get("message")][0]
+    assert replay_error == live_error
+
+
 def test_stream_chat_emits_source_references_for_document_chunks(tmp_path, monkeypatch):
     settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", private_media_root=tmp_path / "private-media", model_profile_encryption_key="test-secret")
     database = Database(settings)
