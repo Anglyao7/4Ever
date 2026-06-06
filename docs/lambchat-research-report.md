@@ -1096,3 +1096,28 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 - 这仍是非阻断的后置解析和校验，不会强制模型必须返回 JSON 或通过 provider response schema。
 - 结构化引用清单只能证明回答文本包含本轮真实 ref，不能证明每个被引用句子的语义一定被来源支持。
 - 后续如果要更强保证，需要 provider response schema、引用跨度映射或语义 verifier。
+
+## 本次后续落地记录（2026-06-06，admin readiness 上线自检）
+
+本次补齐上线兼容性的第一步：新增只面向管理员的 readiness 自检接口，用于在部署前快速确认 AI 聊天运行时依赖是否处于可上线状态。
+
+### 已完成
+
+- 新增 `GET /api/admin/readiness`。
+- 接口复用现有 `require_admin`，未登录返回 401，非管理员返回 403。
+- 自检项覆盖数据库可达性、`MODEL_PROFILE_ENCRYPTION_KEY`、`CHAT_ATTACHMENT_URL_SECRET`、私有附件目录是否与公开 `MEDIA_ROOT` 隔离且可写、临时附件 URL TTL、SQLite FTS5 文档索引、`pypdf`、BigModel MCP live 配置和 CORS origin 数量。
+- 总体状态按最严重检查汇总为 `ok` / `warning` / `error`。
+- 缺稳定密钥、FTS5 不可用或 `pypdf` 不可用会明确提示降级行为；其中 FTS5 和 PDF parser 仍保持非阻断 fallback。
+- 返回内容只包含状态、布尔值、计数和错误类型，不返回 API key、secret 原文或文件系统路径。
+
+### 已完成的验证
+
+- 新增测试覆盖 `/api/admin/readiness` 的未登录、非管理员和管理员访问合同。
+- 新增测试覆盖本地默认无稳定 secret 时返回 warning。
+- 新增测试覆盖配置了模型密钥、附件 URL 密钥和 BigModel API key 时，readiness 响应不会泄露 secret 原文。
+
+### 当前剩余边界
+
+- readiness 仍是只读自检，不会自动修复目录权限、生成生产 secret 或迁移对象存储。
+- 当前检查只证明运行条件存在，不等价于真实 provider / MCP 外部调用成功。
+- 后续上线前仍需要接入真实 OpenAI-compatible、Anthropic、Gemini 和 BigModel MCP 的外部 E2E，覆盖成功、超时、fallback、工具调用和附件引用链路。

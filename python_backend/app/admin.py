@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
+import os
+from pathlib import Path
+import tempfile
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -54,6 +58,11 @@ def router(db: Database, settings: Settings) -> APIRouter:
                 "enabled_module_count": enabled_count,
                 "disabled_module_count": len(BLUEPRINTS) - enabled_count,
             }
+
+    @api.get("/readiness")
+    def readiness(request: Request) -> dict[str, Any]:
+        require_admin(request, db)
+        return readiness_report(db, settings)
 
     @api.get("/users")
     def users(request: Request, q: str = "") -> list[dict[str, Any]]:
@@ -216,6 +225,138 @@ def router(db: Database, settings: Settings) -> APIRouter:
         return {**result, "dry_run": payload.dry_run, "min_age_seconds": min_age_seconds}
 
     return api
+
+
+def readiness_report(db: Database, settings: Settings) -> dict[str, Any]:
+    checks = [
+        database_readiness_check(db),
+        configured_secret_check(
+            "model_profile_encryption_key",
+            bool(settings.model_profile_encryption_key),
+            "MODEL_PROFILE_ENCRYPTION_KEY is configured.",
+            "MODEL_PROFILE_ENCRYPTION_KEY is missing; encrypted model keys will use a local-dev fallback that is not suitable for production.",
+        ),
+        configured_secret_check(
+            "chat_attachment_url_secret",
+            bool(settings.chat_attachment_url_secret),
+            "CHAT_ATTACHMENT_URL_SECRET is configured.",
+            "CHAT_ATTACHMENT_URL_SECRET is missing; temporary attachment URLs will fall back to another local secret source.",
+        ),
+        private_media_root_check(settings),
+        chat_attachment_url_ttl_check(settings),
+        document_fts_readiness_check(db),
+        pypdf_readiness_check(),
+        bigmodel_mcp_readiness_check(settings),
+        cors_readiness_check(settings),
+    ]
+    return {"status": overall_readiness_status(checks), "checks": checks}
+
+
+def database_readiness_check(db: Database) -> dict[str, Any]:
+    try:
+        db.check()
+    except Exception as error:
+        return readiness_check("database", "error", "Database connection failed.", error_type=type(error).__name__)
+    return readiness_check("database", "ok", "Database connection is reachable.", driver="sqlite")
+
+
+def configured_secret_check(check_id: str, configured: bool, ok_message: str, warning_message: str) -> dict[str, Any]:
+    status = "ok" if configured else "warning"
+    return readiness_check(check_id, status, ok_message if configured else warning_message, configured=configured)
+
+
+def private_media_root_check(settings: Settings) -> dict[str, Any]:
+    private_root = settings.private_media_root.resolve()
+    public_root = settings.media_root.resolve()
+    if private_root == public_root or path_is_relative_to(private_root, public_root):
+        return readiness_check(
+            "private_media_root",
+            "error",
+            "PRIVATE_MEDIA_ROOT must not be the same as, or inside, public MEDIA_ROOT.",
+            exists=private_root.exists(),
+            writable=False,
+            publicly_served_risk=True,
+        )
+    if not private_root.exists():
+        return readiness_check("private_media_root", "error", "PRIVATE_MEDIA_ROOT does not exist.", exists=False, writable=False, publicly_served_risk=False)
+    if not private_root.is_dir():
+        return readiness_check("private_media_root", "error", "PRIVATE_MEDIA_ROOT is not a directory.", exists=True, writable=False, publicly_served_risk=False)
+    try:
+        with tempfile.NamedTemporaryFile(prefix=".readiness-", dir=private_root):
+            pass
+    except Exception as error:
+        return readiness_check(
+            "private_media_root",
+            "error",
+            "PRIVATE_MEDIA_ROOT is not writable by the backend process.",
+            exists=True,
+            writable=False,
+            publicly_served_risk=False,
+            error_type=type(error).__name__,
+        )
+    return readiness_check("private_media_root", "ok", "PRIVATE_MEDIA_ROOT exists, is writable, and is isolated from public MEDIA_ROOT.", exists=True, writable=True, publicly_served_risk=False)
+
+
+def chat_attachment_url_ttl_check(settings: Settings) -> dict[str, Any]:
+    ttl = int(settings.chat_attachment_url_ttl_seconds or 0)
+    if ttl <= 0:
+        return readiness_check("chat_attachment_url_ttl", "error", "CHAT_ATTACHMENT_URL_TTL_SECONDS must be greater than zero.", ttl_seconds=ttl)
+    if ttl > 86_400:
+        return readiness_check("chat_attachment_url_ttl", "warning", "CHAT_ATTACHMENT_URL_TTL_SECONDS is longer than one day.", ttl_seconds=ttl)
+    return readiness_check("chat_attachment_url_ttl", "ok", "Temporary attachment URL TTL is within the expected range.", ttl_seconds=ttl)
+
+
+def document_fts_readiness_check(db: Database) -> dict[str, Any]:
+    try:
+        with db.connect() as conn:
+            available = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chat_document_chunks_fts'").fetchone() is not None
+    except Exception as error:
+        return readiness_check("document_fts5", "error", "Could not inspect the document FTS5 index.", error_type=type(error).__name__)
+    if not available:
+        return readiness_check("document_fts5", "warning", "SQLite FTS5 document index is unavailable; keyword fallback retrieval will be used.", available=False)
+    return readiness_check("document_fts5", "ok", "SQLite FTS5 document index is available.", available=True)
+
+
+def pypdf_readiness_check() -> dict[str, Any]:
+    available = importlib.util.find_spec("pypdf") is not None
+    if not available:
+        return readiness_check("pypdf", "warning", "pypdf is unavailable; PDF attachments will fall back to metadata-only extraction.", available=False)
+    return readiness_check("pypdf", "ok", "pypdf is available for PDF text extraction.", available=True)
+
+
+def bigmodel_mcp_readiness_check(settings: Settings) -> dict[str, Any]:
+    configured = bool(os.getenv("BIGMODEL_API_KEY", "").strip())
+    if settings.bigmodel_mcp_live and not configured:
+        return readiness_check("bigmodel_mcp", "error", "BIGMODEL_MCP_LIVE is enabled but BIGMODEL_API_KEY is not configured.", live_enabled=True, configured=False)
+    if settings.bigmodel_mcp_live:
+        return readiness_check("bigmodel_mcp", "ok", "BigModel MCP live mode is enabled and configured.", live_enabled=True, configured=True)
+    return readiness_check("bigmodel_mcp", "ok", "BigModel MCP live mode is disabled; planned mode will be used.", live_enabled=False, configured=configured)
+
+
+def cors_readiness_check(settings: Settings) -> dict[str, Any]:
+    origin_count = len(settings.cors_origins)
+    if origin_count == 0:
+        return readiness_check("cors_origins", "warning", "CORS origins are empty; browser clients may be unable to call the API.", origin_count=0)
+    return readiness_check("cors_origins", "ok", "CORS origins are configured.", origin_count=origin_count)
+
+
+def readiness_check(check_id: str, status: str, message: str, **metadata: Any) -> dict[str, Any]:
+    return {"id": check_id, "status": status, "message": message, **metadata}
+
+
+def overall_readiness_status(checks: list[dict[str, Any]]) -> str:
+    if any(check["status"] == "error" for check in checks):
+        return "error"
+    if any(check["status"] == "warning" for check in checks):
+        return "warning"
+    return "ok"
+
+
+def path_is_relative_to(child: Path, parent: Path) -> bool:
+    try:
+        return child.is_relative_to(parent)
+    except ValueError:
+        return False
 
 
 def scalar_count(conn, table: str, where: str = "") -> int:

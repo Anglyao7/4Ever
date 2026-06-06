@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import uuid
 
 from fastapi.testclient import TestClient
 
+from app import admin
+from app.config import Settings
+from app.database import Database
 from app.database import now_iso
 from app.main import app, database
 
@@ -44,6 +48,82 @@ def test_auth_modules_and_admin_contract():
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["role"] == "admin"
+
+
+def test_admin_readiness_requires_admin_and_reports_checks():
+    admin_auth = create_user("ready-admin")
+    member_auth = create_user("ready-member")
+    with database.connect() as conn:
+        conn.execute("UPDATE users SET role = 'admin', updated_at = ? WHERE id = ?", (now_iso(), admin_auth["user"]["id"]))
+        conn.execute("UPDATE users SET role = 'member', updated_at = ? WHERE id = ?", (now_iso(), member_auth["user"]["id"]))
+
+    missing = client.get("/api/admin/readiness")
+    assert missing.status_code == 401
+
+    forbidden = client.get("/api/admin/readiness", headers={"Authorization": f"Bearer {member_auth['token']}"})
+    assert forbidden.status_code == 403
+
+    response = client.get("/api/admin/readiness", headers={"Authorization": f"Bearer {admin_auth['token']}"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] in {"ok", "warning", "error"}
+    check_ids = {check["id"] for check in data["checks"]}
+    assert {"database", "model_profile_encryption_key", "chat_attachment_url_secret", "private_media_root", "document_fts5", "bigmodel_mcp"} <= check_ids
+
+
+def test_readiness_report_warns_without_stable_local_secrets(tmp_path):
+    settings = Settings(
+        base_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        media_root=tmp_path / "media",
+        private_media_root=tmp_path / "private-media",
+    )
+    settings.media_root.mkdir(parents=True)
+    settings.private_media_root.mkdir(parents=True)
+    db = Database(settings)
+    db.migrate()
+
+    report = admin.readiness_report(db, settings)
+    by_id = {check["id"]: check for check in report["checks"]}
+
+    assert report["status"] == "warning"
+    assert by_id["database"]["status"] == "ok"
+    assert by_id["private_media_root"]["status"] == "ok"
+    assert by_id["model_profile_encryption_key"]["status"] == "warning"
+    assert by_id["model_profile_encryption_key"]["configured"] is False
+    assert by_id["chat_attachment_url_secret"]["status"] == "warning"
+    assert by_id["chat_attachment_url_secret"]["configured"] is False
+
+
+def test_readiness_report_does_not_leak_secret_values(tmp_path, monkeypatch):
+    model_secret = "do-not-leak-model-secret"
+    url_secret = "do-not-leak-url-secret"
+    bigmodel_secret = "do-not-leak-bigmodel-key"
+    monkeypatch.setenv("BIGMODEL_API_KEY", bigmodel_secret)
+    settings = Settings(
+        base_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        media_root=tmp_path / "media",
+        private_media_root=tmp_path / "private-media",
+        model_profile_encryption_key=model_secret,
+        chat_attachment_url_secret=url_secret,
+        bigmodel_mcp_live=True,
+    )
+    settings.media_root.mkdir(parents=True)
+    settings.private_media_root.mkdir(parents=True)
+    db = Database(settings)
+    db.migrate()
+
+    report = admin.readiness_report(db, settings)
+    encoded = json.dumps(report, ensure_ascii=False)
+    by_id = {check["id"]: check for check in report["checks"]}
+
+    assert by_id["model_profile_encryption_key"]["status"] == "ok"
+    assert by_id["chat_attachment_url_secret"]["status"] == "ok"
+    assert by_id["bigmodel_mcp"]["status"] == "ok"
+    assert model_secret not in encoded
+    assert url_secret not in encoded
+    assert bigmodel_secret not in encoded
 
 
 def test_password_minimum_is_six_characters():
