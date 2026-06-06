@@ -1293,3 +1293,32 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 这是本地 JSON-RPC mock 级 E2E，证明本地协议实现、session 传递、SSE unwrap 和 redaction/trim 兼容；不是 BigModel 官方服务真实外部 smoke test。
 - 上线前如果开启 `BIGMODEL_MCP_LIVE=1`，仍需要用真实 `BIGMODEL_API_KEY` 验证 `tools/list`、`webSearchPrime`、`webReader` 和 `zread` 的真实响应结构、超时、错误码和限流行为。
+
+## 本次后续落地记录（2026-06-07，HTTP 错误体 secret / data URL 脱敏）
+
+本次继续收紧上线异常边界：Provider 和 MCP 的 HTTP 错误响应体可能包含超长内容、嵌入式 data URL，甚至上游误回显的 `api_key=...`、`token=...` 或 `Authorization: Bearer ...`。这些错误文本会进入 `run:error` 或 failed `tool:result`，需要在实时 SSE、replay 和工具 payload 中统一脱敏。
+
+### 已完成
+
+- Provider 事件层新增文本级 secret-like redaction：
+  - 支持 `api_key=...`、`api_key:"..."`、`token=...`、`secret=...`、`password=...`、`Authorization: Bearer ...`。
+  - 支持字符串任意位置的 `data:*;base64,...`。
+- `messages_json` 快照同样使用文本级 redaction，避免用户消息或兼容路径里直接出现 secret-like 文本和嵌入式 data URL。
+- MCP client 的 `_truncate()` 先做文本级 redaction 再截断，覆盖 `call_mcp_tool()` HTTP error body。
+
+### 已完成的验证
+
+- 新增 `test_chat_run_snapshot_redacts_text_secrets_and_embedded_data_urls`，覆盖 `messages_json` 中普通文本 secret-like 片段和嵌入式 data URL 被 redacted。
+- 新增 `test_provider_stream_http_error_is_redacted_in_live_sse_and_replay`，覆盖本地 provider HTTP 500 错误体：
+  - live SSE `run:error` 不含原始 secret / data URL。
+  - replay `run:error` 与 live payload 一致。
+- 新增 `test_mcp_live_tool_call_http_error_redacts_response_body`，覆盖本地 MCP `tools/call` HTTP 500 错误体：
+  - failed tool payload 不含原始 secret / data URL。
+  - 错误内容先 redacted 再 trimmed。
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "http_error_is_redacted or mcp_live_tool_call_http_error_redacts_response_body or chat_run_snapshot_redacts_text_secrets"`
+
+### 当前剩余边界
+
+- 这是基于常见 secret-like 文本模式的防护，不是完整 DLP 或内容安全分类器。
+- 真实 provider / BigModel MCP 的错误结构、限流结构和超时行为仍需要外部 smoke test 证明。

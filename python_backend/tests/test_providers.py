@@ -100,9 +100,12 @@ class LocalStreamingProvider:
 
 
 class LocalMcpJsonRpcServer:
-    def __init__(self, tool_result: dict[str, Any] | None = None, stream_tool_result: bool = False):
+    def __init__(self, tool_result: dict[str, Any] | None = None, stream_tool_result: bool = False, error_method: str = "", error_body: str = "", error_status: int = 500):
         self.tool_result = tool_result or {"content": [{"type": "text", "text": "MCP ok"}]}
         self.stream_tool_result = stream_tool_result
+        self.error_method = error_method
+        self.error_body = error_body
+        self.error_status = error_status
         self.records: list[dict[str, Any]] = []
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
@@ -119,6 +122,9 @@ class LocalMcpJsonRpcServer:
                     json_body = {}
                 method = str(json_body.get("method") or "")
                 parent.records.append({"path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": json_body})
+                if parent.error_method and method == parent.error_method:
+                    self._write_text(parent.error_body, status=parent.error_status)
+                    return
                 if method == "initialize":
                     payload = {"jsonrpc": "2.0", "id": json_body.get("id"), "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "local-mcp"}}}
                     self._write_json(payload, {"Mcp-Session-Id": "local-session-1"})
@@ -149,6 +155,14 @@ class LocalMcpJsonRpcServer:
                 body = ("data: " + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _write_text(self, text: str, status: int = 500):
+                body = text.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "text/plain")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -301,6 +315,63 @@ def test_gemini_native_streaming_uses_http_sse_contract(tmp_path):
     assert request["json"]["contents"] == [{"role": "user", "parts": [{"text": "hello"}]}]
 
 
+def test_provider_stream_http_error_is_redacted_in_live_sse_and_replay(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    auth_payload = sign_up(client, "http-error")
+    headers = {"Authorization": f"Bearer {auth_payload['token']}"}
+    error_body = 'provider 500 api_key="SECRET_PROVIDER_KEY" Authorization: Bearer SECRET_PROVIDER_BEARER data:image/png;base64,SECRET_PROVIDER_IMAGE ' + ("provider body " * 200)
+
+    with LocalStreamingProvider({"/v1/chat/completions": {"status": 500, "content_type": "text/plain", "body": error_body}}) as server:
+        profile = client.put(
+            "/api/catalog/model-profiles",
+            headers=headers,
+            json={
+                "active_profile_id": "profile-main",
+                "profiles": [
+                    {
+                        "id": "profile-main",
+                        "name": "Main",
+                        "provider": "openai",
+                        "base_url": server.base_url,
+                        "api_key": "sk-run",
+                        "model": "gpt-4o-mini",
+                    }
+                ],
+            },
+        )
+        assert profile.status_code == 200, profile.text
+        stream = client.post(
+            "/api/chat/stream",
+            headers=headers,
+            json={"profile_id": "profile-main", "messages": [{"role": "user", "content": "触发 HTTP 错误"}]},
+        )
+
+    assert stream.status_code == 200, stream.text
+    assert "event: run:error" in stream.text
+    assert "SECRET_PROVIDER_KEY" not in stream.text
+    assert "SECRET_PROVIDER_BEARER" not in stream.text
+    assert "SECRET_PROVIDER_IMAGE" not in stream.text
+    live_error = [payload for payload in sse_data_payloads(stream.text) if payload.get("message")][0]
+    assert "[redacted]" in live_error["message"]
+    assert "[redacted data URL]" in live_error["message"]
+    assert live_error["message"].endswith("... [trimmed]")
+
+    run = client.get("/api/chat/runs", headers=headers).json()["runs"][0]
+    replay = client.get(f"/api/chat/runs/{run['id']}/events", headers=headers)
+    assert replay.status_code == 200, replay.text
+    assert "SECRET_PROVIDER_KEY" not in replay.text
+    assert "SECRET_PROVIDER_BEARER" not in replay.text
+    assert "SECRET_PROVIDER_IMAGE" not in replay.text
+    replay_error = [payload for payload in sse_data_payloads(replay.text) if payload.get("message")][0]
+    assert replay_error == live_error
+
+
 def test_chat_run_messages_redact_attachment_payloads(tmp_path):
     settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
     database = Database(settings)
@@ -387,6 +458,27 @@ def test_tool_result_events_are_redacted_and_trimmed(tmp_path):
     assert "SECRET_ARGUMENT_IMAGE" not in raw
     assert "SECRET_RESULT_IMAGE" not in raw
     assert "LONG_TOOL_RESULT_" * 80 not in raw
+
+
+def test_chat_run_snapshot_redacts_text_secrets_and_embedded_data_urls(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    database = Database(settings)
+    database.migrate()
+    payload = ChatCompletionRequest(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": 'debug api_key="SECRET_TEXT_KEY" Authorization: Bearer SECRET_BEARER data:image/png;base64,SECRET_TEXT_IMAGE'}],
+    )
+
+    run_id = create_chat_run(database, "owner-1", payload)
+
+    with database.connect() as conn:
+        raw = conn.execute("SELECT messages_json FROM chat_runs WHERE id = ?", (run_id,)).fetchone()["messages_json"]
+    assert "SECRET_TEXT_KEY" not in raw
+    assert "SECRET_BEARER" not in raw
+    assert "SECRET_TEXT_IMAGE" not in raw
+    assert "[redacted]" in raw
+    assert "[redacted data URL]" in raw
 
 
 def test_source_citation_check_detects_unknown_refs():
@@ -488,6 +580,27 @@ def test_mcp_live_tool_call_accepts_sse_result_and_redacts_payload(tmp_path, mon
     call_payload = mcp_server.records[2]["json"]
     assert call_payload["params"] == {"name": "webSearchPrime", "arguments": {"query": "local mcp"}}
     assert mcp_server.records[2]["headers"]["mcp-session-id"] == "local-session-1"
+
+
+def test_mcp_live_tool_call_http_error_redacts_response_body(tmp_path, monkeypatch):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", bigmodel_mcp_live=True)
+    monkeypatch.setenv("BIGMODEL_API_KEY", "bigmodel-live-key")
+    error_body = 'mcp failed api_key="SECRET_MCP_KEY" token=SECRET_MCP_TOKEN data:image/png;base64,SECRET_MCP_IMAGE ' + ("mcp error " * 120)
+
+    with LocalMcpJsonRpcServer(error_method="tools/call", error_body=error_body, error_status=500) as mcp_server:
+        server = {**mcp_schema_test_server(), "endpoint": mcp_server.endpoint}
+        result = call_mcp_tool(server, "webSearchPrime", {"query": "local mcp"}, settings)
+
+    assert result["status"] == "failed"
+    assert result["tool_name"] == "webSearchPrime"
+    assert result["arguments"] == {"query": "local mcp"}
+    assert "SECRET_MCP_KEY" not in result["error"]
+    assert "SECRET_MCP_TOKEN" not in result["error"]
+    assert "SECRET_MCP_IMAGE" not in result["error"]
+    assert "[redacted]" in result["error"]
+    assert "[redacted data URL]" in result["error"]
+    assert result["error"].endswith("... [trimmed]")
+    assert [record["json"]["method"] for record in mcp_server.records] == ["initialize", "notifications/initialized", "tools/call"]
 
 
 def test_mcp_tools_list_cache_failure_does_not_hide_live_result(tmp_path, monkeypatch):

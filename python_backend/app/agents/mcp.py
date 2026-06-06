@@ -13,6 +13,9 @@ from app.database import Database, json_dumps, json_loads, now_iso, row_to_dict
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 GENERIC_TOOL_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": True}
+DATA_URL_PATTERN = re.compile(r"data:[A-Za-z0-9.+/-]+(?:;[A-Za-z0-9_.=+/-]+)*;base64,[A-Za-z0-9+/=_-]+", re.IGNORECASE)
+TEXT_SECRET_QUOTED_PATTERN = re.compile(r"([\"']?\b(?:authorization|api[_-]?key|token|secret|password)\b[\"']?\s*[:=]\s*[\"'])(?:Bearer\s+)?[^\"']+([\"'])", re.IGNORECASE)
+TEXT_SECRET_BARE_PATTERN = re.compile(r"(\b(?:authorization|api[_-]?key|token|secret|password)\b\s*[:=]\s*)(?:Bearer\s+)?[^\s,;}]+", re.IGNORECASE)
 
 
 def list_mcp_tools(server: dict[str, Any], settings: Settings, database: Database | None = None) -> dict[str, Any]:
@@ -414,7 +417,14 @@ def _secret_key(key: str) -> bool:
 
 
 def _truncate(value: str, limit: int) -> str:
-    return value if len(value) <= limit else value[:limit] + "... [trimmed]"
+    text = _redact_text(value)
+    return text if len(text) <= limit else text[:limit] + "... [trimmed]"
+
+
+def _redact_text(value: str) -> str:
+    text = DATA_URL_PATTERN.sub("[redacted data URL]", str(value or ""))
+    text = TEXT_SECRET_QUOTED_PATTERN.sub(r"\1[redacted]\2", text)
+    return TEXT_SECRET_BARE_PATTERN.sub(r"\1[redacted]", text)
 
 
 def _yes_no(value: bool) -> str:

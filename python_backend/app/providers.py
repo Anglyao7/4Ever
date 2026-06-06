@@ -375,6 +375,8 @@ CHAT_EVENT_TOOL_RESULT_MAX_CHARS = 900
 CHAT_EVENT_TOOL_ARGUMENT_MAX_CHARS = 800
 CHAT_EVENT_ERROR_MAX_CHARS = 800
 DATA_URL_PATTERN = re.compile(r"data:[A-Za-z0-9.+/-]+(?:;[A-Za-z0-9_.=+/-]+)*;base64,[A-Za-z0-9+/=_-]+", re.IGNORECASE)
+TEXT_SECRET_QUOTED_PATTERN = re.compile(r"([\"']?\b(?:authorization|api[_-]?key|token|secret|password)\b[\"']?\s*[:=]\s*[\"'])(?:Bearer\s+)?[^\"']+([\"'])", re.IGNORECASE)
+TEXT_SECRET_BARE_PATTERN = re.compile(r"(\b(?:authorization|api[_-]?key|token|secret|password)\b\s*[:=]\s*)(?:Bearer\s+)?[^\s,;}]+", re.IGNORECASE)
 CHAT_ATTACHMENT_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -1507,7 +1509,7 @@ def sanitize_chat_run_attachment(attachment: Any) -> Any:
 
 def sanitize_chat_run_value(value: Any) -> Any:
     if isinstance(value, str):
-        return redact_data_urls(value)
+        return redact_sensitive_text(value)
     if isinstance(value, list):
         return [sanitize_chat_run_value(item) for item in value]
     if isinstance(value, dict):
@@ -1521,6 +1523,12 @@ def looks_like_data_url(value: str) -> bool:
 
 def redact_data_urls(value: str) -> str:
     return DATA_URL_PATTERN.sub("[redacted data URL]", str(value or ""))
+
+
+def redact_sensitive_text(value: str) -> str:
+    text = redact_data_urls(value)
+    text = TEXT_SECRET_QUOTED_PATTERN.sub(r"\1[redacted]\2", text)
+    return TEXT_SECRET_BARE_PATTERN.sub(r"\1[redacted]", text)
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -1571,7 +1579,7 @@ def bounded_chat_event_value(value: Any, max_chars: int) -> tuple[Any, bool]:
 
 def sanitize_chat_event_value(value: Any) -> Any:
     if isinstance(value, str):
-        return redact_data_urls(value)
+        return redact_sensitive_text(value)
     if isinstance(value, list):
         return [sanitize_chat_event_value(item) for item in value]
     if isinstance(value, dict):
@@ -1589,7 +1597,7 @@ def sanitize_chat_event_value(value: Any) -> Any:
 
 
 def truncate_chat_event_text(value: str, limit: int) -> str:
-    text = redact_data_urls(value)
+    text = redact_sensitive_text(value)
     return text if len(text) <= limit else text[:limit].rstrip() + "... [trimmed]"
 
 
