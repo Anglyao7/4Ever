@@ -1170,3 +1170,30 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - `source:references` 事件仍会保留短 preview，用于前端引用展示；这不是全文持久化，但仍属于可见摘要，需要继续保持长度限制和 owner scoped 访问。
 - 工具调用结果事件可能包含外部 MCP 返回摘要，后续真实外部 E2E 时还需要检查是否需要额外截断或分类脱敏。
+
+## 本次后续落地记录（2026-06-06，工具事件 payload 脱敏和裁剪）
+
+本次继续收紧第五项“聊天接入 MCP 工具”的上线边界：MCP 客户端已经会对远端返回做基础 `redact_and_trim`，但普通聊天事件层仍会把 `tool:result.result` 放入实时 SSE 和 `chat_runs.events_json`。前端时间线只需要预览，不需要持久化完整外部工具结果。
+
+### 已完成
+
+- `emit_chat_event()` 现在会先经过 `sanitize_chat_event_payload()`。
+- `tool:start.arguments` 会红掉 data URL，并在超过 800 字符时转为 bounded preview，同时标记 `arguments_truncated=true`。
+- `tool:result.result` 会红掉 data URL、`api_key` / `token` / `secret` / `password` / `authorization` 等 secret-like key，并在超过 900 字符时转为 bounded preview，同时标记 `result_truncated=true`。
+- `tool:result.error`、`tool:result.reason`、`run:error` 和 `model:fallback.reason` 进入事件前会裁剪到安全长度。
+- 裁剪只作用于实时 SSE / replay 事件 payload；模型工具循环里的 OpenAI tool message、Anthropic `tool_result` 和 Gemini `functionResponse` 仍使用 MCP 客户端返回的结果对象，不破坏工具推理链路。
+
+### 已完成的验证
+
+- 新增 `test_tool_result_events_are_redacted_and_trimmed`，覆盖：
+  - 工具事件 payload 仍包含同一个 `run_id`。
+  - `arguments` 中的 data URL 被替换。
+  - `result` 中的 secret-like key 不进入 `events_json`。
+  - 长工具结果被裁剪为 preview，并标记 `result_truncated=true`。
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "tool_result_events_are_redacted_and_trimmed"`
+
+### 当前剩余边界
+
+- 当前裁剪策略是事件层 UI/replay 防护，不是外部工具内容安全分类器。
+- 真实 BigModel MCP live E2E 仍需要验证返回结构、错误结构、超时结构是否符合当前裁剪和前端展示预期。

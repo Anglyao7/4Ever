@@ -371,6 +371,9 @@ CHAT_DOCUMENT_CHUNK_MAX_CHARS = 1200
 CHAT_DOCUMENT_CHUNK_OVERLAP_CHARS = 160
 CHAT_DOCUMENT_CONTEXT_CHUNK_LIMIT = 3
 CHAT_MCP_TOOL_LOOP_MAX_ROUNDS = 3
+CHAT_EVENT_TOOL_RESULT_MAX_CHARS = 900
+CHAT_EVENT_TOOL_ARGUMENT_MAX_CHARS = 800
+CHAT_EVENT_ERROR_MAX_CHARS = 800
 CHAT_ATTACHMENT_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -1517,7 +1520,7 @@ def looks_like_data_url(value: str) -> bool:
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
-    event_data = dict(data)
+    event_data = sanitize_chat_event_payload(event, data)
     event_data.setdefault("run_id", run_id)
     item = {"event": event, "data": event_data}
     with database.connect() as conn:
@@ -1526,6 +1529,68 @@ def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str,
         events.append(item)
         conn.execute("UPDATE chat_runs SET events_json = ? WHERE id = ?", (json_dumps(events), run_id))
     return item
+
+
+def sanitize_chat_event_payload(event: str, data: dict[str, Any]) -> dict[str, Any]:
+    out = {str(key): sanitize_chat_event_value(value) for key, value in data.items()}
+    if event == "tool:start":
+        if "arguments" in data:
+            out["arguments"], truncated = bounded_chat_event_value(data.get("arguments"), CHAT_EVENT_TOOL_ARGUMENT_MAX_CHARS)
+            if truncated:
+                out["arguments_truncated"] = True
+    elif event == "tool:result":
+        if "arguments" in data:
+            out["arguments"], truncated = bounded_chat_event_value(data.get("arguments"), CHAT_EVENT_TOOL_ARGUMENT_MAX_CHARS)
+            if truncated:
+                out["arguments_truncated"] = True
+        if "result" in data:
+            out["result"], truncated = bounded_chat_event_value(data.get("result"), CHAT_EVENT_TOOL_RESULT_MAX_CHARS)
+            if truncated:
+                out["result_truncated"] = True
+        for key in ("error", "reason"):
+            if key in data:
+                out[key] = truncate_chat_event_text(str(data.get(key) or ""), CHAT_EVENT_ERROR_MAX_CHARS)
+    elif event in {"run:error", "model:fallback"}:
+        for key, value in data.items():
+            if isinstance(value, str):
+                out[str(key)] = truncate_chat_event_text(value, CHAT_EVENT_ERROR_MAX_CHARS)
+    return out
+
+
+def bounded_chat_event_value(value: Any, max_chars: int) -> tuple[Any, bool]:
+    sanitized = sanitize_chat_event_value(value)
+    text = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
+    if len(text) <= max_chars:
+        return sanitized, False
+    return {"preview": truncate_chat_event_text(text, max_chars)}, True
+
+
+def sanitize_chat_event_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return truncate_chat_event_text(value, CHAT_EVENT_TOOL_RESULT_MAX_CHARS) if looks_like_data_url(value) else value
+    if isinstance(value, list):
+        return [sanitize_chat_event_value(item) for item in value]
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if chat_event_secret_key(key_text):
+                out[key_text] = "[redacted]"
+            elif key_text in {"data_url", "dataUrl"}:
+                out[key_text] = "[redacted data URL]"
+            else:
+                out[key_text] = sanitize_chat_event_value(item)
+        return out
+    return value
+
+
+def truncate_chat_event_text(value: str, limit: int) -> str:
+    text = "[redacted data URL]" if looks_like_data_url(value) else value
+    return text if len(text) <= limit else text[:limit].rstrip() + "... [trimmed]"
+
+
+def chat_event_secret_key(key: str) -> bool:
+    return bool(re.search(r"(authorization|api[_-]?key|token|secret|password)", key, re.IGNORECASE))
 
 
 def finish_chat_run(database: Database, run_id: str, status: str, usage: Any = None) -> None:

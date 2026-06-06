@@ -12,7 +12,7 @@ from app import admin, auth
 from app.agents.mcp import list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
 from app.config import Settings
 from app.database import Database, now_iso
-from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, create_chat_run, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
+from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, create_chat_run, emit_chat_event, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
 
 
 def sse_data_payloads(text: str) -> list[dict]:
@@ -99,6 +99,40 @@ def test_chat_run_messages_redact_attachment_payloads(tmp_path):
     assert doc_attachment["text_chunk_refs"] == ["doc-1#chunk1"]
     assert "text_excerpt" not in doc_attachment
     assert "text_chunks" not in doc_attachment
+
+
+def test_tool_result_events_are_redacted_and_trimmed(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    database = Database(settings)
+    database.migrate()
+    run_id = create_chat_run(database, "owner-1", ChatCompletionRequest(provider="openai", model="gpt-4o-mini", messages=[{"role": "user", "content": "search"}]))
+    event = emit_chat_event(
+        database,
+        run_id,
+        "tool:result",
+        {
+            "tool_name": "webSearchPrime",
+            "status": "success",
+            "arguments": {"query": "data:image/png;base64,SECRET_ARGUMENT_IMAGE"},
+            "result": {
+                "api_key": "SECRET_TOOL_KEY",
+                "items": [{"title": "Result", "text": "LONG_TOOL_RESULT_" * 400, "image": "data:image/png;base64,SECRET_RESULT_IMAGE"}],
+            },
+            "error": "error detail " * 120,
+        },
+    )
+
+    with database.connect() as conn:
+        raw = conn.execute("SELECT events_json FROM chat_runs WHERE id = ?", (run_id,)).fetchone()["events_json"]
+    assert event["data"]["run_id"] == run_id
+    assert event["data"]["arguments"]["query"] == "[redacted data URL]"
+    assert event["data"]["result_truncated"] is True
+    assert event["data"]["result"]["preview"].endswith("... [trimmed]")
+    assert len(event["data"]["error"]) < 900
+    assert "SECRET_TOOL_KEY" not in raw
+    assert "SECRET_ARGUMENT_IMAGE" not in raw
+    assert "SECRET_RESULT_IMAGE" not in raw
+    assert "LONG_TOOL_RESULT_" * 80 not in raw
 
 
 def test_source_citation_check_detects_unknown_refs():
