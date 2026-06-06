@@ -1222,3 +1222,41 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 这次修复的是错误事件协议和脱敏一致性，不等价于真实 provider HTTP 错误响应结构已全部验证。
 - 后续仍需要本地 HTTP mock server 或真实 API key E2E 覆盖 OpenAI-compatible、Anthropic、Gemini 的 4xx/5xx、超时和流中断场景。
+
+## 本次后续落地记录（2026-06-06，Provider 原生流式本地 HTTP E2E）
+
+本次推进第七项“Anthropic / Gemini 原生流式”和上线兼容验证：新增不依赖真实 API key 的本地 HTTP mock server 测试，让 provider stream 代码真实走 `httpx.AsyncClient.stream()`，而不是只 monkeypatch provider helper。
+
+### 已完成
+
+- 新增测试内 `LocalStreamingProvider`，在本地随机端口接收真实 HTTP POST，并记录 path、headers 和 JSON body。
+- OpenAI-compatible 本地 HTTP E2E 覆盖：
+  - URL path：`/v1/chat/completions`。
+  - `Authorization: Bearer ...`。
+  - request body 中 `stream=true`、system message 和 user message。
+  - SSE `data:` chunk 解析为 `message:chunk`，usage 解析为 `token:usage`。
+- Anthropic 本地 HTTP E2E 覆盖：
+  - URL path：`/messages`。
+  - `x-api-key` 和 `anthropic-version`。
+  - request body 中 `stream=true`、`system` 和 `messages`。
+  - `content_block_delta` 解析为 `message:chunk`，`message_delta.usage` 解析为 `token:usage`。
+- Gemini 本地 HTTP E2E 覆盖：
+  - URL path：`/models/gemini-2.5-flash:streamGenerateContent?alt=sse`。
+  - `x-goog-api-key`。
+  - request body 中 `systemInstruction`、`contents` 和 generation config；Gemini 不使用 OpenAI 风格的 `stream=true`。
+  - SSE candidates text 解析为 `message:chunk`，`usageMetadata` 解析为 `token:usage`。
+
+### 已完成的验证
+
+- 新增测试：
+  - `test_openai_native_streaming_uses_http_sse_contract`
+  - `test_anthropic_native_streaming_uses_http_sse_contract`
+  - `test_gemini_native_streaming_uses_http_sse_contract`
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "native_streaming_uses_http_sse_contract"`
+
+### 当前剩余边界
+
+- 这是本地 HTTP mock 级 E2E，证明 URL/header/body/SSE 协议和本地 parser 兼容；不是 provider 官方服务的真实外部 E2E。
+- 后续仍需要用真实 API key 或受控外部 mock 覆盖 provider 4xx/5xx、连接超时、流中断、非 JSON/SSE 异常和真实 token usage 差异。
+- BigModel MCP live 的真实 JSON-RPC initialize/tools/list/tools/call 链路仍需要单独 E2E。

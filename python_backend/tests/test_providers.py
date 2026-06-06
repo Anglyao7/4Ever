@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import threading
+from typing import Any
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -12,7 +16,26 @@ from app import admin, auth
 from app.agents.mcp import list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
 from app.config import Settings
 from app.database import Database, now_iso
-from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, create_chat_run, emit_chat_event, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
+from app.providers import (
+    ChatCompletionRequest,
+    _stream_provider,
+    anthropic_mcp_tool_definitions,
+    build_chat_provider_request,
+    chat_mcp_tool_definitions,
+    create_chat_run,
+    emit_chat_event,
+    gemini_mcp_tool_definitions,
+    parse_anthropic_stream_line,
+    parse_gemini_stream_line,
+    parse_openai_stream_line,
+    recall_chat_document_chunks,
+    resolve_chat_request,
+    router,
+    sign_chat_attachment_url,
+    source_citation_check_payload,
+    sse_event,
+    store_chat_document_chunks,
+)
 
 
 def sse_data_payloads(text: str) -> list[dict]:
@@ -21,6 +44,66 @@ def sse_data_payloads(text: str) -> list[dict]:
         if line.startswith("data: "):
             payloads.append(json.loads(line.removeprefix("data: ")))
     return payloads
+
+
+class LocalStreamingProvider:
+    def __init__(self, routes: dict[str, dict[str, Any]]):
+        self.routes = routes
+        self.records: list[dict[str, Any]] = []
+        self.server: ThreadingHTTPServer | None = None
+        self.thread: threading.Thread | None = None
+
+    def __enter__(self):
+        parent = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+                try:
+                    json_body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+                except json.JSONDecodeError:
+                    json_body = {}
+                parent.records.append({"path": self.path, "headers": {key.lower(): value for key, value in self.headers.items()}, "json": json_body})
+                route = parent.routes.get(self.path) or parent.routes.get(self.path.split("?", 1)[0])
+                if not route:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = str(route.get("body") or "").encode("utf-8")
+                self.send_response(int(route.get("status", 200)))
+                self.send_header("Content-Type", str(route.get("content_type") or "text/event-stream"))
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                return
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+        if self.thread:
+            self.thread.join(timeout=2)
+
+    @property
+    def base_url(self) -> str:
+        if not self.server:
+            raise RuntimeError("Local streaming provider is not running.")
+        host, port = self.server.server_address
+        return f"http://{host}:{port}"
+
+
+async def collect_provider_stream_events(settings: Settings, provider: str, payload: ChatCompletionRequest) -> list[dict[str, Any]]:
+    events = []
+    async for event in _stream_provider(settings, provider, payload):
+        events.append(event)
+    return events
 
 
 def test_openai_stream_delta_becomes_chat_event():
@@ -45,6 +128,100 @@ def test_sse_event_uses_named_event_and_json_data():
     event = sse_event("message:chunk", {"content": "hello"})
 
     assert event == 'event: message:chunk\ndata: {"content":"hello"}\n\n'
+
+
+def test_openai_native_streaming_uses_http_sse_contract(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    body = "\n\n".join(
+        [
+            'data: {"choices":[{"delta":{"content":"mock openai"}}]}',
+            'data: {"choices":[{"delta":{"content":" stream"}}]}',
+            'data: {"usage":{"total_tokens":7},"choices":[]}',
+            "data: [DONE]",
+        ]
+    )
+    with LocalStreamingProvider({"/v1/chat/completions": {"body": body}}) as server:
+        payload = ChatCompletionRequest(
+            provider="openai",
+            base_url=server.base_url,
+            api_key="sk-openai",
+            model="gpt-4o-mini",
+            system_prompt="System prompt",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        events = asyncio.run(collect_provider_stream_events(settings, "openai", payload))
+
+    chunks = [event["data"]["content"] for event in events if event["event"] == "message:chunk"]
+    assert chunks == ["mock openai", " stream"]
+    assert [event["data"]["usage"]["total_tokens"] for event in events if event["event"] == "token:usage"] == [7]
+    request = server.records[0]
+    assert request["path"] == "/v1/chat/completions"
+    assert request["headers"]["authorization"] == "Bearer sk-openai"
+    assert request["json"]["stream"] is True
+    assert request["json"]["messages"][0] == {"role": "system", "content": "System prompt"}
+    assert request["json"]["messages"][1] == {"role": "user", "content": "hello"}
+
+
+def test_anthropic_native_streaming_uses_http_sse_contract(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    body = "\n\n".join(
+        [
+            'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"mock anthropic"}}',
+            'data: {"type":"message_delta","usage":{"output_tokens":5}}',
+            "data: [DONE]",
+        ]
+    )
+    with LocalStreamingProvider({"/messages": {"body": body}}) as server:
+        payload = ChatCompletionRequest(
+            provider="anthropic",
+            base_url=server.base_url,
+            api_key="sk-anthropic",
+            model="claude-3-5-sonnet",
+            system_prompt="System prompt",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        events = asyncio.run(collect_provider_stream_events(settings, "anthropic", payload))
+
+    assert [event["data"]["content"] for event in events if event["event"] == "message:chunk"] == ["mock anthropic"]
+    assert [event["data"]["usage"]["output_tokens"] for event in events if event["event"] == "token:usage"] == [5]
+    request = server.records[0]
+    assert request["path"] == "/messages"
+    assert request["headers"]["x-api-key"] == "sk-anthropic"
+    assert request["headers"]["anthropic-version"] == "2023-06-01"
+    assert request["json"]["stream"] is True
+    assert request["json"]["system"] == "System prompt"
+    assert request["json"]["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_gemini_native_streaming_uses_http_sse_contract(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    body = "\n\n".join(
+        [
+            'data: {"candidates":[{"content":{"parts":[{"text":"mock gemini"}]}}]}',
+            'data: {"usageMetadata":{"totalTokenCount":9}}',
+            "data: [DONE]",
+        ]
+    )
+    route = "/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+    with LocalStreamingProvider({route: {"body": body}}) as server:
+        payload = ChatCompletionRequest(
+            provider="gemini",
+            base_url=server.base_url,
+            api_key="sk-gemini",
+            model="gemini-2.5-flash",
+            system_prompt="System prompt",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        events = asyncio.run(collect_provider_stream_events(settings, "gemini", payload))
+
+    assert [event["data"]["content"] for event in events if event["event"] == "message:chunk"] == ["mock gemini"]
+    assert [event["data"]["usage"]["totalTokenCount"] for event in events if event["event"] == "token:usage"] == [9]
+    request = server.records[0]
+    assert request["path"] == route
+    assert request["headers"]["x-goog-api-key"] == "sk-gemini"
+    assert "stream" not in request["json"]
+    assert request["json"]["systemInstruction"] == {"parts": [{"text": "System prompt"}]}
+    assert request["json"]["contents"] == [{"role": "user", "parts": [{"text": "hello"}]}]
 
 
 def test_chat_run_messages_redact_attachment_payloads(tmp_path):
