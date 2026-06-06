@@ -12,7 +12,7 @@ from app import admin, auth
 from app.agents.mcp import list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
 from app.config import Settings
 from app.database import Database, now_iso
-from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
+from app.providers import ChatCompletionRequest, anthropic_mcp_tool_definitions, build_chat_provider_request, chat_mcp_tool_definitions, create_chat_run, gemini_mcp_tool_definitions, parse_anthropic_stream_line, parse_gemini_stream_line, parse_openai_stream_line, recall_chat_document_chunks, resolve_chat_request, router, sign_chat_attachment_url, source_citation_check_payload, sse_event, store_chat_document_chunks
 
 
 def sse_data_payloads(text: str) -> list[dict]:
@@ -45,6 +45,60 @@ def test_sse_event_uses_named_event_and_json_data():
     event = sse_event("message:chunk", {"content": "hello"})
 
     assert event == 'event: message:chunk\ndata: {"content":"hello"}\n\n'
+
+
+def test_chat_run_messages_redact_attachment_payloads(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    database = Database(settings)
+    database.migrate()
+    payload = ChatCompletionRequest(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "user",
+                "content": "请总结附件。",
+                "attachments": [
+                    {
+                        "id": "image-1",
+                        "name": "photo.png",
+                        "type": "image/png",
+                        "kind": "image",
+                        "data_url": "data:image/png;base64,SECRET_IMAGE_BODY",
+                    },
+                    {
+                        "id": "doc-1",
+                        "name": "notes.md",
+                        "type": "text/markdown",
+                        "kind": "file",
+                        "text_excerpt": "PRIVATE_DOCUMENT_BODY",
+                        "text_chunks": [{"ref": "doc-1#chunk1", "chunk_index": 0, "content": "PRIVATE_CHUNK_BODY"}],
+                    },
+                ],
+            }
+        ],
+    )
+
+    run_id = create_chat_run(database, "owner-1", payload)
+
+    with database.connect() as conn:
+        raw = conn.execute("SELECT messages_json FROM chat_runs WHERE id = ?", (run_id,)).fetchone()["messages_json"]
+    assert "SECRET_IMAGE_BODY" not in raw
+    assert "PRIVATE_DOCUMENT_BODY" not in raw
+    assert "PRIVATE_CHUNK_BODY" not in raw
+    messages = json.loads(raw)
+    image_attachment = messages[0]["attachments"][0]
+    doc_attachment = messages[0]["attachments"][1]
+    assert image_attachment["id"] == "image-1"
+    assert image_attachment["data_url_redacted"] is True
+    assert "data_url" not in image_attachment
+    assert doc_attachment["id"] == "doc-1"
+    assert doc_attachment["text_excerpt_present"] is True
+    assert doc_attachment["text_excerpt_chars"] == len("PRIVATE_DOCUMENT_BODY")
+    assert doc_attachment["text_chunk_count"] == 1
+    assert doc_attachment["text_chunk_refs"] == ["doc-1#chunk1"]
+    assert "text_excerpt" not in doc_attachment
+    assert "text_chunks" not in doc_attachment
 
 
 def test_source_citation_check_detects_unknown_refs():

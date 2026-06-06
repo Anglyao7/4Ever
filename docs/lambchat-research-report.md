@@ -1145,3 +1145,28 @@ OpenAI-compatible、Anthropic 和 Gemini 都已接入各自的原生流式分支
 
 - 这次修复的是事件协议一致性，不等价于真实外部 provider / MCP E2E 已完成。
 - 后续仍需要用真实 API key 或受控 mock server 覆盖 OpenAI-compatible、Anthropic、Gemini 原生流式和 BigModel MCP live 的上线前完整链路。
+
+## 本次后续落地记录（2026-06-06，运行记录附件 payload 脱敏）
+
+本次继续按代码 review 收紧上线安全边界：`chat_runs.messages_json` 原先直接保存 resolved messages，登录态图片附件 hydrate 后会带 `data_url`，文档附件也可能带 `text_excerpt` 和 `text_chunks.content`。这些内容对运行列表和 replay 不是必需信息，不应该进入持久化运行记录。
+
+### 已完成
+
+- 新增 `chat_run_messages_snapshot()`，在创建 `chat_runs` 前生成脱敏消息快照。
+- 附件 metadata 仍保留 `id`、`name`、`type`、`kind`、`size` 等字段，便于排障和兼容后续 run 展示。
+- 图片附件的 `data_url` / `dataUrl` 不再写入 `messages_json`，改为记录 `data_url_redacted=true`。
+- 文档附件的 `text_excerpt` 不再写入 `messages_json`，只记录 `text_excerpt_present` 和字符数。
+- 文档附件的 `text_chunks.content` 不再写入 `messages_json`，只记录 chunk 数量和前 12 个 ref。
+- 通用嵌套 payload 中形如 `data:*;base64,...` 的字符串也会在运行记录快照中替换为 `[redacted data URL]`。
+- Provider 请求链路没有改动；图片理解和文档 RAG 仍可在本轮请求内使用 hydrate 后的附件内容。
+
+### 已完成的验证
+
+- 新增 `test_chat_run_messages_redact_attachment_payloads`，覆盖图片 data URL、文档摘录和 chunk 全文不会进入 `chat_runs.messages_json`。
+- 定向运行：
+  - `python_backend/.venv/bin/python -m pytest python_backend/tests/test_providers.py -q -k "chat_run_messages_redact_attachment_payloads"`
+
+### 当前剩余边界
+
+- `source:references` 事件仍会保留短 preview，用于前端引用展示；这不是全文持久化，但仍属于可见摘要，需要继续保持长度限制和 owner scoped 访问。
+- 工具调用结果事件可能包含外部 MCP 返回摘要，后续真实外部 E2E 时还需要检查是否需要额外截断或分类脱敏。

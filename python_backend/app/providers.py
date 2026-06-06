@@ -1450,13 +1450,70 @@ def create_chat_run(database: Database, user_id: str, payload: ChatCompletionReq
                 payload.profile_id or "",
                 normalize_provider(payload.provider),
                 payload.model,
-                json_dumps(payload.messages),
+                json_dumps(chat_run_messages_snapshot(payload.messages)),
                 json_dumps(payload.mcp_server_ids),
                 now,
                 now,
             ),
         )
     return run_id
+
+
+def chat_run_messages_snapshot(messages: list[dict[str, Any]]) -> list[Any]:
+    return [sanitize_chat_run_message(message) for message in messages]
+
+
+def sanitize_chat_run_message(message: Any) -> Any:
+    if not isinstance(message, dict):
+        return sanitize_chat_run_value(message)
+    out: dict[str, Any] = {}
+    for key, value in message.items():
+        if key == "attachments" and isinstance(value, list):
+            out[key] = [sanitize_chat_run_attachment(item) for item in value]
+        else:
+            out[key] = sanitize_chat_run_value(value)
+    return out
+
+
+def sanitize_chat_run_attachment(attachment: Any) -> Any:
+    if not isinstance(attachment, dict):
+        return sanitize_chat_run_value(attachment)
+    out: dict[str, Any] = {}
+    data_url_redacted = bool(attachment.get("data_url") or attachment.get("dataUrl"))
+    for key, value in attachment.items():
+        if key in {"data_url", "dataUrl"}:
+            continue
+        if key == "text_excerpt":
+            text = str(value or "")
+            if text:
+                out["text_excerpt_present"] = True
+                out["text_excerpt_chars"] = len(text)
+            continue
+        if key == "text_chunks":
+            chunks = [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+            if chunks:
+                out["text_chunk_count"] = len(chunks)
+                out["text_chunk_refs"] = [str(item.get("ref") or "")[:160] for item in chunks[:12] if str(item.get("ref") or "")]
+            continue
+        out[key] = sanitize_chat_run_value(value)
+    if data_url_redacted:
+        out["data_url_redacted"] = True
+    return out
+
+
+def sanitize_chat_run_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return "[redacted data URL]" if looks_like_data_url(value) else value
+    if isinstance(value, list):
+        return [sanitize_chat_run_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): sanitize_chat_run_value(item) for key, item in value.items() if str(key) not in {"data_url", "dataUrl"}}
+    return value
+
+
+def looks_like_data_url(value: str) -> bool:
+    head = value[:128].lower()
+    return head.startswith("data:") and "base64," in head
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
