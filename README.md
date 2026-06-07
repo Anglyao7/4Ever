@@ -21,8 +21,6 @@ The application now runs on a Python/FastAPI backend. The previous backend surfa
 
 1. AI 聊天对象可视化
 2. MiniMax 语音合成 -> 语音聊天
-3. 笔记模块
-4. 全局 AI 代理工作流
 
 ## Repository Layout
 
