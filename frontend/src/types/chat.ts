@@ -322,6 +322,30 @@ export interface FriendshipRecord {
   created_at: string;
 }
 
+export interface ChatGroupMember {
+  user: FriendProfile;
+  role: "owner" | "member";
+  joined_at: string;
+}
+
+export interface ChatGroupRecord {
+  id: string;
+  owner_id: string;
+  name: string;
+  members: ChatGroupMember[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMessageRecord {
+  id: number;
+  group_id: string;
+  sender: FriendProfile;
+  sender_id: string;
+  content: string;
+  created_at: string;
+}
+
 export interface FriendSummary {
   friends: FriendshipRecord[];
   incoming_requests: FriendRequestRecord[];

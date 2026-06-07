@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -27,6 +28,15 @@ class DirectMessageCreate(BaseModel):
     content: str = ""
     attachments: list[DirectAttachment] = Field(default_factory=list)
     reply_to_message_id: int | None = None
+
+
+class GroupCreate(BaseModel):
+    name: str
+    member_ids: list[str] = Field(default_factory=list)
+
+
+class GroupMessageCreate(BaseModel):
+    content: str
 
 
 def router(db: Database, settings: Settings | None = None) -> APIRouter:
@@ -112,6 +122,84 @@ def router(db: Database, settings: Settings | None = None) -> APIRouter:
         with db.connect() as conn:
             conn.execute("DELETE FROM friendships WHERE user_a_id = ? AND user_b_id = ?", (left, right))
         return {"status": "ok"}
+
+    @api.get("/groups")
+    def list_groups(request: Request) -> list[dict[str, Any]]:
+        user = require_user(request, db)
+        with db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT g.*
+                FROM chat_groups g
+                JOIN chat_group_members m ON m.group_id = g.id
+                WHERE m.user_id = ?
+                ORDER BY g.updated_at DESC, g.created_at DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+        return [group_response(db, row_to_dict(row) or {}) for row in rows]
+
+    @api.post("/groups")
+    def create_group(request: Request, payload: GroupCreate) -> dict[str, Any]:
+        user = require_user(request, db)
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Group name is required.")
+        if len(name) > 80:
+            raise HTTPException(status_code=422, detail="Group name must be 80 characters or fewer.")
+        member_ids = dedupe_group_member_ids(payload.member_ids, user["id"])
+        if len(member_ids) > 50:
+            raise HTTPException(status_code=422, detail="Group can include at most 50 members.")
+        for member_id in member_ids:
+            ensure_direct_peer(db, member_id, user["id"], require_friendship=True)
+        group_id = "group-" + uuid.uuid4().hex[:12]
+        now = now_iso()
+        with db.connect() as conn:
+            conn.execute(
+                "INSERT INTO chat_groups (id, owner_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (group_id, user["id"], name, now, now),
+            )
+            conn.execute(
+                "INSERT INTO chat_group_members (group_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
+                (group_id, user["id"], now),
+            )
+            for member_id in member_ids:
+                conn.execute(
+                    "INSERT INTO chat_group_members (group_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
+                    (group_id, member_id, now),
+                )
+            group = row_to_dict(conn.execute("SELECT * FROM chat_groups WHERE id = ?", (group_id,)).fetchone())
+        return group_response(db, group or {})
+
+    @api.get("/groups/{group_id}/messages")
+    def list_group_messages(request: Request, group_id: str) -> list[dict[str, Any]]:
+        user = require_user(request, db)
+        ensure_group_member(db, group_id, user["id"])
+        with db.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM group_messages WHERE group_id = ? ORDER BY created_at ASC, id ASC LIMIT 300",
+                (group_id,),
+            ).fetchall()
+        return [group_message_response(db, row_to_dict(row) or {}) for row in rows]
+
+    @api.post("/groups/{group_id}/messages")
+    def send_group_message(request: Request, group_id: str, payload: GroupMessageCreate) -> dict[str, Any]:
+        user = require_user(request, db)
+        ensure_group_member(db, group_id, user["id"])
+        content = payload.content.strip()
+        if not content:
+            raise HTTPException(status_code=422, detail="Message content is required.")
+        if len(content) > 20000:
+            raise HTTPException(status_code=422, detail="Message content must be 20000 characters or fewer.")
+        now = now_iso()
+        with db.connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO group_messages (group_id, sender_id, content, created_at) VALUES (?, ?, ?, ?)",
+                (group_id, user["id"], content, now),
+            )
+            conn.execute("UPDATE chat_groups SET updated_at = ? WHERE id = ?", (now, group_id))
+            message = row_to_dict(conn.execute("SELECT * FROM group_messages WHERE id = ?", (cursor.lastrowid,)).fetchone())
+        return group_message_response(db, message or {})
 
     @api.get("/direct/{user_id}")
     def list_direct_messages(request: Request, user_id: str) -> list[dict[str, Any]]:
@@ -213,6 +301,66 @@ def friend_request_response(db: Database, record: dict[str, Any]) -> dict[str, A
         "status": record["status"],
         "created_at": record["created_at"],
         "responded_at": record.get("responded_at"),
+    }
+
+
+def dedupe_group_member_ids(member_ids: list[str], owner_id: str) -> list[str]:
+    out: list[str] = []
+    seen = {owner_id}
+    for member_id in member_ids:
+        value = str(member_id or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def ensure_group_member(db: Database, group_id: str, user_id: str) -> dict[str, Any]:
+    with db.connect() as conn:
+        group = row_to_dict(conn.execute("SELECT * FROM chat_groups WHERE id = ?", (group_id,)).fetchone())
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+        member = row_to_dict(
+            conn.execute("SELECT * FROM chat_group_members WHERE group_id = ? AND user_id = ?", (group_id, user_id)).fetchone()
+        )
+    if not member:
+        raise HTTPException(status_code=403, detail="Group membership is required.")
+    return group
+
+
+def group_response(db: Database, group: dict[str, Any]) -> dict[str, Any]:
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chat_group_members WHERE group_id = ? ORDER BY role DESC, joined_at ASC",
+            (group["id"],),
+        ).fetchall()
+    members = []
+    for row in rows:
+        member = row_to_dict(row) or {}
+        members.append({
+            "user": friend_profile(user_by_id(db, member["user_id"])),
+            "role": member.get("role") or "member",
+            "joined_at": member.get("joined_at") or "",
+        })
+    return {
+        "id": group["id"],
+        "owner_id": group["owner_id"],
+        "name": group["name"],
+        "members": members,
+        "created_at": group.get("created_at") or "",
+        "updated_at": group.get("updated_at") or "",
+    }
+
+
+def group_message_response(db: Database, message: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": message["id"],
+        "group_id": message["group_id"],
+        "sender": friend_profile(user_by_id(db, message["sender_id"])),
+        "sender_id": message["sender_id"],
+        "content": message.get("content") or "",
+        "created_at": message.get("created_at") or "",
     }
 
 

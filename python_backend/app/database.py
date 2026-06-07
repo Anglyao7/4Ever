@@ -394,6 +394,33 @@ _CREATE_TABLES = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS chat_groups (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_group_members (
+      group_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY(group_id, user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS group_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS friend_requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_id TEXT NOT NULL,
@@ -534,6 +561,22 @@ _SCHEMA_UPDATES = {
         "reply_to_message_id": "INTEGER",
         "reply_to_preview_json": "TEXT",
     },
+    "chat_groups": {
+        "owner_id": "TEXT NOT NULL DEFAULT ''",
+        "name": "TEXT NOT NULL DEFAULT ''",
+        "created_at": "TEXT",
+        "updated_at": "TEXT",
+    },
+    "chat_group_members": {
+        "role": "TEXT NOT NULL DEFAULT 'member'",
+        "joined_at": "TEXT",
+    },
+    "group_messages": {
+        "group_id": "TEXT NOT NULL DEFAULT ''",
+        "sender_id": "TEXT NOT NULL DEFAULT ''",
+        "content": "TEXT NOT NULL DEFAULT ''",
+        "created_at": "TEXT",
+    },
     "workflow_agent_runs": {
         "thread_id": "TEXT NOT NULL DEFAULT ''",
         "checkpoint_id": "TEXT NOT NULL DEFAULT ''",
@@ -655,6 +698,11 @@ _INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_actor_id ON admin_audit_logs(actor_id)",
     "CREATE INDEX IF NOT EXISTS ix_direct_messages_sender_id ON direct_messages(sender_id)",
     "CREATE INDEX IF NOT EXISTS ix_direct_messages_recipient_id ON direct_messages(recipient_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_groups_owner_id ON chat_groups(owner_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_group_members_user_id ON chat_group_members(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_chat_group_members_group_id ON chat_group_members(group_id)",
+    "CREATE INDEX IF NOT EXISTS ix_group_messages_group_id ON group_messages(group_id)",
+    "CREATE INDEX IF NOT EXISTS ix_group_messages_sender_id ON group_messages(sender_id)",
     "CREATE INDEX IF NOT EXISTS ix_friend_requests_requester_id ON friend_requests(requester_id)",
     "CREATE INDEX IF NOT EXISTS ix_friend_requests_addressee_id ON friend_requests(addressee_id)",
     "CREATE INDEX IF NOT EXISTS ix_friendships_user_a_id ON friendships(user_a_id)",

@@ -19,6 +19,8 @@ import type {
   DirectMessageRecord,
   FriendRequestRecord,
   FriendSummary,
+  ChatGroupRecord,
+  GroupMessageRecord,
   ModelProfile,
   ModelProfileSyncResponse,
   ProviderConnectionResponse,
@@ -567,6 +569,60 @@ export async function removeFriend(token: string, userId: string): Promise<void>
   if (!response.ok) {
     throw new Error(await readError(response));
   }
+}
+
+export async function fetchChatGroups(token: string): Promise<ChatGroupRecord[]> {
+  const response = await fetch(apiUrl("/api/chat/groups"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function createChatGroup(token: string, payload: { name: string; memberIds: string[] }): Promise<ChatGroupRecord> {
+  const response = await fetch(apiUrl("/api/chat/groups"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name: payload.name, member_ids: payload.memberIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function fetchGroupMessages(token: string, groupId: string): Promise<GroupMessageRecord[]> {
+  const response = await fetch(apiUrl(`/api/chat/groups/${encodeURIComponent(groupId)}/messages`), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function sendGroupMessage(token: string, groupId: string, content: string): Promise<GroupMessageRecord> {
+  const response = await fetch(apiUrl(`/api/chat/groups/${encodeURIComponent(groupId)}/messages`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
 }
 
 export async function fetchCurrentUserPlatforms(token: string): Promise<PlatformSummary> {
