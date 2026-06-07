@@ -20,6 +20,7 @@ import {
   saveAiPersona,
   sendDirectMessage,
   streamChat,
+  syncModelProfiles,
   uploadChatAttachment,
 } from "./services/api";
 import { resolveMediaUrl } from "./services/api";
@@ -332,12 +333,32 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
 
   useEffect(() => {
     let cancelled = false;
-    fetchModelProfiles(props.authToken).then((remote) => {
-      if (cancelled || !remote.profiles.length) return;
-      setProfiles(remote.profiles);
-      setBackendProfileIds(new Set(remote.profiles.map((profile) => profile.id)));
-      persistProfileSnapshot(remote.profiles, remote.activeProfileId || remote.profiles[0].id);
-    }).catch(() => undefined);
+    fetchModelProfiles(props.authToken).then(async (remote) => {
+      if (cancelled) return;
+      if (remote.profiles.length) {
+        setProfiles(remote.profiles);
+        setBackendProfileIds(new Set(remote.profiles.map((profile) => profile.id)));
+        persistProfileSnapshot(remote.profiles, remote.activeProfileId || remote.profiles[0].id);
+        return;
+      }
+      setBackendProfileIds(new Set());
+      if (!props.authToken) {
+        return;
+      }
+      const localProfiles = loadProfiles().filter(isUsableProfile);
+      if (!localProfiles.length) {
+        setProfiles([]);
+        return;
+      }
+      const localActiveId = readStorageValue(activeProfileKey) ?? localProfiles[0].id;
+      const synced = await syncModelProfiles(localProfiles, localActiveId, props.authToken);
+      if (cancelled || !synced.profiles.length) return;
+      setProfiles(synced.profiles);
+      setBackendProfileIds(new Set(synced.profiles.map((profile) => profile.id)));
+      persistProfileSnapshot(synced.profiles, synced.activeProfileId || synced.profiles[0].id);
+    }).catch(() => {
+      if (!cancelled) setBackendProfileIds(new Set());
+    });
     return () => {
       cancelled = true;
     };

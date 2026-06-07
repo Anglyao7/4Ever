@@ -65,7 +65,7 @@ Agent execution uses LangGraph `StateGraph`. SQLite table names and JSON payload
 
 MCP runs in planned mode by default. Set `BIGMODEL_API_KEY` and `BIGMODEL_MCP_LIVE=1` only when the backend should make live remote BigModel MCP calls. API keys stay in backend environment variables and are never sent to the frontend.
 
-Model profiles are user-scoped when an auth token is present. Local unauthenticated development keeps using the legacy global profile scope for compatibility. `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES` defaults on only for loopback host/CORS settings; set it to `0` for public deployments and to `1` only for local offline compatibility. Set a stable `MODEL_PROFILE_ENCRYPTION_KEY` before production deploys; changing it later prevents decrypting stored model API keys.
+Model profiles are user-scoped when an auth token is present. Local unauthenticated development keeps using the legacy global profile scope for compatibility. `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES` defaults on only for loopback host/CORS settings; set it to `0` for public deployments and to `1` only for local offline compatibility. Set a stable `MODEL_PROFILE_ENCRYPTION_KEY` before production deploys; changing it later prevents decrypting stored model API keys. Authenticated chat can import usable local profiles into backend storage when no backend profiles exist yet, so local-to-online migration still works while subsequent chat payloads use `profile_id`.
 
 Image generation accepts either the legacy direct provider/base URL/API key payload or an authenticated `profile_id`. When `profile_id` is used, the backend resolves the owner-scoped encrypted model profile key and the frontend only sends image prompt/model/size fields.
 

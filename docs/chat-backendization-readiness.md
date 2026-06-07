@@ -19,6 +19,7 @@ This note tracks the current state of the chat backendization work and the rollo
 
 - Authenticated online users should rely on backend-owned `profile_id` and `persona_id`; the browser should not need to send raw API keys or full AI-contact prompts.
 - Frontend chat payloads with `profile_id` are id-first: they send profile/persona ids plus memory, MCP, attachments, and messages, while provider runtime fields stay on the backend.
+- When an authenticated chat session finds no backend model profiles but does have usable local profiles, the chat panel imports the local profiles through `PUT /api/catalog/model-profiles` before marking them backend-owned. This preserves local-to-online migration while moving subsequent chat sends onto the id-first path.
 - Frontend image-generation payloads with backend-owned profiles are also id-first: they send `profile_id`, prompt, image model, and size, while provider URL/key fields stay on the backend.
 - Anonymous/local offline mode is still supported for legacy localStorage profiles and client-side prompt compatibility. This path is intentionally not treated as the online security boundary.
 - `system_prompt` remains accepted as a compatibility field, but backend-owned persona/profile prompts take precedence once a valid `profile_id` or `persona_id` is supplied.
