@@ -258,6 +258,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const [conversationError, setConversationError] = useState("");
   const [profiles, setProfiles] = useState<ModelProfile[]>(loadProfiles);
   const [backendProfileIds, setBackendProfileIds] = useState<Set<string>>(() => new Set());
+  const [profileSyncReady, setProfileSyncReady] = useState(() => !props.authToken);
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [aiContact, setAiContact] = useState<AIContactProfile>(loadAIContact);
   const [aiDraft, setAiDraft] = useState<AIContactProfile>(() => loadAIContact());
@@ -333,31 +334,43 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
 
   useEffect(() => {
     let cancelled = false;
+    setProfileSyncReady(!props.authToken);
     fetchModelProfiles(props.authToken).then(async (remote) => {
       if (cancelled) return;
       if (remote.profiles.length) {
         setProfiles(remote.profiles);
         setBackendProfileIds(new Set(remote.profiles.map((profile) => profile.id)));
         persistProfileSnapshot(remote.profiles, remote.activeProfileId || remote.profiles[0].id);
+        setProfileSyncReady(true);
         return;
       }
       setBackendProfileIds(new Set());
       if (!props.authToken) {
+        setProfileSyncReady(true);
         return;
       }
       const localProfiles = loadProfiles().filter(isUsableProfile);
       if (!localProfiles.length) {
         setProfiles([]);
+        setProfileSyncReady(true);
         return;
       }
       const localActiveId = readStorageValue(activeProfileKey) ?? localProfiles[0].id;
       const synced = await syncModelProfiles(localProfiles, localActiveId, props.authToken);
-      if (cancelled || !synced.profiles.length) return;
+      if (cancelled) return;
+      if (!synced.profiles.length) {
+        setProfileSyncReady(true);
+        return;
+      }
       setProfiles(synced.profiles);
       setBackendProfileIds(new Set(synced.profiles.map((profile) => profile.id)));
       persistProfileSnapshot(synced.profiles, synced.activeProfileId || synced.profiles[0].id);
+      setProfileSyncReady(true);
     }).catch(() => {
-      if (!cancelled) setBackendProfileIds(new Set());
+      if (!cancelled) {
+        setBackendProfileIds(new Set());
+        setProfileSyncReady(true);
+      }
     });
     return () => {
       cancelled = true;
@@ -373,6 +386,11 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
       setAiPersonas([]);
       setAiMemories([]);
       setMemoryDraft("");
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!profileSyncReady) {
       return () => {
         cancelled = true;
       };
@@ -401,7 +419,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     return () => {
       cancelled = true;
     };
-  }, [props.authToken]);
+  }, [props.authToken, profileSyncReady]);
 
   useEffect(() => {
     let cancelled = false;

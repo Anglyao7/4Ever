@@ -188,7 +188,7 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
         db = require_database(database)
         user_id = optional_user_id(request, db)
         require_authenticated_or_legacy_global_scope(settings, user_id, "AI persona storage")
-        persona = upsert_persona(db, user_id, payload)
+        persona = upsert_persona(settings, db, user_id, payload)
         return {"persona": persona}
 
     @api.delete("/api/chat/personas/{persona_id}")
@@ -1255,7 +1255,7 @@ def list_personas(database: Database, user_id: str = "") -> list[dict[str, Any]]
     return [persona_from_row(row) for row in rows]
 
 
-def upsert_persona(database: Database, user_id: str, payload: PersonaPayload) -> dict[str, Any]:
+def upsert_persona(settings: Settings, database: Database, user_id: str, payload: PersonaPayload) -> dict[str, Any]:
     public_id = ((payload.id or "").strip() or str(uuid.uuid4()))[:64]
     name = payload.name.strip()
     if not name:
@@ -1263,6 +1263,8 @@ def upsert_persona(database: Database, user_id: str, payload: PersonaPayload) ->
     memory_strategy = (payload.memory_strategy or "recall").strip().lower()
     if memory_strategy not in {"off", "recall", "retain", "recall-retain"}:
         raise HTTPException(status_code=422, detail="memory_strategy must be off, recall, retain, or recall-retain.")
+    default_profile_id = (payload.default_profile_id or "").strip()[:64]
+    validate_persona_default_profile(settings, database, user_id, default_profile_id)
     now = now_iso()
     storage_id = scoped_record_id(user_id, public_id)
     with database.connect() as conn:
@@ -1291,7 +1293,7 @@ def upsert_persona(database: Database, user_id: str, payload: PersonaPayload) ->
                 (payload.role or "").strip()[:240],
                 (payload.temperament or "").strip()[:240],
                 (payload.notes or "").strip()[:2000],
-                (payload.default_profile_id or "").strip()[:64],
+                default_profile_id,
                 memory_strategy,
                 1 if payload.enabled is not False else 0,
                 existing.get("created_at") if existing else now,
@@ -1309,6 +1311,16 @@ def upsert_persona(database: Database, user_id: str, payload: PersonaPayload) ->
         persona_audit_detail(persona),
     )
     return persona
+
+
+def validate_persona_default_profile(settings: Settings, database: Database, user_id: str, default_profile_id: str) -> None:
+    if not default_profile_id:
+        return
+    profile = get_model_profile(settings, database, default_profile_id, user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Default model profile not found.")
+    if not profile["enabled"]:
+        raise HTTPException(status_code=403, detail="Default model profile is disabled.")
 
 
 def get_persona(database: Database | None, user_id: str, persona_id: str) -> dict[str, Any] | None:

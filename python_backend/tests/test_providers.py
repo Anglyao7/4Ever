@@ -1714,6 +1714,77 @@ def test_model_profiles_are_user_scoped_and_api_keys_encrypted(tmp_path):
     assert second_resolved.api_key == "sk-second"
 
 
+def test_persona_default_profile_must_be_owner_scoped_and_enabled(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    owner = sign_up(client, "persona-profile-owner")
+    other = sign_up(client, "persona-profile-other")
+    owner_headers = {"Authorization": f"Bearer {owner['token']}"}
+    other_headers = {"Authorization": f"Bearer {other['token']}"}
+    profile = client.put(
+        "/api/catalog/model-profiles",
+        headers=owner_headers,
+        json={
+            "active_profile_id": "profile-main",
+            "profiles": [
+                {
+                    "id": "profile-main",
+                    "name": "Main",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-owner",
+                    "model": "gpt-4o-mini",
+                },
+                {
+                    "id": "disabled-profile",
+                    "name": "Disabled",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-disabled",
+                    "model": "gpt-4o-mini",
+                    "enabled": False,
+                },
+            ],
+        },
+    )
+    assert profile.status_code == 200, profile.text
+
+    valid = client.post(
+        "/api/chat/personas",
+        headers=owner_headers,
+        json={"id": "contact-main", "name": "Owner Contact", "default_profile_id": "profile-main", "memory_strategy": "recall"},
+    )
+    cross_user = client.post(
+        "/api/chat/personas",
+        headers=other_headers,
+        json={"id": "contact-other", "name": "Other Contact", "default_profile_id": "profile-main", "memory_strategy": "recall"},
+    )
+    missing = client.post(
+        "/api/chat/personas",
+        headers=owner_headers,
+        json={"id": "contact-missing", "name": "Missing Contact", "default_profile_id": "missing-profile", "memory_strategy": "recall"},
+    )
+    disabled = client.post(
+        "/api/chat/personas",
+        headers=owner_headers,
+        json={"id": "contact-disabled", "name": "Disabled Contact", "default_profile_id": "disabled-profile", "memory_strategy": "recall"},
+    )
+
+    assert valid.status_code == 200, valid.text
+    assert valid.json()["persona"]["default_profile_id"] == "profile-main"
+    assert cross_user.status_code == 404
+    assert cross_user.json()["detail"] == "Default model profile not found."
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Default model profile not found."
+    assert disabled.status_code == 403
+    assert disabled.json()["detail"] == "Default model profile is disabled."
+
+
 def test_image_generation_uses_authenticated_encrypted_profile_key(tmp_path):
     settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
     database = Database(settings)
@@ -2060,6 +2131,24 @@ def test_persona_and_memory_mutations_are_scoped_and_audited_without_content(tmp
     other_headers = {"Authorization": f"Bearer {other['token']}"}
     secret_notes = "SECRET_PERSONA_NOTES should never be in audit"
     secret_memory = 'SECRET_MEMORY_CONTENT api_key="SECRET_MEMORY_KEY"'
+    profile = client.put(
+        "/api/catalog/model-profiles",
+        headers=owner_headers,
+        json={
+            "active_profile_id": "profile-main",
+            "profiles": [
+                {
+                    "id": "profile-main",
+                    "name": "Main",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-audit",
+                    "model": "gpt-4o-mini",
+                }
+            ],
+        },
+    )
+    assert profile.status_code == 200, profile.text
 
     created = client.post(
         "/api/chat/personas",
@@ -2109,7 +2198,7 @@ def test_persona_and_memory_mutations_are_scoped_and_audited_without_content(tmp
     assert deleted_persona.status_code == 200, deleted_persona.text
     with database.connect() as conn:
         rows = conn.execute(
-            "SELECT actor_id, action, target_type, target_id, detail FROM admin_audit_logs WHERE actor_id = ? ORDER BY id",
+            "SELECT actor_id, action, target_type, target_id, detail FROM admin_audit_logs WHERE actor_id = ? AND action LIKE 'ai_%' ORDER BY id",
             (owner["user"]["id"],),
         ).fetchall()
 

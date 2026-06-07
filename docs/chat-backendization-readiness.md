@@ -4,7 +4,7 @@ This note tracks the current state of the chat backendization work and the rollo
 
 ## Current State
 
-- AI contacts are backend records in `ai_personas`, scoped by `user_id`. Authenticated chat can send `persona_id` or `contact_id`; the backend resolves the contact name, role, notes, default model profile, and memory strategy.
+- AI contacts are backend records in `ai_personas`, scoped by `user_id`. Authenticated chat can send `persona_id` or `contact_id`; the backend resolves the contact name, role, notes, default model profile, and memory strategy. Persona `default_profile_id` values are validated against the same owner-scoped, enabled model profile store before they are saved.
 - Model profiles are backend records in `model_profiles`, scoped by `user_id` for authenticated users. Authenticated responses do not reveal API key values; the backend decrypts keys only for runtime provider calls.
 - Existing authenticated plaintext model keys are migrated into `api_key_encrypted` during database migration. Legacy anonymous/global profiles keep plaintext compatibility for local offline use.
 - Long-term memory is stored in `ai_memories` and exposed through retain, recall, and delete endpoints. Chat recall injects a small memory block before provider execution; retain and recall-retain can write simple preference memories after chat.
