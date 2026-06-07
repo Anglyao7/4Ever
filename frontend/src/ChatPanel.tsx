@@ -726,7 +726,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   function attachDirectFiles(fileList: FileList | null) {
     void attachFiles(fileList, directAttachments, setDirectAttachments, () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
-    }, setConversationError, clearAttachmentLimitError);
+    }, setConversationError, clearAttachmentLimitError, props.authToken);
   }
 
   function attachAIFiles(fileList: FileList | null) {
@@ -1654,6 +1654,7 @@ function chatAttachmentToDirect(attachment: ChatAttachment): DirectAttachment {
     size: attachment.size,
     kind: attachment.kind,
     data_url: attachment.dataUrl,
+    uploaded: attachment.uploaded,
   };
 }
 

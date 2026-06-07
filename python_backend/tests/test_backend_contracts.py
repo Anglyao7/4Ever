@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
@@ -199,6 +200,101 @@ def test_friend_request_direct_message_contract():
     thread = client.get(f"/api/chat/direct/{right_id}", headers={"Authorization": f"Bearer {left_token}"})
     assert thread.status_code == 200
     assert thread.json()[-1]["content"] == "hello"
+
+
+def test_direct_message_attachments_use_private_uploads_and_temporary_urls():
+    left = create_user("direct-file-left")
+    right = create_user("direct-file-right")
+    left_token = left["token"]
+    right_token = right["token"]
+    left_id = left["user"]["id"]
+    right_id = right["user"]["id"]
+    request = client.post(f"/api/chat/friends/request/{right_id}", headers={"Authorization": f"Bearer {left_token}"})
+    assert request.status_code == 200, request.text
+    accepted = client.post(f"/api/chat/friends/requests/{request.json()['id']}/accept", headers={"Authorization": f"Bearer {right_token}"})
+    assert accepted.status_code == 200, accepted.text
+    direct_bytes = b"private direct attachment body"
+
+    upload = client.post(
+        "/api/chat/attachments",
+        headers={"Authorization": f"Bearer {left_token}"},
+        json={"filename": "private.txt", "content_type": "text/plain", "data_base64": base64.b64encode(direct_bytes).decode("ascii")},
+    )
+    assert upload.status_code == 200, upload.text
+    attachment = upload.json()
+    message = client.post(
+        f"/api/chat/direct/{right_id}",
+        headers={"Authorization": f"Bearer {left_token}"},
+        json={
+            "content": "see attached",
+            "attachments": [
+                {
+                    "id": attachment["id"],
+                    "name": attachment["name"],
+                    "type": attachment["type"],
+                    "size": attachment["size"],
+                    "kind": attachment["kind"],
+                    "uploaded": True,
+                }
+            ],
+        },
+    )
+    assert message.status_code == 200, message.text
+    message_payload = message.json()
+    direct_attachment = message_payload["attachments"][0]
+    assert direct_attachment["uploaded"] is True
+    assert direct_attachment["id"] == attachment["id"]
+    assert direct_attachment["data_url"].startswith(f"/api/chat/attachments/{attachment['id']}/temporary?token=")
+    assert "data:" not in message.text
+    assert client.get(direct_attachment["data_url"]).content == direct_bytes
+
+    recipient_thread = client.get(f"/api/chat/direct/{left_id}", headers={"Authorization": f"Bearer {right_token}"})
+    assert recipient_thread.status_code == 200, recipient_thread.text
+    recipient_attachment = recipient_thread.json()[-1]["attachments"][0]
+    assert recipient_attachment["uploaded"] is True
+    assert recipient_attachment["data_url"].startswith(f"/api/chat/attachments/{attachment['id']}/temporary?token=")
+    assert client.get(recipient_attachment["data_url"]).content == direct_bytes
+    with database.connect() as conn:
+        stored = conn.execute("SELECT attachments_json FROM direct_messages WHERE id = ?", (message_payload["id"],)).fetchone()["attachments_json"]
+    stored_attachments = json.loads(stored)
+    assert stored_attachments == [
+        {
+            "id": attachment["id"],
+            "name": attachment["name"],
+            "type": "text/plain",
+            "size": len(direct_bytes),
+            "kind": "file",
+            "uploaded": True,
+        }
+    ]
+    assert "data:" not in stored
+
+    right_upload = client.post(
+        "/api/chat/attachments",
+        headers={"Authorization": f"Bearer {right_token}"},
+        json={"filename": "other.txt", "content_type": "text/plain", "data_base64": base64.b64encode(b"not mine").decode("ascii")},
+    )
+    assert right_upload.status_code == 200, right_upload.text
+    cross_owner = client.post(
+        f"/api/chat/direct/{right_id}",
+        headers={"Authorization": f"Bearer {left_token}"},
+        json={
+            "content": "",
+            "attachments": [
+                {
+                    "id": right_upload.json()["id"],
+                    "name": "other.txt",
+                    "type": "text/plain",
+                    "size": 8,
+                    "kind": "file",
+                    "uploaded": True,
+                }
+            ],
+        },
+    )
+    assert cross_owner.status_code == 404
+    assert client.delete(f"/api/chat/attachments/{attachment['id']}", headers={"Authorization": f"Bearer {left_token}"}).status_code == 200
+    assert client.delete(f"/api/chat/attachments/{right_upload.json()['id']}", headers={"Authorization": f"Bearer {right_token}"}).status_code == 200
 
 
 def test_token_usage_key_ingest_dashboard_contract():

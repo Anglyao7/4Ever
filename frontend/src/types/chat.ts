@@ -282,6 +282,7 @@ export interface DirectAttachment {
   size: number;
   kind: "image" | "file";
   data_url?: string;
+  uploaded?: boolean;
 }
 
 export interface DirectMessageRecord {

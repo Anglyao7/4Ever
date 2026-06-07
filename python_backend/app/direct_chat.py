@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.auth import public_media_url, require_user
+from app.config import Settings
 from app.database import Database, json_dumps, json_loads, now_iso, row_to_dict
+from app.providers import ChatAttachmentUploadRequest, load_chat_attachment_record, sign_chat_attachment_url, store_chat_attachment
 
 
 class DirectAttachment(BaseModel):
@@ -17,6 +20,7 @@ class DirectAttachment(BaseModel):
     size: int
     kind: str
     data_url: str | None = None
+    uploaded: bool | None = False
 
 
 class DirectMessageCreate(BaseModel):
@@ -25,8 +29,9 @@ class DirectMessageCreate(BaseModel):
     reply_to_message_id: int | None = None
 
 
-def router(db: Database) -> APIRouter:
+def router(db: Database, settings: Settings | None = None) -> APIRouter:
     api = APIRouter(prefix="/api/chat")
+    runtime_settings = settings or db.settings
 
     @api.get("/friends")
     def list_friends(request: Request) -> dict[str, Any]:
@@ -122,21 +127,18 @@ def router(db: Database) -> APIRouter:
                 """,
                 (user["id"], user_id, user_id, user["id"]),
             ).fetchall()
-        return [direct_message_response(row_to_dict(row) or {}) for row in rows]
+        return [direct_message_response(row_to_dict(row) or {}, runtime_settings, db) for row in rows]
 
     @api.post("/direct/{user_id}")
     def send_direct_message(request: Request, user_id: str, payload: DirectMessageCreate) -> dict[str, Any]:
         user = require_user(request, db)
         ensure_direct_peer(db, user_id, user["id"], require_friendship=True)
         content = payload.content.strip()
-        attachments = payload.attachments[:4]
+        attachments = normalize_direct_attachments(runtime_settings, db, str(user["id"]), payload.attachments[:4])
         if not content and not attachments:
             raise HTTPException(status_code=422, detail="Message content or attachment is required.")
         if len(content) > 20000:
             raise HTTPException(status_code=422, detail="Message content must be 20000 characters or fewer.")
-        for attachment in attachments:
-            if attachment.size < 0:
-                raise HTTPException(status_code=422, detail="Attachment size must be greater than or equal to 0.")
         reply_preview = None
         reply_id = payload.reply_to_message_id
         with db.connect() as conn:
@@ -149,10 +151,10 @@ def router(db: Database) -> APIRouter:
                 INSERT INTO direct_messages (sender_id, recipient_id, content, attachments_json, reply_to_message_id, reply_to_preview_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user["id"], user_id, content, json_dumps([attachment.model_dump() for attachment in attachments]), reply_id, reply_preview, now),
+                (user["id"], user_id, content, json_dumps(attachments), reply_id, reply_preview, now),
             )
             message = row_to_dict(conn.execute("SELECT * FROM direct_messages WHERE id = ?", (cursor.lastrowid,)).fetchone())
-        return direct_message_response(message or {})
+        return direct_message_response(message or {}, runtime_settings, db)
 
     return api
 
@@ -230,17 +232,100 @@ def friend_profile(user: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def direct_message_response(message: dict[str, Any]) -> dict[str, Any]:
+def direct_message_response(message: dict[str, Any], settings: Settings, db: Database) -> dict[str, Any]:
     return {
         "id": message["id"],
         "sender_id": message["sender_id"],
         "recipient_id": message["recipient_id"],
         "content": message.get("content") or "",
-        "attachments": parse_attachments(message.get("attachments_json")),
+        "attachments": [
+            direct_attachment_response(settings, db, str(message["sender_id"]), attachment)
+            for attachment in parse_attachments(message.get("attachments_json"))
+        ],
         "reply_to_message_id": message.get("reply_to_message_id"),
         "reply_to": json_loads(message.get("reply_to_preview_json"), None),
         "created_at": message.get("created_at") or "",
     }
+
+
+def normalize_direct_attachments(settings: Settings, db: Database, user_id: str, attachments: list[DirectAttachment]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for attachment in attachments:
+        if attachment.size < 0:
+            raise HTTPException(status_code=422, detail="Attachment size must be greater than or equal to 0.")
+        data_url = (attachment.data_url or "").strip()
+        if attachment.uploaded:
+            row = load_chat_attachment_record(db, user_id, attachment.id)
+            if not row:
+                raise HTTPException(status_code=404, detail="Attachment not found.")
+            normalized.append(direct_attachment_from_record(row))
+            continue
+        if data_url:
+            uploaded = store_direct_data_url_attachment(settings, db, user_id, attachment, data_url)
+            normalized.append(direct_attachment_from_record(uploaded))
+            continue
+        normalized.append(
+            {
+                "id": attachment.id[:120],
+                "name": attachment.name[:240],
+                "type": attachment.type[:120],
+                "size": attachment.size,
+                "kind": "image" if attachment.kind == "image" else "file",
+                "uploaded": False,
+            }
+        )
+    return normalized
+
+
+def store_direct_data_url_attachment(settings: Settings, db: Database, user_id: str, attachment: DirectAttachment, data_url: str) -> dict[str, Any]:
+    if not data_url.startswith("data:") or "," not in data_url:
+        raise HTTPException(status_code=422, detail="Attachment data URL is invalid.")
+    header, data_base64 = data_url.split(",", 1)
+    if ";base64" not in header.lower():
+        raise HTTPException(status_code=422, detail="Attachment data URL must be base64 encoded.")
+    content_type = header[5:].split(";", 1)[0].strip().lower() or attachment.type
+    return store_chat_attachment(
+        settings,
+        db,
+        user_id,
+        ChatAttachmentUploadRequest(filename=attachment.name, content_type=content_type, data_base64=data_base64),
+    )
+
+
+def direct_attachment_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(record.get("id") or "")[:120],
+        "name": str(record.get("name") or "")[:240],
+        "type": str(record.get("content_type") or record.get("type") or "application/octet-stream")[:120],
+        "size": int(record.get("size") or 0),
+        "kind": "image" if str(record.get("kind") or "") == "image" else "file",
+        "uploaded": True,
+    }
+
+
+def direct_attachment_response(settings: Settings, db: Database, owner_id: str, attachment: dict[str, Any]) -> dict[str, Any]:
+    if attachment.get("uploaded"):
+        row = load_chat_attachment_record(db, owner_id, str(attachment.get("id") or ""))
+        if row:
+            out = direct_attachment_from_record(row)
+            out["data_url"] = direct_attachment_temporary_url(settings, owner_id, out["id"])
+            return out
+    return {
+        "id": str(attachment.get("id") or "")[:120],
+        "name": str(attachment.get("name") or "")[:240],
+        "type": str(attachment.get("type") or "application/octet-stream")[:120],
+        "size": int(attachment.get("size") or 0),
+        "kind": "image" if str(attachment.get("kind") or "") == "image" else "file",
+        "data_url": str(attachment.get("data_url") or "") or None,
+        "uploaded": bool(attachment.get("uploaded")),
+    }
+
+
+def direct_attachment_temporary_url(settings: Settings, owner_id: str, attachment_id: str) -> str:
+    ttl = max(60, min(int(settings.chat_attachment_url_ttl_seconds or 600), 3600))
+    expires_at = int(time.time()) + ttl
+    token = sign_chat_attachment_url(settings, owner_id, attachment_id, expires_at)
+    return f"/api/chat/attachments/{attachment_id}/temporary?token={token}"
 
 
 def parse_attachments(raw: Any) -> list[dict[str, Any]]:

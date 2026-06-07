@@ -11,7 +11,7 @@ This note tracks the current state of the chat backendization work and the rollo
 - Persona and memory mutations emit privacy-bounded audit rows. Audit details include ids, source/strategy, and character counts, but not persona notes, memory bodies, metadata values, or API keys.
 - Chat runs are persisted in `chat_runs` with `run_id`, sanitized message snapshots, usage, selected MCP servers, and stored SSE events. Replay is scoped by the current user.
 - Ordinary chat can use MCP servers. Planned mode injects tool context before the model call; live mode can use native tool/function loops for OpenAI-compatible, Anthropic, and Gemini requests.
-- Attachments are stored under `private_media_root`, owner-scoped, and can be exposed through signed temporary URLs. Vision-capable requests turn owner-visible images into provider image inputs. Text/PDF attachments get extracted chunks for prompt context and citations.
+- Attachments are stored under `private_media_root`, owner-scoped, and can be exposed through signed temporary URLs. Vision-capable AI requests turn owner-visible images into provider image inputs. Text/PDF attachments get extracted chunks for prompt context and citations. Direct-message attachments also use the private upload store; direct message rows persist attachment ids/metadata and sender/recipient responses receive signed temporary URLs instead of embedded data URLs.
 - OpenAI-compatible, Anthropic, and Gemini chat streaming use native provider stream endpoints for ordinary chat.
 - Image generation can use authenticated backend-owned `profile_id` resolution for encrypted model profile keys; legacy direct-key payloads remain available for local independent image configuration.
 
@@ -33,7 +33,7 @@ This note tracks the current state of the chat backendization work and the rollo
 - Run database migration once before serving traffic and confirm authenticated rows in `model_profiles` have empty `api_key` and non-empty `api_key_encrypted`.
 - Set `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=0` for public deployments; leave it enabled only for local offline compatibility.
 - Verify `GET /api/chat/runs` and `GET /api/chat/runs/{run_id}/events` with two different users before enabling run replay in production UI.
-- Verify private attachment downloads, chunk detail, and temporary URLs with owner, non-owner, and anonymous requests.
+- Verify private attachment downloads, direct-message attachment responses, chunk detail, and temporary URLs with owner, non-owner, recipient, and anonymous requests.
 - Verify admin audit review with a non-admin user creating/updating/deleting an AI persona and memory. The audit rows should show actor/action/target metadata while omitting prompt notes, memory content, metadata values, and secrets.
 
 ## Focused Verification
