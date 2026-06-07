@@ -1968,6 +1968,106 @@ def test_legacy_global_model_profile_storage_can_be_disabled_for_public_runtime(
         assert conn.execute("SELECT COUNT(*) AS count FROM model_profiles WHERE user_id = ?", (user["user"]["id"],)).fetchone()["count"] == 1
 
 
+def test_legacy_disabled_blocks_anonymous_chat_state_and_keeps_direct_key_chat_ephemeral(tmp_path):
+    settings = Settings(
+        base_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        media_root=tmp_path / "media",
+        model_profile_encryption_key="test-secret",
+        allow_legacy_global_model_profiles=False,
+    )
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+
+    anonymous_persona = client.post(
+        "/api/chat/personas",
+        json={"id": "anon-contact", "name": "Anon", "role": "Helper"},
+    )
+    anonymous_memory = client.post(
+        "/api/chat/memory/retain",
+        json={"persona_id": "", "content": "anonymous memory", "source": "manual"},
+    )
+
+    assert client.get("/api/chat/personas").status_code == 401
+    assert anonymous_persona.status_code == 401
+    assert client.delete("/api/chat/personas/anon-contact").status_code == 401
+    assert client.get("/api/chat/memory/recall").status_code == 401
+    assert anonymous_memory.status_code == 401
+    assert client.delete("/api/chat/memory/missing").status_code == 401
+    assert client.get("/api/chat/runs").status_code == 401
+    assert client.get("/api/chat/runs/missing/events").status_code == 401
+
+    chat_body = json.dumps(
+        {
+            "choices": [{"message": {"content": "direct key response"}}],
+            "usage": {"total_tokens": 2},
+        }
+    )
+    stream_body = "\n\n".join(
+        [
+            'data: {"choices":[{"delta":{"content":"streamed direct key"}}]}',
+            'data: {"usage":{"total_tokens":3}}',
+            "data: [DONE]",
+        ]
+    )
+    with LocalStreamingProvider(
+        {
+            "/v1/chat/completions": {
+                "content_type": "application/json",
+                "body": chat_body,
+            }
+        }
+    ) as server:
+        direct_chat = client.post(
+            "/api/chat",
+            json={
+                "provider": "openai",
+                "base_url": server.base_url,
+                "api_key": "sk-direct",
+                "model": "gpt-4o-mini",
+                "memory_strategy": "retain",
+                "messages": [{"role": "user", "content": "请记住匿名偏好"}],
+            },
+        )
+    with LocalStreamingProvider(
+        {
+            "/v1/chat/completions": {
+                "content_type": "text/event-stream",
+                "body": stream_body,
+            }
+        }
+    ) as server:
+        direct_stream = client.post(
+            "/api/chat/stream",
+            json={
+                "provider": "openai",
+                "base_url": server.base_url,
+                "api_key": "sk-direct",
+                "model": "gpt-4o-mini",
+                "memory_strategy": "retain",
+                "messages": [{"role": "user", "content": "请记住匿名流式偏好"}],
+            },
+        )
+
+    assert direct_chat.status_code == 200, direct_chat.text
+    assert direct_chat.json()["content"] == "direct key response"
+    assert direct_chat.json()["run_id"]
+    assert direct_stream.status_code == 200, direct_stream.text
+    assert "event: run:start" in direct_stream.text
+    assert "streamed direct key" in direct_stream.text
+    stream_payloads = sse_data_payloads(direct_stream.text)
+    stream_run_id = stream_payloads[0]["run_id"]
+    assert stream_run_id
+    assert all(payload.get("run_id") == stream_run_id for payload in stream_payloads)
+
+    with database.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS count FROM chat_runs").fetchone()["count"] == 0
+        assert conn.execute("SELECT COUNT(*) AS count FROM ai_memories").fetchone()["count"] == 0
+
+
 def test_migrate_encrypts_authenticated_plaintext_model_keys_and_preserves_legacy_global_profiles(tmp_path):
     settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="migration-secret")
     database = Database(settings)

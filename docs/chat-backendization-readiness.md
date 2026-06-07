@@ -9,7 +9,7 @@ This note tracks the current state of the chat backendization work and the rollo
 - Existing authenticated plaintext model keys are migrated into `api_key_encrypted` during database migration. Legacy anonymous/global profiles keep plaintext compatibility for local offline use.
 - Long-term memory is stored in `ai_memories` and exposed through retain, recall, and delete endpoints. Chat recall injects a small memory block before provider execution; retain and recall-retain can write simple preference memories after chat.
 - Persona and memory mutations emit privacy-bounded audit rows. Audit details include ids, source/strategy, and character counts, but not persona notes, memory bodies, metadata values, or API keys.
-- Chat runs are persisted in `chat_runs` with `run_id`, sanitized message snapshots, usage, selected MCP servers, and stored SSE events. Replay is scoped by the current user.
+- Chat runs are persisted in `chat_runs` with `run_id`, sanitized message snapshots, usage, selected MCP servers, and stored SSE events for authenticated users and legacy local mode. Replay is scoped by the current user. With `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=0`, anonymous direct-key chat still works but uses ephemeral live `run_id` values and does not write run or memory rows.
 - Ordinary chat can use MCP servers. Planned mode injects tool context before the model call; live mode can use native tool/function loops for OpenAI-compatible, Anthropic, and Gemini requests.
 - Attachments are stored under `private_media_root`, owner-scoped, and can be exposed through signed temporary URLs. Vision-capable AI requests turn owner-visible images into provider image inputs. Text/PDF attachments get extracted chunks for prompt context and citations. Direct-message attachments also use the private upload store; direct message rows persist attachment ids/metadata and sender/recipient responses receive signed temporary URLs instead of embedded data URLs.
 - OpenAI-compatible, Anthropic, and Gemini chat streaming use native provider stream endpoints for ordinary chat.
@@ -23,7 +23,7 @@ This note tracks the current state of the chat backendization work and the rollo
 - Frontend image-generation payloads with backend-owned profiles are also id-first: they send `profile_id`, prompt, image model, and size, while provider URL/key fields stay on the backend.
 - Anonymous/local offline mode is still supported for legacy localStorage profiles and client-side prompt compatibility. This path is intentionally not treated as the online security boundary.
 - `system_prompt` remains accepted as a compatibility field, but backend-owned persona/profile prompts take precedence once a valid `profile_id` or `persona_id` is supplied.
-- Global legacy model/persona storage with empty `user_id` remains available only when `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=1` or the backend is running with loopback host and loopback CORS origins. Authenticated users resolve `user_id:public_id` storage ids instead.
+- Global legacy model/persona/memory/run storage with empty `user_id` remains available only when `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=1` or the backend is running with loopback host and loopback CORS origins. Authenticated users resolve `user_id:public_id` storage ids instead.
 
 ## Rollout Checks
 
@@ -32,6 +32,7 @@ This note tracks the current state of the chat backendization work and the rollo
 - Keep `BIGMODEL_MCP_LIVE=0` unless live backend MCP calls are intended. Planned MCP mode remains useful for UI and workflow compatibility without external calls.
 - Run database migration once before serving traffic and confirm authenticated rows in `model_profiles` have empty `api_key` and non-empty `api_key_encrypted`.
 - Set `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=0` for public deployments; leave it enabled only for local offline compatibility.
+- Verify anonymous model profile, persona, memory, and chat run storage endpoints return `401` when `ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=0`; direct provider/base URL/API key chat should still answer without persisting anonymous run or memory rows.
 - Verify `GET /api/chat/runs` and `GET /api/chat/runs/{run_id}/events` with two different users before enabling run replay in production UI.
 - Verify private attachment downloads, direct-message attachment responses, chunk detail, and temporary URLs with owner, non-owner, recipient, and anonymous requests.
 - Verify admin audit review with a non-admin user creating/updating/deleting an AI persona and memory. The audit rows should show actor/action/target metadata while omitting prompt notes, memory content, metadata values, and secrets.

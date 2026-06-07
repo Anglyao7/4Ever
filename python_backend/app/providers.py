@@ -328,11 +328,13 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
         db = require_database(database)
         user_id = optional_user_id(request, db)
         resolved = resolve_chat_request(database, payload, settings=settings, user_id=user_id)
-        run_id = create_chat_run(db, user_id, resolved)
-        emit_chat_event(db, run_id, "run:start", run_start_payload(resolved, run_id))
-        emit_chat_event(db, run_id, "thought:summary", thought_summary_payload(resolved, "context"))
+        persist_run = chat_state_storage_enabled(settings, user_id)
+        run_id = create_chat_run(db, user_id, resolved) if persist_run else str(uuid.uuid4())
+        if persist_run:
+            emit_chat_event(db, run_id, "run:start", run_start_payload(resolved, run_id))
+            emit_chat_event(db, run_id, "thought:summary", thought_summary_payload(resolved, "context"))
         references = source_references_payload(resolved)
-        if references:
+        if references and persist_run:
             emit_chat_event(db, run_id, "source:references", references)
         try:
             if should_use_mcp_tool_loop(settings, db, resolved):
@@ -340,20 +342,23 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
             else:
                 resolved, tool_events = apply_mcp_context(settings, db, resolved)
                 response = await complete_chat(settings, resolved)
-            for event in tool_events:
-                emit_chat_event(db, run_id, event["event"], event["data"])
+            if persist_run:
+                for event in tool_events:
+                    emit_chat_event(db, run_id, event["event"], event["data"])
         except Exception as error:
-            emit_chat_event(db, run_id, "run:error", {"message": str(getattr(error, "detail", error))})
-            finish_chat_run(db, run_id, "failed")
+            if persist_run:
+                emit_chat_event(db, run_id, "run:error", {"message": str(getattr(error, "detail", error))})
+                finish_chat_run(db, run_id, "failed")
             raise
-        if response.get("usage") is not None:
+        if response.get("usage") is not None and persist_run:
             emit_chat_event(db, run_id, "token:usage", {"usage": response["usage"]})
         citation = source_citation_check_payload(response.get("content", ""), references)
-        if citation:
+        if citation and persist_run:
             emit_chat_event(db, run_id, "source:citation-check", citation)
-        emit_chat_event(db, run_id, "message:done", {"provider": response["provider"], "model": response["model"]})
-        maybe_auto_retain_memory(db, user_id, resolved, response.get("content", ""))
-        finish_chat_run(db, run_id, "success", response.get("usage"))
+        if persist_run:
+            emit_chat_event(db, run_id, "message:done", {"provider": response["provider"], "model": response["model"]})
+            maybe_auto_retain_memory(db, user_id, resolved, response.get("content", ""))
+            finish_chat_run(db, run_id, "success", response.get("usage"))
         response["run_id"] = run_id
         return response
 
@@ -363,9 +368,10 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
         user_id = optional_user_id(request, db)
         resolved = resolve_chat_request(database, payload, settings=settings, user_id=user_id)
         validate_chat_request(resolved)
-        run_id = create_chat_run(db, user_id, resolved)
+        persist_run = chat_state_storage_enabled(settings, user_id)
+        run_id = create_chat_run(db, user_id, resolved) if persist_run else str(uuid.uuid4())
         return StreamingResponse(
-            _stream_chat_events(settings, resolved, db, run_id, user_id),
+            _stream_chat_events(settings, resolved, db, run_id, user_id, persist_events=persist_run),
             media_type="text/event-stream; charset=utf-8",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -416,6 +422,10 @@ def require_authenticated_or_legacy_global_scope(settings: Settings, user_id: st
     if user_id or settings.allow_legacy_global_model_profiles:
         return
     raise HTTPException(status_code=401, detail=f"{resource} requires authentication.")
+
+
+def chat_state_storage_enabled(settings: Settings, user_id: str) -> bool:
+    return bool(user_id or settings.allow_legacy_global_model_profiles)
 
 
 def store_chat_attachment(settings: Settings, database: Database, user_id: str, payload: ChatAttachmentUploadRequest) -> dict[str, Any]:
@@ -1168,6 +1178,8 @@ def resolve_chat_request(database: Database | None, payload: ChatCompletionReque
     if persona and not profile_id:
         profile_id = persona.get("default_profile_id") or ""
     if not profile_id:
+        if not chat_state_storage_enabled(runtime_settings, user_id):
+            return payload
         return apply_memory_context(db, user_id, payload, persona)
     profile = get_model_profile(runtime_settings, require_database(database), profile_id, user_id)
     if not profile:
@@ -1638,15 +1650,25 @@ def provider_request_error_detail(prefix: str, error: httpx.HTTPError) -> str:
 
 
 def emit_chat_event(database: Database, run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
-    event_data = sanitize_chat_event_payload(event, data)
-    event_data.setdefault("run_id", run_id)
-    item = {"event": event, "data": event_data}
+    item = chat_event_item(run_id, event, data)
     with database.connect() as conn:
         row = conn.execute("SELECT events_json FROM chat_runs WHERE id = ?", (run_id,)).fetchone()
         events = json_loads(row["events_json"] if row else "[]", [])
         events.append(item)
         conn.execute("UPDATE chat_runs SET events_json = ? WHERE id = ?", (json_dumps(events), run_id))
     return item
+
+
+def chat_event_item(run_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
+    event_data = sanitize_chat_event_payload(event, data)
+    event_data.setdefault("run_id", run_id)
+    return {"event": event, "data": event_data}
+
+
+def chat_live_event(database: Database, run_id: str, event: str, data: dict[str, Any], persist: bool = True) -> dict[str, Any]:
+    if persist:
+        return emit_chat_event(database, run_id, event, data)
+    return chat_event_item(run_id, event, data)
 
 
 def sanitize_chat_event_payload(event: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -2417,15 +2439,15 @@ async def _complete_chat_once(settings: Settings, payload: ChatCompletionRequest
     return {"provider": provider, "model": payload.model, "content": content, "usage": usage, "raw": data}
 
 
-async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest, database: Database, run_id: str, user_id: str = "") -> AsyncIterator[str]:
+async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest, database: Database, run_id: str, user_id: str = "", persist_events: bool = True) -> AsyncIterator[str]:
     provider = validate_chat_request(payload)
-    start = emit_chat_event(database, run_id, "run:start", run_start_payload(payload, run_id))
+    start = chat_live_event(database, run_id, "run:start", run_start_payload(payload, run_id), persist_events)
     yield sse_event(start["event"], start["data"])
-    thought = emit_chat_event(database, run_id, "thought:summary", thought_summary_payload(payload, "context"))
+    thought = chat_live_event(database, run_id, "thought:summary", thought_summary_payload(payload, "context"), persist_events)
     yield sse_event(thought["event"], thought["data"])
     references = source_references_payload(payload)
     if references:
-        source_event = emit_chat_event(database, run_id, "source:references", references)
+        source_event = chat_live_event(database, run_id, "source:references", references, persist_events)
         yield sse_event(source_event["event"], source_event["data"])
     emitted_content = False
     completed_model = payload.model
@@ -2436,7 +2458,7 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
         if not use_tool_loop:
             payload, tool_events = apply_mcp_context(settings, database, payload)
             for event in tool_events:
-                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                stored_event = chat_live_event(database, run_id, event["event"], event["data"], persist_events)
                 yield sse_event(stored_event["event"], stored_event["data"])
         if use_tool_loop:
             if provider == "anthropic":
@@ -2451,7 +2473,7 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                     content_parts.append(str(event["data"]["content"]))
                 if event["event"] == "token:usage":
                     usage = event["data"].get("usage")
-                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                stored_event = chat_live_event(database, run_id, event["event"], event["data"], persist_events)
                 yield sse_event(stored_event["event"], stored_event["data"])
         elif provider in {"openai", "anthropic", "gemini"}:
             async for event in _stream_provider(settings, provider, payload):
@@ -2460,38 +2482,39 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                     content_parts.append(str(event["data"]["content"]))
                 if event["event"] == "token:usage":
                     usage = event["data"].get("usage")
-                stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                stored_event = chat_live_event(database, run_id, event["event"], event["data"], persist_events)
                 yield sse_event(stored_event["event"], stored_event["data"])
         else:
             response = await complete_chat(settings, payload)
             content = response["content"]
             if response.get("fallback"):
-                fallback_event = emit_chat_event(database, run_id, "model:fallback", response["fallback"])
+                fallback_event = chat_live_event(database, run_id, "model:fallback", response["fallback"], persist_events)
                 yield sse_event(fallback_event["event"], fallback_event["data"])
                 completed_model = response["fallback"]["to"]
             if content:
                 emitted_content = True
                 content_parts.append(content)
-                chunk_event = emit_chat_event(database, run_id, "message:chunk", {"content": content})
+                chunk_event = chat_live_event(database, run_id, "message:chunk", {"content": content}, persist_events)
                 yield sse_event(chunk_event["event"], chunk_event["data"])
             if response.get("usage") is not None:
                 usage = response["usage"]
-                usage_event = emit_chat_event(database, run_id, "token:usage", {"usage": response["usage"]})
+                usage_event = chat_live_event(database, run_id, "token:usage", {"usage": response["usage"]}, persist_events)
                 yield sse_event(usage_event["event"], usage_event["data"])
         citation = source_citation_check_payload("".join(content_parts), references)
         if citation:
-            citation_event = emit_chat_event(database, run_id, "source:citation-check", citation)
+            citation_event = chat_live_event(database, run_id, "source:citation-check", citation, persist_events)
             yield sse_event(citation_event["event"], citation_event["data"])
         done = {"provider": provider, "model": completed_model, "run_id": run_id}
-        emit_chat_event(database, run_id, "message:done", done)
-        maybe_auto_retain_memory(database, user_id, payload, "".join(content_parts))
-        finish_chat_run(database, run_id, "success", usage)
-        yield sse_event("message:done", done)
+        done_event = chat_live_event(database, run_id, "message:done", done, persist_events)
+        if persist_events:
+            maybe_auto_retain_memory(database, user_id, payload, "".join(content_parts))
+            finish_chat_run(database, run_id, "success", usage)
+        yield sse_event(done_event["event"], done_event["data"])
     except HTTPException as primary_error:
         fallback = fallback_model(payload)
         if provider in {"openai", "anthropic", "gemini"} and fallback and not emitted_content:
             fallback_data = {"from": payload.model, "to": fallback, "reason": str(primary_error.detail)}
-            fallback_event = emit_chat_event(database, run_id, "model:fallback", fallback_data)
+            fallback_event = chat_live_event(database, run_id, "model:fallback", fallback_data, persist_events)
             yield sse_event(fallback_event["event"], fallback_event["data"])
             try:
                 async for event in _stream_provider(settings, provider, payload.model_copy(update={"model": fallback, "fallback_model": None})):
@@ -2499,32 +2522,36 @@ async def _stream_chat_events(settings: Settings, payload: ChatCompletionRequest
                         content_parts.append(str(event["data"]["content"]))
                     if event["event"] == "token:usage":
                         usage = event["data"].get("usage")
-                    stored_event = emit_chat_event(database, run_id, event["event"], event["data"])
+                    stored_event = chat_live_event(database, run_id, event["event"], event["data"], persist_events)
                     yield sse_event(stored_event["event"], stored_event["data"])
                 citation = source_citation_check_payload("".join(content_parts), references)
                 if citation:
-                    citation_event = emit_chat_event(database, run_id, "source:citation-check", citation)
+                    citation_event = chat_live_event(database, run_id, "source:citation-check", citation, persist_events)
                     yield sse_event(citation_event["event"], citation_event["data"])
                 done = {"provider": provider, "model": fallback, "run_id": run_id}
-                emit_chat_event(database, run_id, "message:done", done)
-                maybe_auto_retain_memory(database, user_id, payload, "".join(content_parts))
-                finish_chat_run(database, run_id, "success", usage)
-                yield sse_event("message:done", done)
+                done_event = chat_live_event(database, run_id, "message:done", done, persist_events)
+                if persist_events:
+                    maybe_auto_retain_memory(database, user_id, payload, "".join(content_parts))
+                    finish_chat_run(database, run_id, "success", usage)
+                yield sse_event(done_event["event"], done_event["data"])
                 return
             except HTTPException as fallback_error:
                 error_data = {"message": f"Primary model failed: {primary_error.detail}. Fallback model failed: {fallback_error.detail}", "run_id": run_id}
-                error_event = emit_chat_event(database, run_id, "run:error", error_data)
-                finish_chat_run(database, run_id, "failed")
+                error_event = chat_live_event(database, run_id, "run:error", error_data, persist_events)
+                if persist_events:
+                    finish_chat_run(database, run_id, "failed")
                 yield sse_event(error_event["event"], error_event["data"])
                 return
         error_data = {"message": str(primary_error.detail), "run_id": run_id}
-        error_event = emit_chat_event(database, run_id, "run:error", error_data)
-        finish_chat_run(database, run_id, "failed")
+        error_event = chat_live_event(database, run_id, "run:error", error_data, persist_events)
+        if persist_events:
+            finish_chat_run(database, run_id, "failed")
         yield sse_event(error_event["event"], error_event["data"])
     except Exception as error:
         error_data = {"message": str(error), "run_id": run_id}
-        error_event = emit_chat_event(database, run_id, "run:error", error_data)
-        finish_chat_run(database, run_id, "failed")
+        error_event = chat_live_event(database, run_id, "run:error", error_data, persist_events)
+        if persist_events:
+            finish_chat_run(database, run_id, "failed")
         yield sse_event(error_event["event"], error_event["data"])
 
 
