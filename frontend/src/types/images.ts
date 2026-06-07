@@ -1,4 +1,5 @@
 export interface ImageGenerationConfig {
+  profileId?: string;
   provider: string;
   baseUrl: string;
   apiKey: string;

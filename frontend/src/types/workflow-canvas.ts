@@ -5,23 +5,18 @@ export type NodeType =
   | "ai-chat"          // AI 对话
   | "image-gen"        // 图片生成
   | "send-message"     // 发送消息
-  | "http-request"     // HTTP 请求
+  | "send-attachment"  // 发送附件
   | "provider-models"  // 获取接口模型
+  | "api-health"       // 接口健康检查
   | "token-usage"      // Token 用量
   | "memory-map"       // 地图记忆
   | "chat-thread"      // 会话线程
-  | "image-studio"     // 绘影接口
   | "notes-query"      // 笔记读取
-  | "module-catalog"   // 模块目录
-  | "mcp-tool"         // MCP 工具
-  | "admin-audit"      // 管理审计
   | "agent-run"        // 秩序 Agent
-  | "condition"        // 条件判断
-  | "loop"             // 循环
-  | "delay"            // 延迟
-  | "transform"        // 数据转换
   | "note-create"      // 创建笔记
-  | "workflow-trigger"; // 触发工作流
+  | "note-save"        // 保存笔记
+  | "note-delete"      // 删除笔记
+  | "note-export";     // 导出笔记
 
 export type NodePosition = {
   x: number;
@@ -40,12 +35,21 @@ export type NodeConfig = {
   [key: string]: any;
 };
 
+export type NodeRuntimeBinding = {
+  kind: "api" | "local";
+  label: string;
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  path?: string;
+  action?: string;
+};
+
 export type WorkflowNode = {
   id: string;
   type: NodeType;
   label: string;
   position: NodePosition;
   config: NodeConfig;
+  runtime?: NodeRuntimeBinding;
   inputs: string[];   // 输入端口
   outputs: string[];  // 输出端口
 };
@@ -67,6 +71,7 @@ export type NodeTemplate = {
   category: "trigger" | "action" | "logic" | "data";
   description: string;
   defaultConfig: NodeConfig;
+  runtime?: NodeRuntimeBinding;
   inputs: string[];
   outputs: string[];
   color: string;

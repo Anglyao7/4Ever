@@ -1,12 +1,26 @@
 import type {
+  AiMemory,
+  AiMemoryListResponse,
+  AiMemoryRetainPayload,
+  AiMemoryRetainResponse,
+  AiPersona,
+  AiPersonaListResponse,
+  AiPersonaSaveResponse,
   ChatAttachment,
   ChatConfig,
+  ChatDocumentChunkDetail,
+  ChatDocumentChunkSearchResponse,
   ChatMessage,
   ChatResponse,
+  ChatRunListResponse,
+  ChatRunRecord,
   ChatSendPayload,
+  ChatStreamEvent,
   DirectMessageRecord,
   FriendRequestRecord,
   FriendSummary,
+  ModelProfile,
+  ModelProfileSyncResponse,
   ProviderConnectionResponse,
   ProviderInfo,
   ProviderModelsResponse,
@@ -19,7 +33,9 @@ import type {
   AvatarUploadPayload,
   AuthResponse,
   AuthUser,
+  PlatformSummary,
   PasswordChangePayload,
+  ProfileCoverUploadPayload,
   UserSearchResult,
   SignInPayload,
   SignUpPayload,
@@ -33,6 +49,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
+}
+
+function authHeaders(token = ""): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export function getApiBaseUrl() {
@@ -49,7 +69,7 @@ export function resolveMediaUrl(path?: string | null): string | undefined {
   if (!path) {
     return undefined;
   }
-  if (/^https?:\/\//i.test(path)) {
+  if (/^(https?:|data:|blob:)/i.test(path)) {
     return path;
   }
   if (API_BASE_URL) {
@@ -474,7 +494,8 @@ export async function sendDirectMessage(
         type: attachment.type,
         size: attachment.size,
         kind: attachment.kind,
-        data_url: attachment.dataUrl,
+        data_url: attachment.uploaded ? undefined : attachment.dataUrl,
+        uploaded: attachment.uploaded,
       })),
       reply_to_message_id: typeof payload.replyTo?.id === "number" ? payload.replyTo.id : null,
     }),
@@ -548,6 +569,18 @@ export async function removeFriend(token: string, userId: string): Promise<void>
   }
 }
 
+export async function fetchCurrentUserPlatforms(token: string): Promise<PlatformSummary> {
+  const response = await fetch(apiUrl("/api/auth/me/platforms"), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
 export async function updateCurrentUser(token: string, payload: AccountUpdatePayload): Promise<AuthUser> {
   const response = await fetch(apiUrl("/api/auth/me"), {
     method: "PATCH",
@@ -565,6 +598,21 @@ export async function updateCurrentUser(token: string, payload: AccountUpdatePay
 
 export async function uploadCurrentUserAvatar(token: string, payload: AvatarUploadPayload): Promise<AuthUser> {
   const response = await fetch(apiUrl("/api/auth/me/avatar"), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function uploadCurrentUserCover(token: string, payload: ProfileCoverUploadPayload): Promise<AuthUser> {
+  const response = await fetch(apiUrl("/api/auth/me/cover"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -662,10 +710,11 @@ export async function fetchTokenUsageLeaderboard(token: string, range = "30d"): 
   return response.json();
 }
 
-export async function testProviderConnection(config: ChatConfig): Promise<ProviderConnectionResponse> {
+export async function testProviderConnection(config: ChatConfig, authToken = ""): Promise<ProviderConnectionResponse> {
   const response = await fetch(apiUrl("/api/catalog/provider/test"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(providerConnectionPayload(config)),
@@ -679,10 +728,11 @@ export async function testProviderConnection(config: ChatConfig): Promise<Provid
   return response.json();
 }
 
-export async function fetchProviderModels(config: ChatConfig): Promise<ProviderModelsResponse> {
+export async function fetchProviderModels(config: ChatConfig, authToken = ""): Promise<ProviderModelsResponse> {
   const response = await fetch(apiUrl("/api/catalog/provider/models"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(providerConnectionPayload(config)),
@@ -694,6 +744,210 @@ export async function fetchProviderModels(config: ChatConfig): Promise<ProviderM
   }
 
   return response.json();
+}
+
+export async function fetchModelProfiles(authToken = ""): Promise<ModelProfileSyncResponse> {
+  const response = await fetch(apiUrl("/api/catalog/model-profiles"), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return modelProfileResponseFromApi(await response.json());
+}
+
+export async function syncModelProfiles(profiles: ModelProfile[], activeProfileId: string, authToken = ""): Promise<ModelProfileSyncResponse> {
+  const response = await fetch(apiUrl("/api/catalog/model-profiles"), {
+    method: "PUT",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      profiles: profiles.map(modelProfileToApi),
+      active_profile_id: activeProfileId,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return modelProfileResponseFromApi(await response.json());
+}
+
+export async function fetchAiPersonas(authToken = ""): Promise<AiPersonaListResponse> {
+  const response = await fetch(apiUrl("/api/chat/personas"), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { personas?: unknown[] };
+  return { personas: Array.isArray(data.personas) ? data.personas.map(aiPersonaFromApi).filter((item): item is AiPersona => Boolean(item)) : [] };
+}
+
+export async function saveAiPersona(authToken: string, persona: AiPersona): Promise<AiPersonaSaveResponse> {
+  const response = await fetch(apiUrl("/api/chat/personas"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(aiPersonaToApi(persona)),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json();
+  const saved = aiPersonaFromApi(data.persona);
+  if (!saved) {
+    throw new Error("Persona response is invalid.");
+  }
+  return { persona: saved };
+}
+
+export async function deleteAiPersona(authToken: string, personaId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/api/chat/personas/${encodeURIComponent(personaId)}`), {
+    method: "DELETE",
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+}
+
+export async function fetchAiMemories(authToken = "", personaId = "", query = "", limit = 12): Promise<AiMemoryListResponse> {
+  const params = new URLSearchParams({
+    persona_id: personaId,
+    q: query,
+    limit: String(limit),
+  });
+  const response = await fetch(apiUrl(`/api/chat/memory/recall?${params.toString()}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { memories?: unknown[] };
+  return { memories: Array.isArray(data.memories) ? data.memories.map(aiMemoryFromApi).filter((item): item is AiMemory => Boolean(item)) : [] };
+}
+
+export async function retainAiMemory(authToken: string, payload: AiMemoryRetainPayload): Promise<AiMemoryRetainResponse> {
+  const response = await fetch(apiUrl("/api/chat/memory/retain"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      persona_id: payload.personaId ?? "",
+      content: payload.content,
+      source: payload.source ?? "manual",
+      metadata: payload.metadata ?? {},
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json();
+  const memory = aiMemoryFromApi(data.memory);
+  if (!memory) {
+    throw new Error("Memory response is invalid.");
+  }
+  return { memory };
+}
+
+export async function deleteAiMemory(authToken: string, memoryId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/api/chat/memory/${encodeURIComponent(memoryId)}`), {
+    method: "DELETE",
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+}
+
+export async function uploadChatAttachment(authToken: string, attachment: ChatAttachment): Promise<ChatAttachment> {
+  const dataBase64 = typeof attachment.dataUrl === "string" ? attachment.dataUrl.split(",", 2)[1] ?? "" : "";
+  const response = await fetch(apiUrl("/api/chat/attachments"), {
+    method: "POST",
+    headers: {
+      ...authHeaders(authToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      filename: attachment.name,
+      content_type: attachment.type,
+      data_base64: dataBase64,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as Record<string, unknown>;
+  return {
+    ...attachment,
+    id: stringField(data.id) || attachment.id,
+    name: stringField(data.name) || attachment.name,
+    type: stringField(data.type) || attachment.type,
+    size: numberField(data.size, attachment.size),
+    kind: data.kind === "image" ? "image" : "file",
+    uploaded: Boolean(data.uploaded),
+  };
+}
+
+export async function fetchChatRuns(authToken = "", limit = 12): Promise<ChatRunListResponse> {
+  const response = await fetch(apiUrl(`/api/chat/runs?limit=${encodeURIComponent(String(limit))}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  const data = await response.json() as { runs?: unknown[] };
+  return { runs: Array.isArray(data.runs) ? data.runs.map(chatRunFromApi).filter((item): item is ChatRunRecord => Boolean(item)) : [] };
+}
+
+export async function fetchChatRunEvents(authToken: string, runId: string): Promise<ChatStreamEvent[]> {
+  const response = await fetch(apiUrl(`/api/chat/runs/${encodeURIComponent(runId)}/events`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return parseChatStreamEvents(await response.text());
+}
+
+export async function fetchChatAttachmentChunks(authToken: string, attachmentId: string, query = "", limit = 6): Promise<ChatDocumentChunkSearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(apiUrl(`/api/chat/attachments/${encodeURIComponent(attachmentId)}/chunks?${params.toString()}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return chatDocumentChunkSearchFromApi(await response.json());
+}
+
+export async function fetchChatDocumentChunkDetail(authToken: string, ref: string): Promise<ChatDocumentChunkDetail> {
+  const response = await fetch(apiUrl(`/api/chat/document-chunks/${encodeURIComponent(ref)}`), {
+    headers: authHeaders(authToken),
+  });
+  if (!response.ok) {
+    const detail = await readError(response);
+    throw new Error(detail);
+  }
+  return chatDocumentChunkDetailFromApi(await response.json());
 }
 
 function tokenUsageRangeQuery(range: string) {
@@ -704,10 +958,11 @@ function tokenUsageRangeQuery(range: string) {
   return new URLSearchParams({ range }).toString();
 }
 
-export async function sendChat(config: ChatConfig, messages: ChatMessage[]): Promise<ChatResponse> {
+export async function sendChat(config: ChatConfig, messages: ChatMessage[], authToken = ""): Promise<ChatResponse> {
   const response = await fetch(apiUrl("/api/chat"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(chatPayload(config, messages)),
@@ -725,10 +980,13 @@ export async function streamChat(
   config: ChatConfig,
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
+  onEvent?: (event: ChatStreamEvent) => void,
+  authToken = "",
 ): Promise<string> {
   const response = await fetch(apiUrl("/api/chat/stream"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(chatPayload(config, messages)),
@@ -740,45 +998,115 @@ export async function streamChat(
   }
 
   if (!response.body) {
-    const content = await response.text();
-    if (content) {
-      onChunk(content);
-    }
-    return content;
+    return handleChatStreamText(await response.text(), onChunk, onEvent);
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let content = "";
+  let buffer = "";
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
-    const chunk = decoder.decode(value, { stream: true });
-    if (chunk) {
-      content += chunk;
-      onChunk(chunk);
-    }
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\n\n+/);
+    buffer = blocks.pop() ?? "";
+    content += consumeChatStreamBlocks(blocks, onChunk, onEvent);
   }
 
-  const tail = decoder.decode();
-  if (tail) {
-    content += tail;
-    onChunk(tail);
-  }
+  buffer += decoder.decode();
+  content += consumeChatStreamBlocks([buffer], onChunk, onEvent);
 
   return content;
+}
+
+function handleChatStreamText(text: string, onChunk: (chunk: string) => void, onEvent?: (event: ChatStreamEvent) => void) {
+  const content = consumeChatStreamBlocks([text], onChunk, onEvent);
+  if (!content && text && !text.includes("event:")) {
+    onChunk(text);
+    return text;
+  }
+  return content;
+}
+
+function consumeChatStreamBlocks(blocks: string[], onChunk: (chunk: string) => void, onEvent?: (event: ChatStreamEvent) => void) {
+  let content = "";
+  for (const block of blocks) {
+    const event = parseChatStreamEvent(block);
+    if (!event) {
+      continue;
+    }
+    onEvent?.(event);
+    if (event.event === "message:chunk") {
+      const chunk = typeof event.data.content === "string" ? event.data.content : "";
+      if (chunk) {
+        content += chunk;
+        onChunk(chunk);
+      }
+    }
+    if (event.event === "run:error") {
+      const message = typeof event.data.message === "string" ? event.data.message : "AI 流式响应失败";
+      throw new Error(message);
+    }
+  }
+  return content;
+}
+
+function parseChatStreamEvent(block: string): ChatStreamEvent | null {
+  const lines = block.split("\n").map((line) => line.trimEnd()).filter(Boolean);
+  const eventLine = lines.find((line) => line.startsWith("event:"));
+  const dataLines = lines.filter((line) => line.startsWith("data:"));
+  if (!eventLine || !dataLines.length) {
+    return null;
+  }
+  try {
+    return {
+      event: eventLine.replace("event:", "").trim() as ChatStreamEvent["event"],
+      data: JSON.parse(dataLines.map((line) => line.replace("data:", "").trim()).join("\n")),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseChatStreamEvents(text: string): ChatStreamEvent[] {
+  return text
+    .split(/\n\n+/)
+    .map(parseChatStreamEvent)
+    .filter((event): event is ChatStreamEvent => Boolean(event));
 }
 
 function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
   const outboundMessages = messages.map((message) => ({
     role: message.role,
     content: message.content,
+    attachments: (message.attachments ?? []).slice(0, 4).map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      type: attachment.type,
+      size: attachment.size,
+      kind: attachment.kind,
+      data_url: attachment.uploaded ? undefined : attachment.dataUrl,
+      uploaded: attachment.uploaded,
+    })),
   }));
+  const runtimeIds = {
+    profile_id: config.profileId,
+    persona_id: config.personaId,
+    contact_id: config.personaId,
+    memory_strategy: config.memoryStrategy,
+    mcp_server_ids: config.mcpServerIds ?? [],
+    messages: outboundMessages,
+  };
 
+  if (config.profileId) {
+    return runtimeIds;
+  }
   return {
+    ...runtimeIds,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
@@ -786,24 +1114,19 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
     system_prompt: config.systemPrompt,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
-    messages: outboundMessages,
+    supports_vision: config.supportsVision,
+    fallback_model: config.fallbackModel,
   };
 }
 
-export async function generateImage(config: ImageGenerationConfig): Promise<ImageGenerationResponse> {
+export async function generateImage(config: ImageGenerationConfig, authToken = ""): Promise<ImageGenerationResponse> {
   const response = await fetch(apiUrl("/api/images/generate"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      prompt: config.prompt,
-      provider: config.provider,
-      base_url: config.baseUrl,
-      api_key: config.apiKey,
-      model: config.model,
-      size: config.size,
-    }),
+    body: JSON.stringify(imageGenerationPayload(config)),
   });
 
   if (!response.ok) {
@@ -814,11 +1137,297 @@ export async function generateImage(config: ImageGenerationConfig): Promise<Imag
   return response.json();
 }
 
-function providerConnectionPayload(config: ChatConfig) {
+function imageGenerationPayload(config: ImageGenerationConfig) {
+  const base = {
+    profile_id: config.profileId,
+    prompt: config.prompt,
+    model: config.model,
+    size: config.size,
+  };
+  if (config.profileId) {
+    return base;
+  }
   return {
+    ...base,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
+  };
+}
+
+function providerConnectionPayload(config: ChatConfig) {
+  return {
+    profile_id: config.profileId,
+    provider: config.provider,
+    base_url: config.baseUrl,
+    api_key: config.apiKey,
+  };
+}
+
+function modelProfileResponseFromApi(payload: { profiles?: unknown[]; active_profile_id?: string }): ModelProfileSyncResponse {
+  const profiles = Array.isArray(payload.profiles) ? payload.profiles.map(modelProfileFromApi).filter((profile): profile is ModelProfile => Boolean(profile)) : [];
+  const activeProfileId = payload.active_profile_id ?? profiles[0]?.id ?? "";
+  return { profiles, activeProfileId };
+}
+
+function modelProfileToApi(profile: ModelProfile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    provider: profile.provider,
+    base_url: profile.baseUrl,
+    api_key: profile.apiKey,
+    model: profile.model,
+    system_prompt: profile.systemPrompt ?? "",
+    temperature: profile.temperature,
+    max_tokens: profile.maxTokens,
+    supports_vision: Boolean(profile.supportsVision),
+    fallback_model: profile.fallbackModel ?? "",
+    enabled: true,
+    persona: profile.persona,
+    pet: profile.pet,
+  };
+}
+
+function modelProfileFromApi(value: unknown): ModelProfile | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const provider = normalizeProviderField(item.provider);
+  const model = stringField(item.model);
+  if (!id || !provider || !model) {
+    return null;
+  }
+  const name = stringField(item.name) || model;
+  return {
+    id,
+    name,
+    provider,
+    baseUrl: stringField(item.base_url),
+    apiKey: stringField(item.api_key),
+    apiKeySet: Boolean(item.api_key_set),
+    model,
+    systemPrompt: stringField(item.system_prompt),
+    temperature: numberField(item.temperature, 0.7),
+    maxTokens: numberField(item.max_tokens, 1024),
+    supportsVision: Boolean(item.supports_vision),
+    fallbackModel: stringField(item.fallback_model),
+    persona: profilePersonaFromApi(item.persona, name),
+    pet: profilePetFromApi(item.pet),
+  };
+}
+
+function aiPersonaToApi(persona: AiPersona) {
+  return {
+    id: persona.id,
+    name: persona.name,
+    role: persona.role,
+    temperament: persona.temperament,
+    notes: persona.notes,
+    default_profile_id: persona.defaultProfileId,
+    memory_strategy: persona.memoryStrategy,
+    enabled: persona.enabled,
+  };
+}
+
+function aiPersonaFromApi(value: unknown): AiPersona | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const name = stringField(item.name);
+  if (!id || !name) {
+    return null;
+  }
+  const strategy = stringField(item.memory_strategy);
+  return {
+    id,
+    name,
+    role: stringField(item.role),
+    temperament: stringField(item.temperament),
+    notes: stringField(item.notes),
+    defaultProfileId: stringField(item.default_profile_id),
+    memoryStrategy: isMemoryStrategy(strategy) ? strategy : "recall",
+    enabled: item.enabled !== false,
+    createdAt: stringField(item.created_at),
+    updatedAt: stringField(item.updated_at),
+  };
+}
+
+function isMemoryStrategy(value: string): value is AiPersona["memoryStrategy"] {
+  return value === "off" || value === "recall" || value === "retain" || value === "recall-retain";
+}
+
+function aiMemoryFromApi(value: unknown): AiMemory | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  const content = stringField(item.content);
+  if (!id || !content) {
+    return null;
+  }
+  return {
+    id,
+    personaId: stringField(item.persona_id),
+    content,
+    source: stringField(item.source),
+    metadata: objectField(item.metadata) ?? {},
+    createdAt: stringField(item.created_at),
+    updatedAt: stringField(item.updated_at),
+  };
+}
+
+function chatRunFromApi(value: unknown): ChatRunRecord | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const id = stringField(item.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    personaId: stringField(item.persona_id),
+    profileId: stringField(item.profile_id),
+    provider: stringField(item.provider),
+    model: stringField(item.model),
+    status: stringField(item.status),
+    eventCount: numberField(item.event_count, 0),
+    usage: objectField(item.usage) ?? {},
+    mcpServerIds: stringArrayField(item.mcp_server_ids),
+    startedAt: stringField(item.started_at),
+    endedAt: stringField(item.ended_at),
+    createdAt: stringField(item.created_at),
+  };
+}
+
+function chatDocumentChunkSearchFromApi(value: unknown): ChatDocumentChunkSearchResponse {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    attachment: chatDocumentChunkAttachmentFromApi(item.attachment),
+    chunks: Array.isArray(item.chunks) ? item.chunks.map(chatDocumentChunkFromApi).filter((chunk): chunk is ChatDocumentChunkDetail["chunk"] => Boolean(chunk)) : [],
+  };
+}
+
+function chatDocumentChunkDetailFromApi(value: unknown): ChatDocumentChunkDetail {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    ref: stringField(item.ref),
+    attachment: chatDocumentChunkAttachmentFromApi(item.attachment),
+    chunk: chatDocumentChunkFromApi(item.chunk) ?? {
+      attachmentId: "",
+      chunkIndex: 0,
+      content: "",
+      createdAt: "",
+    },
+  };
+}
+
+function chatDocumentChunkAttachmentFromApi(value: unknown): ChatDocumentChunkDetail["attachment"] {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    id: stringField(item.id),
+    name: stringField(item.name) || "attachment",
+    type: stringField(item.type),
+    size: numberField(item.size, 0),
+    kind: stringField(item.kind) || "file",
+    createdAt: stringField(item.created_at),
+  };
+}
+
+function chatDocumentChunkFromApi(value: unknown): ChatDocumentChunkDetail["chunk"] | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  const content = stringField(item.content);
+  if (!content) {
+    return null;
+  }
+  return {
+    attachmentId: stringField(item.attachment_id),
+    chunkIndex: numberField(item.chunk_index, 0),
+    content,
+    createdAt: stringField(item.created_at),
+  };
+}
+
+function normalizeProviderField(value: unknown): ModelProfile["provider"] | "" {
+  return value === "openai" || value === "anthropic" || value === "gemini" ? value : "";
+}
+
+function stringField(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function numberField(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function objectField(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringArrayField(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function profilePersonaFromApi(value: unknown, fallbackName: string): ModelProfile["persona"] {
+  const item = objectField(value);
+  return {
+    alias: stringField(item?.alias) || fallbackName,
+    role: stringField(item?.role) || "助手",
+    temperament: stringField(item?.temperament) || "清晰、直接",
+    notes: stringField(item?.notes),
+  };
+}
+
+function profilePetFromApi(value: unknown): ModelProfile["pet"] {
+  const fallback = defaultProfilePet();
+  const item = objectField(value);
+  if (!item) return fallback;
+  return {
+    ...fallback,
+    name: stringField(item.name) || fallback.name,
+    species: isKnownPetSpecies(item.species) ? item.species : fallback.species,
+    level: numberField(item.level, fallback.level),
+    experience: numberField(item.experience, fallback.experience),
+    mood: numberField(item.mood, fallback.mood),
+    satiety: numberField(item.satiety, fallback.satiety),
+    energy: numberField(item.energy, fallback.energy),
+    lastAction: stringField(item.lastAction) || fallback.lastAction,
+    lastActionAt: stringField(item.lastActionAt) || undefined,
+    dailyInteractionDate: stringField(item.dailyInteractionDate) || fallback.dailyInteractionDate,
+    dailyFeedCount: numberField(item.dailyFeedCount, fallback.dailyFeedCount),
+    dailyPetCount: numberField(item.dailyPetCount, fallback.dailyPetCount),
+    dailyQuestCount: numberField(item.dailyQuestCount, fallback.dailyQuestCount),
+  };
+}
+
+function isKnownPetSpecies(value: unknown): value is ModelProfile["pet"]["species"] {
+  return typeof value === "string" && ["spark", "leaf", "stone", "cloud", "cat", "dog", "rabbit", "panda", "fox", "bird", "penguin", "hamster", "turtle"].includes(value);
+}
+
+function defaultProfilePet(): ModelProfile["pet"] {
+  return {
+    name: "小火花",
+    species: "spark",
+    level: 1,
+    experience: 0,
+    mood: 80,
+    satiety: 80,
+    energy: 80,
+    lastAction: "刚刚醒来",
+    dailyInteractionDate: "",
+    dailyFeedCount: 0,
+    dailyPetCount: 0,
+    dailyQuestCount: 0,
   };
 }
 

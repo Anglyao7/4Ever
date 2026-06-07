@@ -53,7 +53,7 @@ const tutorialSteps: TutorialStep[] = [
 
 const lenses = ["产品机会", "用户情绪", "反常识", "技术组合", "叙事表达", "商业路径"];
 
-export default function InspirationPanel() {
+export default function InspirationPanel(props: { authToken?: string }) {
   const formRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -131,7 +131,8 @@ export default function InspirationPanel() {
       "输出 4 个新灵感方向。每个方向包含：标题、洞察、可执行原型、一个可继续追问的问题。用 Markdown，保持具体。",
     ].filter(Boolean).join("\n");
     try {
-      const response = await sendChat(configFromProfile(activeProfile), [{ role: "user", content: prompt } as ChatMessage]);
+      const backendOwnedProfile = Boolean(props.authToken && activeProfile.apiKeySet);
+      const response = await sendChat(configFromProfile(activeProfile, backendOwnedProfile), [{ role: "user", content: prompt } as ChatMessage], props.authToken ?? "");
       setResults((current) => [{ id: createId(), title: `${lens} · ${brief.trim().slice(0, 24)}`, body: response.content, createdAt: new Date().toISOString() }, ...current]);
       setFollowUp("");
     } catch (cause) {
@@ -157,7 +158,7 @@ export default function InspirationPanel() {
       const note: NoteDraft = {
         id: `note-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
         title: result.title,
-        content: `# ${result.title}\n\n${result.body}\n\n---\n来源：灵感温室 / 大模型发掘`,
+        content: `# ${result.title}\n\n${result.body}\n\n---\n来源：灵感 / 大模型发掘`,
         updatedAt: new Date().toISOString(),
         pinned: false,
       };
@@ -200,11 +201,11 @@ export default function InspirationPanel() {
   }
 
   return (
-    <section className={`inspiration-panel ai-inspiration-panel ${tutorialOpen ? "inspiration-tutorial-active" : ""}`} aria-label="灵感温室">
+    <section className={`inspiration-panel ai-inspiration-panel ${tutorialOpen ? "inspiration-tutorial-active" : ""}`} aria-label="灵感">
       <div className="module-view-header inspiration-header">
         <div>
           <p className="eyebrow">AI 灵感实验室</p>
-          <h1>灵感温室</h1>
+          <h1>灵感</h1>
           <span className="module-view-subtitle">依托大模型帮助你发掘新的灵感方向</span>
         </div>
         <div className="inspiration-header-actions">
@@ -229,7 +230,7 @@ export default function InspirationPanel() {
               <label><span>目标用户 / 场景</span><input value={audience} aria-label="目标用户或场景" placeholder="可选，例如：独立创作者、长期记录生活的人" onChange={(event) => setAudience(event.target.value)} /></label>
             </div>
             <div ref={lensRef} className={`ai-lens-grid ${tutorialOpen && currentTutorial.target === "lens" ? "tutorial-spotlight" : ""}`} aria-label="发掘角度">{lenses.map((item) => <button key={item} type="button" className={lens === item ? "active" : ""} aria-pressed={lens === item} onClick={() => setLens(item)}>{item}</button>)}</div>
-            {!activeProfile && <div className="ai-model-empty" role="status" aria-live="polite"><KeyRound size={17} /><div><strong>需要先配置全局模型</strong><small>灵感温室读取接口中枢的当前模型配置，不在这里单独输入 Key。</small></div><button className="secondary-button compact" type="button" onClick={() => navigateTo("/aggregation")}>去接口中枢</button></div>}
+            {!activeProfile && <div className="ai-model-empty" role="status" aria-live="polite"><KeyRound size={17} /><div><strong>需要先配置全局模型</strong><small>灵感读取中枢的当前模型配置，不在这里单独输入 Key。</small></div><button className="secondary-button compact" type="button" onClick={() => navigateTo("/aggregation")}>去中枢</button></div>}
             {error && <p className="inspiration-notice error" role="alert">{error}</p>}
               {notice && <div className="inspiration-notice info action-notice" role="status" aria-live="polite"><span>{notice.message}</span>{notice.action === "notes" && <button type="button" onClick={() => navigateTo("/notes")}>查看笔记</button>}{notice.action === "workflow" && <button type="button" onClick={() => navigateTo("/automation")}>打开秩序</button>}</div>}
               <div className="ai-generate-row">
@@ -275,7 +276,7 @@ export default function InspirationPanel() {
 
 function inspirationBlockedReason({ brief, activeProfile, loading }: { brief: string; activeProfile?: ModelProfile; loading: boolean }) {
   if (loading) return "正在发掘，请等待当前结果返回。";
-  if (!activeProfile) return "需要先在接口中枢配置全局模型。";
+  if (!activeProfile) return "需要先在中枢配置全局模型。";
   if (!brief.trim()) return "先输入要探索的主题或困惑。";
   return "";
 }
@@ -401,11 +402,12 @@ function activeUsableProfile(profiles: ModelProfile[]) {
 }
 
 function isUsableProfile(profile: ModelProfile | undefined) {
-  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && profile.apiKey.trim());
+  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && (profile.apiKey.trim() || profile.apiKeySet));
 }
 
-function configFromProfile(profile: ModelProfile): ChatConfig {
+function configFromProfile(profile: ModelProfile, backendOwned = false): ChatConfig {
   return {
+    profileId: backendOwned ? profile.id : undefined,
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,

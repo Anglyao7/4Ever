@@ -9,6 +9,7 @@ const profilesKey = "4ever.model.profiles";
 const activeProfileKey = "4ever.model.activeProfile";
 
 type AIAssistantProps = {
+  authToken?: string;
   onGenerateWorkflow: (nodes: WorkflowNode[], connections?: NodeConnection[]) => void;
 };
 
@@ -19,7 +20,7 @@ type AssistantMessage = {
   timestamp: string;
 };
 
-export default function AIWorkflowAssistant({ onGenerateWorkflow }: AIAssistantProps) {
+export default function AIWorkflowAssistant({ authToken = "", onGenerateWorkflow }: AIAssistantProps) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,10 +45,11 @@ export default function AIWorkflowAssistant({ onGenerateWorkflow }: AIAssistantP
 ${nodeDescriptions}
 
 设计原则：
-1. 工作流必须从触发器节点开始（手动触发或定时触发）
+1. 工作流必须从手动触发节点开始
 2. 节点之间的连接要符合逻辑（输出连接到输入）
-3. 尽量简洁，避免不必要的节点
-4. 考虑错误处理和边界情况
+3. 只能使用上方可用节点，不能编造发布、知识库、日程、通知、邮箱、云盘、Webhook、表格等系统不存在的接口
+4. HTTP/API 调用已经内置在具体节点里，不要生成 http-request、mcp-tool 或类似的单独请求节点
+5. 尽量简洁，优先围绕笔记、聊天、虚实、中枢、Token、地图和秩序模块组合
 
 当用户描述需求后，你需要：
 1. 理解用户的核心需求
@@ -106,23 +108,25 @@ JSON 格式示例：
     setError("");
 
     try {
+      const backendOwnedProfile = Boolean(authToken && activeProfile.apiKeySet);
       const chatMessages: ChatMessage[] = [
-        { role: "system", content: buildSystemPrompt() },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: input.trim() },
       ];
 
       const response = await sendChat(
         {
+          profileId: backendOwnedProfile ? activeProfile.id : undefined,
           provider: activeProfile.provider,
           baseUrl: activeProfile.baseUrl,
           apiKey: activeProfile.apiKey,
           model: activeProfile.model,
-          systemPrompt: "",
+          systemPrompt: buildSystemPrompt(),
           temperature: 0.7,
           maxTokens: 4000,
         },
-        chatMessages
+        chatMessages,
+        authToken
       );
 
       const assistantMessage: AssistantMessage = {
@@ -190,12 +194,12 @@ JSON 格式示例：
   };
 
   const quickPrompts = [
-    "帮我做一个每天早上 9 点自动发送天气预报的工作流",
-    "创建一个工作流：用 AI 生成图片描述，然后生成图片，最后发送给我",
-    "读取接口中枢的模型列表，选择一个模型后总结 Token 使用情况",
-    "把地图记忆里的城市线索整理成一份行动计划，再交给秩序 Agent",
-    "设计一个工作流：定时获取新闻，用 AI 总结，保存到笔记",
-    "做一个循环处理任务列表的工作流",
+    "检索笔记后让 AI 整理摘要，并保存到当前笔记",
+    "读取和某个联系人的会话，让 AI 整理回复，然后发送消息",
+    "生成一张图片，然后作为附件发送给联系人",
+    "测试中枢模型接口，再获取模型列表",
+    "读取地图记忆和 Token 统计，整理后送入秩序",
+    "新增一条笔记，然后保存内容并导出 Markdown",
   ];
 
   return (
@@ -205,7 +209,7 @@ JSON 格式示例：
           <Bot size={20} />
           <div>
             <strong>AI 工作流助手</strong>
-            <small>描述你的需求，AI 帮你设计工作流</small>
+            <small>描述目标，生成节点</small>
           </div>
         </div>
         {activeProfile && (
@@ -219,10 +223,9 @@ JSON 格式示例：
         {messages.length === 0 && (
           <div className="ai-assistant-welcome">
             <Sparkles size={48} />
-            <strong>告诉我你想做什么</strong>
-            <p>我会根据你的需求自动设计工作流，并在画布上创建节点</p>
+            <strong>输入一个目标</strong>
             <div className="ai-quick-prompts">
-              <small>快速开始：</small>
+              <small>示例</small>
               {quickPrompts.map((prompt, index) => (
                 <button
                   key={index}
@@ -295,7 +298,7 @@ JSON 格式示例：
       {!activeProfile && (
         <div className="ai-assistant-notice">
           <AlertCircle size={16} />
-          <span>请先在接口中枢配置 AI 模型</span>
+          <span>请先在中枢配置 AI 模型</span>
         </div>
       )}
     </div>

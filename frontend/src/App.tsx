@@ -38,7 +38,7 @@ import {
   X,
 } from "lucide-react";
 
-import { fetchCurrentUser, fetchModules, signIn, signUp } from "./services/api";
+import { fetchCurrentUser, fetchModules, resolveMediaUrl, signIn, signUp } from "./services/api";
 import AdminPanel from "./AdminPanel";
 import ChatPanel from "./ChatPanel";
 import ImageGenerationPanel from "./ImageGenerationPanel";
@@ -46,14 +46,29 @@ import InspirationCanvasPanel from "./InspirationCanvasPanel";
 import MemoryMapPanel from "./MemoryMapPanel";
 import ModelHubPanel from "./ModelHubPanel";
 import NotesPanel from "./NotesPanel";
+import ProfilePanel from "./ProfilePanel";
 import TokenUsagePanel from "./TokenUsagePanel";
 import WorkflowPanel from "./WorkflowPanel";
 import type { AuthUser } from "./types/auth";
 import type { PlatformModule } from "./types/platform";
 
-type RouteId = "home" | "sign-in" | "sign-up" | "insight" | "chat" | "image" | "aggregation" | "notes" | "map" | "automation" | "token-usage" | "inspiration" | "admin";
-type ModuleId = "dashboard" | "chat" | "image-generation" | "provider-hub" | "notes" | "memory-map" | "workflow" | "token-usage" | "inspiration" | "admin";
+type RouteId = "home" | "sign-in" | "sign-up" | "insight" | "profile" | "chat" | "image" | "aggregation" | "notes" | "map" | "automation" | "token-usage" | "inspiration" | "admin";
+type ModuleId = "dashboard" | "profile" | "chat" | "image-generation" | "provider-hub" | "notes" | "memory-map" | "workflow" | "token-usage" | "inspiration" | "admin";
 type UiLanguage = "zh" | "en";
+type LandingMaskState = {
+  targetX: number;
+  targetY: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  opacity: number;
+  targetOpacity: number;
+  radius: number;
+  lastTimestamp: number;
+  frame: number;
+  hasPosition: boolean;
+};
 
 const authTokenKey = "4ever.auth.token";
 const authUserKey = "4ever.auth.user";
@@ -61,9 +76,15 @@ const colorModeKey = "4ever.ui.colorMode";
 const colorTemperatureKey = "4ever.ui.colorTemperature";
 const languageKey = "4ever.ui.language";
 const introSeenKey = "4ever.ui.introSeen";
+const landingMaskHiddenPosition = -999;
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 const moduleRoutes: Record<ModuleId, RouteId> = {
   dashboard: "insight",
+  profile: "profile",
   chat: "chat",
   "image-generation": "image",
   "provider-hub": "aggregation",
@@ -79,13 +100,14 @@ const routeModules = Object.fromEntries(Object.entries(moduleRoutes).map(([modul
 
 const fallbackModules: PlatformModule[] = [
   { id: "chat", name: "交耳", description: "AI 与联系人会话。", category: "ai", enabled: true },
-  { id: "provider-hub", name: "接口中枢", description: "统一维护全局模型 API 与当前配置。", category: "integration", enabled: true },
+  { id: "profile", name: "个人中心", description: "管理头像、签名、所在地和绑定平台。", category: "system", enabled: true },
+  { id: "provider-hub", name: "中枢", description: "统一维护全局模型 API 与当前配置。", category: "integration", enabled: true },
   { id: "notes", name: "笔记", description: "Markdown 写作、实时预览和导出。", category: "productivity", enabled: true },
   { id: "memory-map", name: "地图纪念", description: "保存城市记忆。", category: "memory", enabled: true },
   { id: "workflow", name: "秩序", description: "面向用户开放 Agent、MCP 和工作流编排。", category: "automation", enabled: true },
   { id: "token-usage", name: "Token统计", description: "统计本机 AI Token 用量和活跃度。", category: "analytics", enabled: true },
-  { id: "inspiration", name: "灵感画布", description: "可视化 AI 工作流编排，拖拽节点组合接口。", category: "creativity", enabled: true },
-  { id: "image-generation", name: "绘影", description: "图像生成实验台。", category: "ai", enabled: true },
+  { id: "inspiration", name: "灵感", description: "可视化 AI 工作流编排，拖拽节点组合接口。", category: "creativity", enabled: true },
+  { id: "image-generation", name: "虚实", description: "图像生成实验台。", category: "ai", enabled: true },
   { id: "admin", name: "管理员端", description: "管理用户、模块和运营状态。", category: "admin", enabled: true },
 ];
 
@@ -258,10 +280,6 @@ function App() {
               <span>见微知著</span>
             </button>
           )}
-          <button className="secondary-button" type="button" onClick={() => setColorMode(colorMode === "dark" ? "light" : "dark")}>
-            {colorMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            <span>{colorMode === "dark" ? "白天" : "黑夜"}</span>
-          </button>
           {currentUser ? (
             <UserMenu
               user={currentUser}
@@ -279,6 +297,10 @@ function App() {
                 setUserMenuOpen(false);
                 openModule("dashboard");
               }}
+              onProfile={() => {
+                setUserMenuOpen(false);
+                openModule("profile");
+              }}
               onSignOut={signOut}
             />
           ) : (
@@ -290,19 +312,28 @@ function App() {
       </header>
       <main className="module-page">
         {activeModuleId === "dashboard" ? (
-          <ModuleDashboard modules={visibleModules} usingFallback={moduleCatalogFallback} onOpen={openModule} />
+          <ModuleDashboard modules={visibleModules} usingFallback={moduleCatalogFallback} language={language} onOpen={openModule} />
+        ) : activeModuleId === "profile" ? (
+          <ProfilePanel
+            authToken={authToken}
+            currentUser={currentUser}
+            onUserChange={(user) => {
+              setCurrentUser(user);
+              writeLocalStorage(authUserKey, JSON.stringify(user));
+            }}
+          />
         ) : activeModuleId === "inspiration" ? (
-          <InspirationCanvasPanel />
+          <InspirationCanvasPanel authToken={authToken} />
         ) : activeModuleId === "notes" ? (
           <NotesPanel />
         ) : activeModuleId === "provider-hub" ? (
-          <ModelHubPanel />
+          <ModelHubPanel authToken={authToken} />
         ) : activeModuleId === "chat" ? (
           <ChatPanel authToken={authToken} currentUser={currentUser} language={language} />
         ) : activeModuleId === "memory-map" ? (
           <MemoryMapPanel />
         ) : activeModuleId === "image-generation" ? (
-          <ImageGenerationPanel />
+          <ImageGenerationPanel authToken={authToken} />
         ) : activeModuleId === "workflow" ? (
           <WorkflowPanel />
         ) : activeModuleId === "token-usage" ? (
@@ -350,18 +381,128 @@ function LandingPage(props: {
   onSignOut: () => void;
 }) {
   const heroRef = useRef<HTMLElement | null>(null);
+  const maskStateRef = useRef<LandingMaskState>({
+    targetX: landingMaskHiddenPosition,
+    targetY: landingMaskHiddenPosition,
+    x: landingMaskHiddenPosition,
+    y: landingMaskHiddenPosition,
+    vx: 0,
+    vy: 0,
+    opacity: 0,
+    targetOpacity: 0,
+    radius: 220,
+    lastTimestamp: 0,
+    frame: 0,
+    hasPosition: false,
+  });
+
+  useEffect(() => {
+    return () => {
+      if (maskStateRef.current.frame) {
+        window.cancelAnimationFrame(maskStateRef.current.frame);
+      }
+    };
+  }, []);
+
+  function writeMaskStyle(element: HTMLElement, state: LandingMaskState) {
+    const speed = Math.hypot(state.vx, state.vy);
+    const stretch = clampNumber(speed * 1.45, 0, state.radius * 0.52);
+    const trailLimit = state.radius * 0.68;
+    const trailX = state.x - clampNumber(state.vx * 1.8, -trailLimit, trailLimit);
+    const trailY = state.y - clampNumber(state.vy * 1.8, -trailLimit, trailLimit);
+    const angle = speed > 0.08 ? Math.atan2(state.vy, state.vx) * 180 / Math.PI : 0;
+
+    element.style.setProperty("--landing-mask-x", `${state.x.toFixed(2)}px`);
+    element.style.setProperty("--landing-mask-y", `${state.y.toFixed(2)}px`);
+    element.style.setProperty("--landing-trail-x", `${trailX.toFixed(2)}px`);
+    element.style.setProperty("--landing-trail-y", `${trailY.toFixed(2)}px`);
+    element.style.setProperty("--landing-mask-rx", `${(state.radius + stretch).toFixed(2)}px`);
+    element.style.setProperty("--landing-mask-ry", `${Math.max(142, state.radius - stretch * 0.42).toFixed(2)}px`);
+    element.style.setProperty("--landing-flow-angle", `${angle.toFixed(2)}deg`);
+    element.style.setProperty("--landing-flow-scale-x", `${(1 + stretch / state.radius * 0.42).toFixed(3)}`);
+    element.style.setProperty("--landing-flow-scale-y", `${Math.max(0.74, 1 - stretch / state.radius * 0.22).toFixed(3)}`);
+    element.style.setProperty("--landing-trail-scale-x", `${(1 + stretch / state.radius * 0.28).toFixed(3)}`);
+    element.style.setProperty("--landing-trail-scale-y", `${Math.max(0.78, 1 - stretch / state.radius * 0.18).toFixed(3)}`);
+    element.style.setProperty("--landing-mask-opacity", state.opacity.toFixed(3));
+  }
+
+  function animateMask(timestamp: number) {
+    const element = heroRef.current;
+    const state = maskStateRef.current;
+    state.frame = 0;
+
+    if (!element) {
+      return;
+    }
+
+    const elapsed = state.lastTimestamp ? timestamp - state.lastTimestamp : 16.67;
+    const dt = clampNumber(elapsed / 16.67, 0.45, 2.4);
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    state.lastTimestamp = timestamp;
+
+    if (reduceMotion) {
+      state.x = state.targetX;
+      state.y = state.targetY;
+      state.vx = 0;
+      state.vy = 0;
+      state.opacity = state.targetOpacity;
+    } else {
+      const stiffness = 0.18;
+      const damping = Math.pow(0.72, dt);
+      state.vx = (state.vx + (state.targetX - state.x) * stiffness * dt) * damping;
+      state.vy = (state.vy + (state.targetY - state.y) * stiffness * dt) * damping;
+      state.x += state.vx * dt;
+      state.y += state.vy * dt;
+      state.opacity += (state.targetOpacity - state.opacity) * Math.min(1, 0.14 * dt);
+    }
+
+    writeMaskStyle(element, state);
+
+    const distance = Math.hypot(state.targetX - state.x, state.targetY - state.y);
+    const speed = Math.hypot(state.vx, state.vy);
+    const opacityDelta = Math.abs(state.targetOpacity - state.opacity);
+    if (distance > 0.35 || speed > 0.05 || opacityDelta > 0.004) {
+      state.frame = window.requestAnimationFrame(animateMask);
+      return;
+    }
+
+    if (state.targetOpacity === 0) {
+      state.opacity = 0;
+      writeMaskStyle(element, state);
+    }
+  }
+
+  function startMaskAnimation() {
+    const state = maskStateRef.current;
+    if (state.frame) {
+      return;
+    }
+    state.lastTimestamp = performance.now();
+    state.frame = window.requestAnimationFrame(animateMask);
+  }
 
   function updateMask(event: React.PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    event.currentTarget.style.setProperty("--landing-mask-x", `${x}px`);
-    event.currentTarget.style.setProperty("--landing-mask-y", `${y}px`);
-    event.currentTarget.style.setProperty("--landing-mask-opacity", "1");
+    const state = maskStateRef.current;
+    state.targetX = event.clientX - rect.left;
+    state.targetY = event.clientY - rect.top;
+    state.radius = clampNumber(Math.min(rect.width, rect.height) * 0.24, 170, 240);
+    state.targetOpacity = 1;
+
+    if (!state.hasPosition || state.opacity < 0.02) {
+      state.x = state.targetX;
+      state.y = state.targetY;
+      state.vx = 0;
+      state.vy = 0;
+      state.hasPosition = true;
+    }
+
+    startMaskAnimation();
   }
 
   function hideMask() {
-    heroRef.current?.style.setProperty("--landing-mask-opacity", "0");
+    maskStateRef.current.targetOpacity = 0;
+    startMaskAnimation();
   }
 
   return (
@@ -382,6 +523,8 @@ function LandingPage(props: {
       <main ref={heroRef} className="landing-hero" onPointerMove={updateMask} onPointerLeave={hideMask}>
         <div className="landing-image-bg" aria-hidden="true" />
         <div className="landing-image-veil" aria-hidden="true" />
+        <div className="landing-fluid-glow landing-fluid-main" aria-hidden="true" />
+        <div className="landing-fluid-glow landing-fluid-trail" aria-hidden="true" />
         <div className="landing-field" aria-hidden="true">
           <span />
           <span />
@@ -463,7 +606,7 @@ function AuthPage(props: {
             ) : (
               <label><span>用户名 / 邮箱</span><input value={form.identifier} aria-label="用户名或邮箱" autoComplete="username" onChange={(event) => update("identifier", event.target.value)} required /></label>
             )}
-            <label><span>密码</span><input type="password" value={form.password} aria-label="密码" autoComplete={isSignUp ? "new-password" : "current-password"} onChange={(event) => update("password", event.target.value)} required /></label>
+            <label><span>密码</span><input type="password" value={form.password} aria-label="密码" autoComplete={isSignUp ? "new-password" : "current-password"} minLength={isSignUp ? 6 : undefined} onChange={(event) => update("password", event.target.value)} required /></label>
             {props.loading && <p className="react-status-line pending" role="status" aria-live="polite"><RefreshCw className="spin" size={14} />正在处理账户请求</p>}
             {props.error && <p className="auth-error" role="alert">{props.error}</p>}
             <button className="auth-submit" type="submit" disabled={props.loading}>
@@ -490,11 +633,13 @@ function UserMenu(props: {
   onColorTemperatureChange: (value: number) => void;
   onLanguageChange: (language: UiLanguage) => void;
   onDashboard: () => void;
+  onProfile: () => void;
   onSignOut: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const displayName = props.user.display_name || props.user.username;
   const initial = displayName.trim().slice(0, 1).toUpperCase() || "U";
+  const avatarUrl = resolveMediaUrl(props.user.avatar_url);
 
   useEffect(() => {
     if (!props.open) return;
@@ -514,17 +659,25 @@ function UserMenu(props: {
     };
   }, [props.open, props.onClose]);
 
+  function handleMenuTriggerClick(event: React.MouseEvent<HTMLButtonElement>) {
+    if ((event.target as HTMLElement).closest(".user-avatar")) {
+      props.onProfile();
+      return;
+    }
+    props.onToggle();
+  }
+
   return (
     <div className="user-menu" ref={menuRef}>
-      <button className="user-menu-trigger" type="button" onClick={props.onToggle} aria-label={`${props.open ? "关闭" : "打开"}用户菜单：${displayName}`} aria-haspopup="dialog" aria-expanded={props.open} aria-controls="user-account-menu">
-        <span className="user-avatar">{initial}</span>
+      <button className="user-menu-trigger" type="button" onClick={handleMenuTriggerClick} aria-label={`${props.open ? "关闭" : "打开"}用户菜单：${displayName}`} aria-haspopup="dialog" aria-expanded={props.open} aria-controls="user-account-menu">
+        <span className="user-avatar" title="个人中心">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
         <span className="user-menu-name">{displayName}</span>
         <ChevronDown size={15} />
       </button>
       {props.open && (
         <div id="user-account-menu" className="user-dropdown" role="dialog" aria-label="用户菜单">
           <div className="user-dropdown-head">
-            <span className="user-avatar large">{initial}</span>
+            <span className="user-avatar large">{avatarUrl ? <img src={avatarUrl} alt="" /> : initial}</span>
             <div>
               <strong>{displayName}</strong>
               <small>{props.user.email}</small>
@@ -537,9 +690,9 @@ function UserMenu(props: {
               <Layers3 size={15} />
               <span>回到见微知著</span>
             </button>
-            <button className="user-menu-action danger" type="button" onClick={props.onSignOut}>
-              <LogOut size={15} />
-              <span>退出登录</span>
+            <button className="user-menu-action" type="button" onClick={props.onProfile}>
+              <UserRound size={15} />
+              <span>个人中心</span>
             </button>
           </div>
           <div className="user-menu-section">
@@ -570,13 +723,19 @@ function UserMenu(props: {
               <button type="button" className={props.language === "en" ? "active" : ""} aria-pressed={props.language === "en"} onClick={() => props.onLanguageChange("en")}>English</button>
             </div>
           </div>
+          <div className="user-menu-section user-menu-footer">
+            <button className="user-menu-action danger" type="button" onClick={props.onSignOut}>
+              <LogOut size={15} />
+              <span>退出登录</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function ModuleDashboard(props: { modules: PlatformModule[]; usingFallback: boolean; onOpen: (moduleId: ModuleId) => void }) {
+function ModuleDashboard(props: { modules: PlatformModule[]; usingFallback: boolean; language: UiLanguage; onOpen: (moduleId: ModuleId) => void }) {
   function moveCardHighlight(event: React.PointerEvent<HTMLButtonElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     event.currentTarget.style.setProperty("--card-x", `${event.clientX - rect.left}px`);
@@ -593,7 +752,7 @@ function ModuleDashboard(props: { modules: PlatformModule[]; usingFallback: bool
           <div className="hero-actions">
             <button className="primary-action" type="button" onClick={() => props.onOpen("inspiration")}>
               <Sparkles size={16} />
-              <span>进入灵感温室</span>
+              <span>进入灵感</span>
             </button>
           </div>
         </div>
@@ -628,15 +787,17 @@ function ModuleDashboard(props: { modules: PlatformModule[]; usingFallback: bool
         {props.modules.map((module) => {
           const moduleId = normalizeModuleId(module.id);
           const Icon = moduleIcon(moduleId);
+          const moduleName = displayModuleName(moduleId, props.language);
+          const moduleNameEn = displayModuleName(moduleId, "en");
           return (
-            <button key={module.id} className="module-card" type="button" aria-label={`进入${module.name}：${module.description}`} onPointerMove={moveCardHighlight} onClick={() => props.onOpen(moduleId)}>
+            <button key={module.id} className="module-card" type="button" aria-label={`进入${moduleName}：${module.description}`} onPointerMove={moveCardHighlight} onClick={() => props.onOpen(moduleId)}>
               <span className={`module-card-icon ${moduleCategoryClass(module.category)}`}>
                 <Icon size={22} />
               </span>
               <span className="module-card-body">
-                <span>{module.category}</span>
-                <h3>{module.name}</h3>
-                <p>{module.description}</p>
+                <span>{moduleNameEn}</span>
+                <h3>{moduleName}</h3>
+                <p>{displayModuleDescription(moduleId, props.language, module.description)}</p>
                 <small className={module.enabled === false ? "" : "active"}>{module.enabled === false ? "已下架" : "可进入"}</small>
               </span>
             </button>
@@ -662,7 +823,7 @@ function moduleCategoryClass(category: string) {
 
 function routeFromLocation(): RouteId {
   const route = window.location.pathname.replace(/^\/+/, "") || "home";
-  const allowed: RouteId[] = ["home", "sign-in", "sign-up", "insight", "chat", "image", "aggregation", "notes", "map", "automation", "token-usage", "inspiration", "admin"];
+  const allowed: RouteId[] = ["home", "sign-in", "sign-up", "insight", "profile", "chat", "image", "aggregation", "notes", "map", "automation", "token-usage", "inspiration", "admin"];
   return allowed.includes(route as RouteId) ? (route as RouteId) : "home";
 }
 
@@ -729,22 +890,42 @@ function normalizeModuleId(id: string): ModuleId {
 function displayModuleName(moduleId: ModuleId, language: UiLanguage = "zh") {
   const names: Record<ModuleId, { zh: string; en: string }> = {
     dashboard: { zh: "见微知著", en: "Insight" },
+    profile: { zh: "个人中心", en: "Profile" },
     chat: { zh: "交耳", en: "Conversations" },
-    "image-generation": { zh: "绘影", en: "Image" },
-    "provider-hub": { zh: "接口中枢", en: "Provider Hub" },
+    "image-generation": { zh: "虚实", en: "Virtuality" },
+    "provider-hub": { zh: "中枢", en: "Hub" },
     notes: { zh: "笔记", en: "Notes" },
     "memory-map": { zh: "地图纪念", en: "Memory Map" },
     workflow: { zh: "秩序", en: "Workflow" },
     "token-usage": { zh: "Token统计", en: "Token Usage" },
-    inspiration: { zh: "灵感温室", en: "Inspiration" },
+    inspiration: { zh: "灵感", en: "Inspiration" },
     admin: { zh: "管理员端", en: "Admin" },
   };
   return names[moduleId][language];
 }
 
+function displayModuleDescription(moduleId: ModuleId, language: UiLanguage, fallback: string) {
+  if (language === "zh") return fallback;
+  const descriptions: Record<ModuleId, string> = {
+    dashboard: "Overview of modules, status, and entry points.",
+    profile: "Manage avatar, signature, location, password, and linked platforms.",
+    chat: "Contacts, private messages, and AI conversations.",
+    "image-generation": "Image generation workspace.",
+    "provider-hub": "Manage global model APIs and the active configuration.",
+    notes: "Markdown writing, preview, and export.",
+    "memory-map": "Save city memories.",
+    workflow: "Agent, MCP, and workflow orchestration.",
+    "token-usage": "Track local AI token usage and activity.",
+    inspiration: "Visual AI workflow canvas for organizing ideas.",
+    admin: "Manage users, modules, and operations.",
+  };
+  return descriptions[moduleId];
+}
+
 function moduleIcon(moduleId: ModuleId) {
   return {
     dashboard: Layers3,
+    profile: UserRound,
     chat: MessageSquareText,
     "image-generation": Image,
     "provider-hub": Bot,

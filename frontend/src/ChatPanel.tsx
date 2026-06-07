@@ -1,26 +1,52 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Check, Download, FileText, LogIn, MessageSquareText, Paperclip, Search, SendHorizonal, Settings, UserPlus, X } from "lucide-react";
+import { type Dispatch, type RefObject, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { Bot, Brain, Check, Download, FileText, LogIn, MessageSquareText, Paperclip, PlugZap, Plus, Search, SendHorizonal, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
 import {
   acceptFriendRequest,
+  deleteAiMemory,
+  deleteAiPersona,
+  fetchAgentCatalog,
+  fetchChatDocumentChunkDetail,
+  fetchChatRunEvents,
+  fetchChatRuns,
   fetchDirectMessages,
+  fetchAiMemories,
+  fetchAiPersonas,
   fetchFriendSummary,
+  fetchModelProfiles,
   rejectFriendRequest,
+  retainAiMemory,
   requestFriend,
   searchUsers,
-  sendChat,
+  saveAiPersona,
   sendDirectMessage,
+  streamChat,
+  syncModelProfiles,
+  uploadChatAttachment,
 } from "./services/api";
 import { resolveMediaUrl } from "./services/api";
 import type { AuthUser, UserSearchResult } from "./types/auth";
-import type { ChatAttachment, ChatConfig, ChatMessage, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, ModelProfile } from "./types/chat";
+import type { AiMemory, AiPersona, ChatAttachment, ChatConfig, ChatDocumentChunkDetail, ChatMessage, ChatRunRecord, ChatSourceReference, ChatStreamEvent, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, ModelProfile } from "./types/chat";
+import type { McpServer } from "./types/workflow";
 
 const profilesKey = "4ever.model.profiles";
 const activeProfileKey = "4ever.model.activeProfile";
 const messagesKey = "4ever.react.chat.messages";
+const aiContactKey = "4ever.react.chat.aiContact";
+const aiMcpServersKey = "4ever.react.chat.mcpServers";
 const aiMessagesStorageError = "AI 会话保存失败，请检查浏览器存储空间后再继续发送。";
 
 type ChatMode = "people" | "ai";
 type UiLanguage = "zh" | "en";
+type DialogType = "add-friend" | "new-group" | "new-ai" | null;
+type AIContactProfile = {
+  id?: string;
+  name: string;
+  persona: string;
+  role?: string;
+  notes?: string;
+  defaultProfileId?: string;
+  memoryStrategy?: AiPersona["memoryStrategy"];
+};
 type DirectMessageView = DirectMessageRecord & {
   local_id?: string;
   local_status?: "sending" | "failed";
@@ -29,6 +55,22 @@ type DirectMessageView = DirectMessageRecord & {
     content: string;
     attachments: ChatAttachment[];
   };
+};
+type ChatProfilePopover = {
+  user: AuthUser | FriendProfile;
+  x: number;
+  y: number;
+  side: "left" | "right";
+};
+type ChatRunTimelineStatus = "running" | "success" | "failed" | "planned" | "info";
+type ChatRunTimelineItem = {
+  id: string;
+  title: string;
+  detail: string;
+  status: ChatRunTimelineStatus;
+  event: ChatStreamEvent["event"];
+  createdAt: string;
+  references?: ChatSourceReference[];
 };
 
 const copy = {
@@ -61,12 +103,56 @@ const copy = {
     requested: "已申请",
     accept: "同意",
     reject: "拒绝",
-    aiIntro: "使用接口中枢的当前模型配置",
+    aiIntro: "使用中枢的当前模型配置",
     unavailableAi: "全局 AI 暂不可用",
-    configureModel: "去接口中枢配置",
-    modelRequired: "需要先在接口中枢配置全局模型，聊天不会在这里单独输入 Key。",
-    startAi: "开始一段 AI 对话。",
-    typing: "正在组织回复...",
+    configureModel: "去中枢配置",
+    modelRequired: "需要先在中枢配置全局模型，聊天不会在这里单独输入 Key。",
+    startAi: "开始一段对话。",
+    typing: "正在输入中",
+    aiSettings: "资料",
+    aiName: "名字",
+    aiPersona: "性格",
+    saveAiProfile: "保存",
+    deleteAiProfile: "删除",
+    aiPersonaList: "AI 联系人",
+    defaultModel: "默认模型",
+    memoryStrategy: "记忆策略",
+    memoryRecords: "长期记忆",
+    memoryPlaceholder: "写入一条需要长期记住的事实、偏好或背景",
+    saveMemory: "记住",
+    noMemories: "还没有长期记忆",
+    loadingMemories: "正在加载记忆...",
+    mcpTools: "MCP 工具",
+    noMcpTools: "暂无可用 MCP",
+    runStarted: "运行开始",
+    runDone: "运行完成",
+    runHistory: "运行记录",
+    loadingRuns: "正在加载运行记录...",
+    noRuns: "暂无运行记录",
+    thoughtSummary: "思考摘要",
+    sourceReferences: "来源引用",
+    citationCheck: "引用校验",
+    toolRunning: "工具执行中",
+    toolFinished: "工具完成",
+    toolFailed: "工具失败",
+    fallbackModel: "模型切换",
+    tokenUsage: "Token 用量",
+    runError: "运行错误",
+    addFriendMenu: "添加好友",
+    newGroupMenu: "新建群组",
+    newAiMenu: "新建AI",
+    addFriendDialogTitle: "添加好友",
+    addFriendDialogDesc: "通过用户名、邮箱或昵称搜索并添加好友",
+    newGroupDialogTitle: "新建群组",
+    newGroupDialogDesc: "创建一个新的群聊",
+    newAiDialogTitle: "新建 AI",
+    newAiDialogDesc: "创建一个新的 AI 会话助手",
+    groupName: "群组名称",
+    groupNamePlaceholder: "输入群组名称",
+    selectMembers: "选择成员",
+    cancel: "取消",
+    create: "创建",
+    confirm: "确定",
   },
   en: {
     title: "Conversations",
@@ -99,10 +185,54 @@ const copy = {
     reject: "Reject",
     aiIntro: "Using the active provider profile",
     unavailableAi: "Global AI unavailable",
-    configureModel: "Open Provider Hub",
-    modelRequired: "Configure the global model in Provider Hub first. Chat does not collect API keys here.",
-    startAi: "Start an AI conversation.",
+    configureModel: "Open Hub",
+    modelRequired: "Configure the global model in Hub first. Chat does not collect API keys here.",
+    startAi: "Start a conversation.",
     typing: "Composing reply...",
+    aiSettings: "Profile",
+    aiName: "Name",
+    aiPersona: "Persona",
+    saveAiProfile: "Save",
+    deleteAiProfile: "Delete",
+    aiPersonaList: "AI Contacts",
+    defaultModel: "Default Model",
+    memoryStrategy: "Memory",
+    memoryRecords: "Long-term Memory",
+    memoryPlaceholder: "Add a fact, preference, or context to remember",
+    saveMemory: "Remember",
+    noMemories: "No memories yet",
+    loadingMemories: "Loading memories...",
+    mcpTools: "MCP Tools",
+    noMcpTools: "No MCP available",
+    runStarted: "Run started",
+    runDone: "Run finished",
+    runHistory: "Run History",
+    loadingRuns: "Loading runs...",
+    noRuns: "No runs yet",
+    thoughtSummary: "Reasoning summary",
+    sourceReferences: "Source references",
+    citationCheck: "Citation check",
+    toolRunning: "Tool running",
+    toolFinished: "Tool finished",
+    toolFailed: "Tool failed",
+    fallbackModel: "Model fallback",
+    tokenUsage: "Token usage",
+    runError: "Run error",
+    addFriendMenu: "Add Friend",
+    newGroupMenu: "New Group",
+    newAiMenu: "New AI",
+    addFriendDialogTitle: "Add Friend",
+    addFriendDialogDesc: "Search and add friends by username, email, or display name",
+    newGroupDialogTitle: "New Group",
+    newGroupDialogDesc: "Create a new group chat",
+    newAiDialogTitle: "New AI",
+    newAiDialogDesc: "Create a new AI assistant conversation",
+    groupName: "Group Name",
+    groupNamePlaceholder: "Enter group name",
+    selectMembers: "Select Members",
+    cancel: "Cancel",
+    create: "Create",
+    confirm: "Confirm",
   },
 };
 
@@ -116,6 +246,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const [directDraft, setDirectDraft] = useState("");
   const [directAttachments, setDirectAttachments] = useState<ChatAttachment[]>([]);
   const [previewAttachment, setPreviewAttachment] = useState<DirectAttachment | null>(null);
+  const [profilePopover, setProfilePopover] = useState<ChatProfilePopover | null>(null);
   const [directSending, setDirectSending] = useState(false);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
@@ -125,18 +256,67 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const [retryingLocalId, setRetryingLocalId] = useState("");
   const [peopleError, setPeopleError] = useState("");
   const [conversationError, setConversationError] = useState("");
-  const [profiles] = useState<ModelProfile[]>(loadProfiles);
+  const [profiles, setProfiles] = useState<ModelProfile[]>(loadProfiles);
+  const [backendProfileIds, setBackendProfileIds] = useState<Set<string>>(() => new Set());
+  const [profileSyncReady, setProfileSyncReady] = useState(() => !props.authToken);
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
+  const [aiContact, setAiContact] = useState<AIContactProfile>(loadAIContact);
+  const [aiDraft, setAiDraft] = useState<AIContactProfile>(() => loadAIContact());
+  const [aiPersonas, setAiPersonas] = useState<AiPersona[]>([]);
+  const [aiMemories, setAiMemories] = useState<AiMemory[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryAction, setMemoryAction] = useState("");
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(loadSelectedMcpServerIds);
+  const [mcpError, setMcpError] = useState("");
+  const [activeRunId, setActiveRunId] = useState("");
+  const [chatRunTimeline, setChatRunTimeline] = useState<ChatRunTimelineItem[]>([]);
+  const [chatRuns, setChatRuns] = useState<ChatRunRecord[]>([]);
+  const [chatRunLoading, setChatRunLoading] = useState(false);
+  const [chatRunAction, setChatRunAction] = useState("");
+  const [sourceDetail, setSourceDetail] = useState<ChatDocumentChunkDetail | null>(null);
+  const [sourceDetailLoading, setSourceDetailLoading] = useState("");
+  const [aiEditorOpen, setAiEditorOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [aiAttachments, setAiAttachments] = useState<ChatAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [activeDialog, setActiveDialog] = useState<DialogType>(null);
+  const [dialogSearchQuery, setDialogSearchQuery] = useState("");
+  const [dialogSearchResults, setDialogSearchResults] = useState<UserSearchResult[]>([]);
+  const [dialogSearchLoading, setDialogSearchLoading] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupMembers, setNewGroupMembers] = useState<string[]>([]);
+  const [newAiName, setNewAiName] = useState("");
+  const [newAiPersona, setNewAiPersona] = useState("");
   const directListRef = useRef<HTMLDivElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const activeProfile = useMemo(() => activeUsableProfile(profiles), [profiles]);
+  const aiFileInputRef = useRef<HTMLInputElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const globalActiveProfile = useMemo(() => activeUsableProfile(profiles), [profiles]);
+  const activeProfile = useMemo(() => activeProfileForContact(profiles, aiContact, globalActiveProfile), [profiles, aiContact.defaultProfileId, globalActiveProfile]);
+  const availableMcpServers = useMemo(() => mcpServers.filter((server) => server.enabled), [mcpServers]);
   const selectedFriend = summary.friends.find((friend) => friend.user.id === selectedFriendId)?.user ?? null;
-  const outgoingIds = new Set(summary.outgoing_requests.map((request) => request.addressee.id));
-  const friendIds = new Set(summary.friends.map((friend) => friend.user.id));
+  const outgoingIds = useMemo(() => new Set(summary.outgoing_requests.map((request) => request.addressee.id)), [summary.outgoing_requests]);
+  const friendIds = useMemo(() => new Set(summary.friends.map((friend) => friend.user.id)), [summary.friends]);
+
+  function scrollAIToBottom(behavior: ScrollBehavior = "auto") {
+    scrollElementToBottom(messageListRef.current, behavior);
+  }
+
+  function openAIConversation() {
+    setMode("ai");
+    scheduleScrollToBottom(messageListRef, "auto");
+  }
+
+  function openDirectConversation(friendId: string) {
+    setSelectedFriendId(friendId);
+    setMode("people");
+    scheduleScrollToBottom(directListRef, "auto");
+  }
 
   useEffect(() => {
     if (!props.authToken) {
@@ -151,6 +331,157 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     }
     refreshFriends();
   }, [props.authToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProfileSyncReady(!props.authToken);
+    fetchModelProfiles(props.authToken).then(async (remote) => {
+      if (cancelled) return;
+      if (remote.profiles.length) {
+        setProfiles(remote.profiles);
+        setBackendProfileIds(new Set(remote.profiles.map((profile) => profile.id)));
+        persistProfileSnapshot(remote.profiles, remote.activeProfileId || remote.profiles[0].id);
+        setProfileSyncReady(true);
+        return;
+      }
+      setBackendProfileIds(new Set());
+      if (!props.authToken) {
+        setProfileSyncReady(true);
+        return;
+      }
+      const localProfiles = loadProfiles().filter(isUsableProfile);
+      if (!localProfiles.length) {
+        setProfiles([]);
+        setProfileSyncReady(true);
+        return;
+      }
+      const localActiveId = readStorageValue(activeProfileKey) ?? localProfiles[0].id;
+      const synced = await syncModelProfiles(localProfiles, localActiveId, props.authToken);
+      if (cancelled) return;
+      if (!synced.profiles.length) {
+        setProfileSyncReady(true);
+        return;
+      }
+      setProfiles(synced.profiles);
+      setBackendProfileIds(new Set(synced.profiles.map((profile) => profile.id)));
+      persistProfileSnapshot(synced.profiles, synced.activeProfileId || synced.profiles[0].id);
+      setProfileSyncReady(true);
+    }).catch(() => {
+      if (!cancelled) {
+        setBackendProfileIds(new Set());
+        setProfileSyncReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!props.authToken) {
+      const localContact = loadAIContact();
+      setAiContact(localContact);
+      setAiDraft(localContact);
+      setAiPersonas([]);
+      setAiMemories([]);
+      setMemoryDraft("");
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!profileSyncReady) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    fetchAiPersonas(props.authToken).then(async (remote) => {
+      if (cancelled) return;
+      const persona = remote.personas.find((item) => item.enabled) ?? remote.personas[0];
+      setAiPersonas(remote.personas);
+      if (persona) {
+        const nextContact = aiContactFromPersona(persona);
+        persistAIContactSnapshot(nextContact);
+        setAiContact(nextContact);
+        setAiDraft(nextContact);
+        return;
+      }
+      const saved = await saveAiPersona(props.authToken, aiContactToPersona(loadAIContact(), globalActiveProfile?.id ?? ""));
+      if (cancelled) return;
+      setAiPersonas([saved.persona]);
+      const nextContact = aiContactFromPersona(saved.persona);
+      persistAIContactSnapshot(nextContact);
+      setAiContact(nextContact);
+      setAiDraft(nextContact);
+    }).catch((cause) => {
+      if (!cancelled) setError((current) => current || (cause instanceof Error ? `AI 联系人加载失败：${cause.message}` : "AI 联系人加载失败"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken, profileSyncReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAgentCatalog()
+      .then((catalog) => {
+        if (cancelled) return;
+        setMcpServers(catalog.mcp_servers ?? []);
+        setMcpError("");
+      })
+      .catch((cause) => {
+        if (!cancelled) setMcpError(cause instanceof Error ? cause.message : "MCP 服务加载失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mcpServers.length) return;
+    const availableIds = new Set(availableMcpServers.map((server) => server.id));
+    setSelectedMcpServerIds((current) => {
+      const next = current.filter((serverId) => availableIds.has(serverId));
+      return sameStringList(current, next) ? current : next;
+    });
+  }, [availableMcpServers, mcpServers.length]);
+
+  useEffect(() => {
+    persistSelectedMcpServerIds(selectedMcpServerIds);
+  }, [selectedMcpServerIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!props.authToken || !aiContact.id) {
+      setAiMemories([]);
+      setMemoryDraft("");
+      setMemoryLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setMemoryLoading(true);
+    fetchAiMemories(props.authToken, aiContact.id, "", 12)
+      .then((response) => {
+        if (!cancelled) setAiMemories(response.memories);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError((current) => current || (cause instanceof Error ? `记忆加载失败：${cause.message}` : "记忆加载失败"));
+      })
+      .finally(() => {
+        if (!cancelled) setMemoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken, aiContact.id]);
+
+  useEffect(() => {
+    if (!props.authToken || !aiEditorOpen) {
+      return;
+    }
+    void refreshChatRuns();
+  }, [props.authToken, aiEditorOpen]);
 
   useEffect(() => {
     resetDirectComposer();
@@ -188,7 +519,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
         .finally(() => {
           if (!cancelled) setSearchLoading(false);
         });
-    }, 220);
+    }, 500);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -196,12 +527,83 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   }, [props.authToken, query]);
 
   useEffect(() => {
-    directListRef.current?.scrollTo({ top: directListRef.current.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    return scheduleScrollToBottom(directListRef, "auto");
   }, [directMessages, selectedFriendId]);
 
   useEffect(() => {
-    messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    if (!profilePopover) return;
+    function closeOnPointerDown(event: PointerEvent) {
+      if ((event.target as HTMLElement).closest(".message-profile-popover, .chat-message-avatar")) return;
+      setProfilePopover(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setProfilePopover(null);
+    }
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [profilePopover]);
+
+  useEffect(() => {
+    scrollAIToBottom(prefersReducedMotion() ? "auto" : "smooth");
   }, [messages, sending]);
+
+  useEffect(() => {
+    if (!showAddMenu) return;
+    function closeOnPointerDown(event: PointerEvent) {
+      if ((event.target as HTMLElement).closest(".chat-add-menu")) return;
+      setShowAddMenu(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowAddMenu(false);
+    }
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showAddMenu]);
+
+  useEffect(() => {
+    if (!activeDialog || !props.authToken || !dialogSearchQuery.trim()) {
+      setDialogSearchResults([]);
+      setDialogSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setDialogSearchLoading(true);
+      searchUsers(props.authToken, dialogSearchQuery.trim())
+        .then((results) => {
+          if (!cancelled) setDialogSearchResults(results);
+        })
+        .catch((cause) => {
+          if (!cancelled) console.error("搜索失败:", cause);
+        })
+        .finally(() => {
+          if (!cancelled) setDialogSearchLoading(false);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [props.authToken, dialogSearchQuery, activeDialog]);
+
+  function openMessageProfile(user: AuthUser | FriendProfile | null | undefined, event: React.MouseEvent<HTMLElement>, side: "left" | "right") {
+    if (!user) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setProfilePopover({
+      user,
+      x: side === "right" ? rect.left : rect.right,
+      y: rect.top + rect.height / 2,
+      side,
+    });
+  }
 
   async function refreshFriends(nextSelectedId = selectedFriendId) {
     if (!props.authToken) return;
@@ -321,24 +723,39 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     clearAttachmentLimitError();
   }
 
-  async function attachFiles(fileList: FileList | null) {
+  async function attachFiles(fileList: FileList | null, currentAttachments: ChatAttachment[], setAttachments: Dispatch<SetStateAction<ChatAttachment[]>>, resetInput: () => void, setErrorMessage: (message: string) => void, clearErrorMessage: () => void, authToken = "") {
     if (!fileList) return;
-    const remaining = Math.max(0, 4 - directAttachments.length);
+    const remaining = Math.max(0, 4 - currentAttachments.length);
     const files = Array.from(fileList).slice(0, remaining);
     if (fileList.length > remaining) {
-      setConversationError(t.maxAttachments);
+      setErrorMessage(t.maxAttachments);
     } else {
-      clearAttachmentLimitError();
+      clearErrorMessage();
     }
     try {
-      const nextAttachments = await Promise.all(files.map(fileToAttachment));
-      setDirectAttachments((current) => [...current, ...nextAttachments].slice(0, 4));
+      const nextAttachments = await Promise.all(files.map((file) => fileToAttachment(file, authToken)));
+      setAttachments((current) => [...current, ...nextAttachments].slice(0, 4));
     } catch (cause) {
-      setConversationError(cause instanceof Error ? cause.message : "附件读取失败");
+      setErrorMessage(cause instanceof Error ? cause.message : "附件读取失败");
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    resetInput();
+  }
+
+  function attachDirectFiles(fileList: FileList | null) {
+    void attachFiles(fileList, directAttachments, setDirectAttachments, () => {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }, setConversationError, clearAttachmentLimitError, props.authToken);
+  }
+
+  function attachAIFiles(fileList: FileList | null) {
+    void attachFiles(fileList, aiAttachments, setAiAttachments, () => {
+      if (aiFileInputRef.current) aiFileInputRef.current.value = "";
+    }, setError, () => setError((current) => current === t.maxAttachments ? "" : current), props.authToken);
+  }
+
+  function removeAIAttachment(attachmentId: string) {
+    setAiAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    setError((current) => current === t.maxAttachments ? "" : current);
   }
 
   function commitMessages(nextMessages: ChatMessage[]) {
@@ -351,28 +768,344 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     }
   }
 
+  async function saveAIContact() {
+    const nextProfile = normalizeAIContact(aiDraft);
+    if (props.authToken) {
+      try {
+        const saved = await saveAiPersona(props.authToken, aiContactToPersona(nextProfile, activeProfile?.id ?? ""));
+        const backendContact = aiContactFromPersona(saved.persona);
+        setAiPersonas((current) => upsertPersonaList(current, saved.persona));
+        persistAIContactSnapshot(backendContact);
+        setAiContact(backendContact);
+        setAiDraft(backendContact);
+        setAiEditorOpen(false);
+        setError("");
+        return;
+      } catch (cause) {
+        setError(cause instanceof Error ? `AI 联系人保存失败：${cause.message}` : "AI 联系人保存失败");
+        return;
+      }
+    }
+    persistAIContactSnapshot(nextProfile);
+    setAiContact(nextProfile);
+    setAiDraft(nextProfile);
+    setAiEditorOpen(false);
+  }
+
+  function selectAIContact(persona: AiPersona) {
+    const nextContact = aiContactFromPersona(persona);
+    persistAIContactSnapshot(nextContact);
+    setAiContact(nextContact);
+    setAiDraft(nextContact);
+    setMemoryDraft("");
+  }
+
+  async function deleteCurrentAIContact() {
+    if (!props.authToken || !aiContact.id) return;
+    try {
+      await deleteAiPersona(props.authToken, aiContact.id);
+      const remaining = aiPersonas.filter((persona) => persona.id !== aiContact.id);
+      setAiPersonas(remaining);
+      const next = remaining[0] ? aiContactFromPersona(remaining[0]) : normalizeAIContact(defaultAIContact());
+      persistAIContactSnapshot(next);
+      setAiContact(next);
+      setAiDraft(next);
+      setAiMemories([]);
+      setMemoryDraft("");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `AI 联系人删除失败：${cause.message}` : "AI 联系人删除失败");
+    }
+  }
+
+  async function retainCurrentMemory() {
+    const content = memoryDraft.trim();
+    if (!props.authToken || !content || memoryAction) return;
+    setMemoryAction("retain");
+    try {
+      const saved = await retainAiMemory(props.authToken, {
+        personaId: aiContact.id ?? "",
+        content,
+        source: "manual",
+        metadata: { persona_name: aiContact.name },
+      });
+      setAiMemories((current) => [saved.memory, ...current.filter((memory) => memory.id !== saved.memory.id)].slice(0, 12));
+      setMemoryDraft("");
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `记忆保存失败：${cause.message}` : "记忆保存失败");
+    } finally {
+      setMemoryAction((current) => current === "retain" ? "" : current);
+    }
+  }
+
+  async function deleteCurrentMemory(memoryId: string) {
+    if (!props.authToken || !memoryId || memoryAction) return;
+    const actionId = `memory:${memoryId}`;
+    setMemoryAction(actionId);
+    try {
+      await deleteAiMemory(props.authToken, memoryId);
+      setAiMemories((current) => current.filter((memory) => memory.id !== memoryId));
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `记忆删除失败：${cause.message}` : "记忆删除失败");
+    } finally {
+      setMemoryAction((current) => current === actionId ? "" : current);
+    }
+  }
+
+  function toggleMcpServer(serverId: string) {
+    setSelectedMcpServerIds((current) => {
+      if (current.includes(serverId)) {
+        return current.filter((id) => id !== serverId);
+      }
+      return current.length >= 3 ? current : [...current, serverId];
+    });
+  }
+
+  function handleAIStreamEvent(event: ChatStreamEvent) {
+    const now = new Date().toISOString();
+    if (event.event === "run:start") {
+      const runId = eventString(event.data, "run_id");
+      if (runId) setActiveRunId(runId);
+      upsertChatRunTimeline({
+        id: "run",
+        event: event.event,
+        title: t.runStarted,
+        detail: [eventString(event.data, "provider"), eventString(event.data, "model"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "running",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "thought:summary") {
+      const stage = eventString(event.data, "stage") || "context";
+      upsertChatRunTimeline({
+        id: `thought:${stage}`,
+        event: event.event,
+        title: t.thoughtSummary,
+        detail: eventString(event.data, "summary"),
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "source:references") {
+      const references = sourceReferencesFromEvent(event.data);
+      const detail = references
+        .slice(0, 3)
+        .map((item) => {
+          return [item.ref, item.attachmentName].filter(Boolean).join(" · ");
+        })
+        .filter(Boolean)
+        .join("；");
+      upsertChatRunTimeline({
+        id: "source:references",
+        event: event.event,
+        title: `${t.sourceReferences} · ${Number(event.data.count || references.length) || references.length}`,
+        detail,
+        status: "info",
+        createdAt: now,
+        references,
+      });
+      return;
+    }
+    if (event.event === "source:citation-check") {
+      const status = eventString(event.data, "status");
+      const unknownRefs = eventStringList(event.data, "unknown_refs");
+      upsertChatRunTimeline({
+        id: "source:citation-check",
+        event: event.event,
+        title: t.citationCheck,
+        detail: citationCheckDetail(event.data, language),
+        status: status === "cited" && !unknownRefs.length ? "success" : "failed",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "tool:start") {
+      const id = chatToolTimelineId(event.data);
+      upsertChatRunTimeline({
+        id,
+        event: event.event,
+        title: `${t.toolRunning} · ${eventString(event.data, "server_name") || eventString(event.data, "server_id") || "MCP"}`,
+        detail: [eventString(event.data, "tool_name"), jsonPreview(event.data.arguments)].filter(Boolean).join(" · "),
+        status: "running",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "tool:result") {
+      const id = chatToolTimelineId(event.data);
+      const errorMessage = eventString(event.data, "error");
+      const status = eventString(event.data, "status");
+      const failed = status === "failed" || Boolean(errorMessage);
+      upsertChatRunTimeline({
+        id,
+        event: event.event,
+        title: `${failed ? t.toolFailed : t.toolFinished} · ${eventString(event.data, "server_name") || eventString(event.data, "server_id") || "MCP"}`,
+        detail: [eventString(event.data, "tool_name"), errorMessage || eventString(event.data, "reason") || jsonPreview(event.data.result)].filter(Boolean).join(" · "),
+        status: failed ? "failed" : status === "planned" ? "planned" : "success",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "model:fallback") {
+      upsertChatRunTimeline({
+        id: "model:fallback",
+        event: event.event,
+        title: t.fallbackModel,
+        detail: [eventString(event.data, "from"), eventString(event.data, "to"), eventString(event.data, "reason")].filter(Boolean).join(" · "),
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "token:usage") {
+      const detail = usagePreview(event.data.usage);
+      upsertChatRunTimeline({
+        id: "token:usage",
+        event: event.event,
+        title: t.tokenUsage,
+        detail,
+        status: "info",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "message:done") {
+      const runId = eventString(event.data, "run_id") || activeRunId;
+      upsertChatRunTimeline({
+        id: "run",
+        event: event.event,
+        title: t.runDone,
+        detail: [eventString(event.data, "provider"), eventString(event.data, "model"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "success",
+        createdAt: now,
+      });
+      return;
+    }
+    if (event.event === "run:error") {
+      const runId = eventString(event.data, "run_id") || activeRunId;
+      upsertChatRunTimeline({
+        id: "run:error",
+        event: event.event,
+        title: t.runError,
+        detail: [eventString(event.data, "message"), shortRunId(runId)].filter(Boolean).join(" · "),
+        status: "failed",
+        createdAt: now,
+      });
+    }
+  }
+
+  function upsertChatRunTimeline(item: ChatRunTimelineItem) {
+    setChatRunTimeline((current) => {
+      const existing = current.find((eventItem) => eventItem.id === item.id);
+      if (existing) {
+        return current.map((eventItem) => eventItem.id === item.id ? { ...eventItem, ...item, createdAt: existing.createdAt } : eventItem);
+      }
+      return [...current, item].slice(-8);
+    });
+  }
+
+  async function refreshChatRuns() {
+    if (!props.authToken) return;
+    setChatRunLoading(true);
+    try {
+      const response = await fetchChatRuns(props.authToken, 8);
+      setChatRuns(response.runs);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `运行记录加载失败：${cause.message}` : "运行记录加载失败");
+    } finally {
+      setChatRunLoading(false);
+    }
+  }
+
+  async function replayChatRun(runId: string) {
+    if (!props.authToken || !runId || chatRunAction) return;
+    const actionId = `run:${runId}`;
+    setChatRunAction(actionId);
+    try {
+      const events = await fetchChatRunEvents(props.authToken, runId);
+      setActiveRunId(runId);
+      setChatRunTimeline([]);
+      setSourceDetail(null);
+      events.forEach(handleAIStreamEvent);
+      setAiEditorOpen(false);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `运行事件回放失败：${cause.message}` : "运行事件回放失败");
+    } finally {
+      setChatRunAction((current) => current === actionId ? "" : current);
+    }
+  }
+
   async function submitAi() {
     const content = draft.trim();
-    if (!content || !activeProfile || sending) return;
-    const userMessage: ChatMessage = { id: `msg-${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() };
+    if ((!content && !aiAttachments.length) || !activeProfile || sending) return;
+    const attachments = aiAttachments;
+    const userMessage: ChatMessage = { id: `msg-${Date.now()}`, role: "user", content, attachments, createdAt: new Date().toISOString() };
     const pendingMessages = [...messages, userMessage];
     if (!commitMessages(pendingMessages)) {
       setError(aiMessagesStorageError);
       return;
     }
     setDraft("");
+    setAiAttachments([]);
+    if (aiFileInputRef.current) aiFileInputRef.current.value = "";
     setSending(true);
     setError("");
+    setActiveRunId("");
+    setChatRunTimeline([]);
+    setSourceDetail(null);
+    const assistantMessage: ChatMessage = { id: `msg-${Date.now()}-ai`, role: "assistant", content: "", createdAt: new Date().toISOString() };
+    let streamedContent = "";
     try {
-      const response = await sendChat(configFromProfile(activeProfile), pendingMessages);
-      const saved = commitMessages([...pendingMessages, { id: `msg-${Date.now()}-ai`, role: "assistant", content: response.content, createdAt: new Date().toISOString() }]);
+      const finalContent = await streamChat(
+        configFromProfile(activeProfile, aiContact, backendProfileIds.has(activeProfile.id), selectedMcpServerIds),
+        messagesForAIProvider(pendingMessages),
+        (chunk) => {
+          streamedContent += chunk;
+          setMessages((current) => {
+            const withAssistant = current.some((message) => message.id === assistantMessage.id) ? current : [...current, assistantMessage];
+            return withAssistant.map((message) => message.id === assistantMessage.id ? { ...message, content: streamedContent } : message);
+          });
+          window.requestAnimationFrame(() => scrollAIToBottom(prefersReducedMotion() ? "auto" : "smooth"));
+        },
+        handleAIStreamEvent,
+        props.authToken,
+      );
+      const contentToSave = finalContent || streamedContent;
+      if (!contentToSave.trim()) {
+        setError("AI 没有返回内容。");
+        return;
+      }
+      const saved = commitMessages([...pendingMessages, { ...assistantMessage, content: contentToSave }]);
       if (!saved) {
         setError(`回复已生成，但${aiMessagesStorageError}`);
       }
     } catch (cause) {
+      if (streamedContent.trim()) {
+        commitMessages([...pendingMessages, { ...assistantMessage, content: streamedContent }]);
+      }
       setError(cause instanceof Error ? cause.message : "发送失败");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function openSourceReference(reference: ChatSourceReference) {
+    if (!props.authToken || !reference.ref || sourceDetailLoading) return;
+    setSourceDetailLoading(reference.ref);
+    try {
+      const detail = await fetchChatDocumentChunkDetail(props.authToken, reference.ref);
+      setSourceDetail(detail);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? `引用详情加载失败：${cause.message}` : "引用详情加载失败");
+    } finally {
+      setSourceDetailLoading((current) => current === reference.ref ? "" : current);
     }
   }
 
@@ -381,22 +1114,110 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
+  function handleAddFriendClick() {
+    setShowAddMenu(false);
+    setActiveDialog("add-friend");
+    setDialogSearchQuery("");
+    setDialogSearchResults([]);
+  }
+
+  function handleNewGroupClick() {
+    setShowAddMenu(false);
+    setActiveDialog("new-group");
+    setNewGroupName("");
+    setNewGroupMembers([]);
+    setDialogSearchQuery("");
+    setDialogSearchResults([]);
+  }
+
+  function handleNewAiClick() {
+    setShowAddMenu(false);
+    setActiveDialog("new-ai");
+    setNewAiName("");
+    setNewAiPersona("");
+  }
+
+  function closeDialog() {
+    setActiveDialog(null);
+    setDialogSearchQuery("");
+    setDialogSearchResults([]);
+    setDialogSearchLoading(false);
+    setNewGroupName("");
+    setNewGroupMembers([]);
+    setNewAiName("");
+    setNewAiPersona("");
+  }
+
+  function handleCreateGroup() {
+    if (!newGroupName.trim()) return;
+    // TODO: 实现创建群组的API调用
+    console.log("创建群组:", { name: newGroupName, members: newGroupMembers });
+    closeDialog();
+  }
+
+  async function handleCreateAi() {
+    if (!newAiName.trim()) return;
+    const nextContact = normalizeAIContact({ name: newAiName, persona: newAiPersona });
+    if (props.authToken) {
+      try {
+        const saved = await saveAiPersona(props.authToken, aiContactToPersona(nextContact, activeProfile?.id ?? ""));
+        const backendContact = aiContactFromPersona(saved.persona);
+        setAiPersonas((current) => upsertPersonaList(current, saved.persona));
+        persistAIContactSnapshot(backendContact);
+        setAiContact(backendContact);
+        setAiDraft(backendContact);
+      } catch (cause) {
+        setError(cause instanceof Error ? `AI 联系人创建失败：${cause.message}` : "AI 联系人创建失败");
+        return;
+      }
+    } else {
+      persistAIContactSnapshot(nextContact);
+      setAiContact(nextContact);
+      setAiDraft(nextContact);
+    }
+    closeDialog();
+    setMode("ai");
+  }
+
+  function toggleGroupMember(userId: string) {
+    setNewGroupMembers((current) =>
+      current.includes(userId)
+        ? current.filter(id => id !== userId)
+        : [...current, userId]
+    );
+  }
+
   return (
     <section className="react-chat-panel">
-      <div className="module-view-header chat-view-header">
-        <div><p className="eyebrow">会话</p><h1>{t.title}</h1><span className="module-view-subtitle">{t.subtitle}</span></div>
-      </div>
       <div className="direct-chat-shell">
         <aside className="direct-chat-sidebar">
-          <div className="direct-friend-list">
-            <strong>{t.ai}</strong>
-            <button type="button" className={`direct-friend-item ai-thread-item ${mode === "ai" ? "active" : ""}`} aria-current={mode === "ai" ? "true" : undefined} onClick={() => setMode("ai")}>
-              <span className="direct-user-identity"><span className="user-avatar"><Bot size={16} /></span><span><strong>{activeProfile?.name ?? t.unavailableAi}</strong><small>{activeProfile ? `${providerLabel(activeProfile.provider, language)} · ${activeProfile.model}` : t.aiIntro}</small></span></span>
-            </button>
-          </div>
-          {!props.currentUser ? <ChatSidebarNotice message={t.loginRequired} /> : (
-            <>
-              <label className="react-search-field"><Search size={15} /><input value={query} aria-label={t.searchPlaceholder} placeholder={t.searchPlaceholder} onChange={(event) => setQuery(event.target.value)} /></label>
+          <>
+            {!props.currentUser && <ChatSidebarNotice message={t.loginRequired} />}
+            {props.currentUser && <>
+              <div className="chat-search-bar">
+                <label className="react-search-field"><Search size={15} /><input value={query} aria-label={t.searchPlaceholder} placeholder={t.searchPlaceholder} onChange={(event) => setQuery(event.target.value)} /></label>
+                <div className="chat-add-menu-wrapper" ref={addMenuRef}>
+                  <button type="button" className="chat-add-button" aria-label="添加" onClick={() => setShowAddMenu(!showAddMenu)}>
+                    <Plus size={18} />
+                  </button>
+                  {showAddMenu && (
+                    <div className="chat-add-menu">
+                      <button type="button" onClick={handleAddFriendClick}>
+                        <UserPlus size={16} />
+                        <span>{t.addFriendMenu}</span>
+                      </button>
+                      <button type="button" onClick={handleNewGroupClick}>
+                        <Users size={16} />
+                        <span>{t.newGroupMenu}</span>
+                      </button>
+                      <button type="button" onClick={handleNewAiClick}>
+                        <Bot size={16} />
+                        <span>{t.newAiMenu}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
               {peopleLoading && <p className="react-status-line pending" role="status" aria-live="polite">{t.loadingPeople}</p>}
               {peopleError && <p className="react-error-line sidebar-error" role="alert">{peopleError}</p>}
               {query.trim() && <div className="direct-search-results">
@@ -412,44 +1233,52 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
                   <button type="button" disabled={peopleAction === `request:${request.id}`} aria-label={t.reject} onClick={() => answerRequest(request.id, false)}><X size={14} /></button>
                 </div>)}
               </div>}
+            </>}
               <div className="direct-friend-list">
                 <strong>{t.friends}</strong>
-                {summary.friends.map((friendship) => <button key={friendship.user.id} type="button" className={`direct-friend-item ${mode === "people" && friendship.user.id === selectedFriendId ? "active" : ""}`} aria-current={mode === "people" && friendship.user.id === selectedFriendId ? "true" : undefined} onClick={() => {
-                  setSelectedFriendId(friendship.user.id);
-                  setMode("people");
-                }}><UserIdentity user={friendship.user} /></button>)}
-                {!summary.friends.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noFriends}</p>}
+                <button type="button" className={`direct-friend-item ai-thread-item ${mode === "ai" ? "active" : ""}`} aria-current={mode === "ai" ? "true" : undefined} onClick={openAIConversation}>
+                  <AIContactIdentity profile={aiContact} detail={activeProfile ? aiContact.persona : t.unavailableAi} />
+                </button>
+                {props.currentUser && summary.friends.map((friendship) => <button key={friendship.user.id} type="button" className={`direct-friend-item ${mode === "people" && friendship.user.id === selectedFriendId ? "active" : ""}`} aria-current={mode === "people" && friendship.user.id === selectedFriendId ? "true" : undefined} onClick={() => openDirectConversation(friendship.user.id)}><UserIdentity user={friendship.user} /></button>)}
+                {props.currentUser && !summary.friends.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noFriends}</p>}
               </div>
-              {!!summary.outgoing_requests.length && <div className="direct-request-list compact"><strong>{t.outgoing}</strong>{summary.outgoing_requests.map((request) => <div key={request.id} className="direct-request-item outgoing"><UserIdentity user={request.addressee} /><span>{t.requested}</span></div>)}</div>}
-            </>
-          )}
+              {props.currentUser && !!summary.outgoing_requests.length && <div className="direct-request-list compact"><strong>{t.outgoing}</strong>{summary.outgoing_requests.map((request) => <div key={request.id} className="direct-request-item outgoing"><UserIdentity user={request.addressee} /><span>{t.requested}</span></div>)}</div>}
+          </>
         </aside>
         {mode === "people" ? (
           <article className="direct-chat-surface">
             {selectedFriend ? (
               <>
-                <div className="direct-chat-head"><UserIdentity user={selectedFriend} /><span>{selectedFriend.username}</span></div>
+                <div className="direct-chat-head ai-contact-head"><UserIdentity user={selectedFriend} /></div>
                 <div className="react-message-list" ref={directListRef} role="log" aria-label="私聊消息" aria-live="polite" aria-relevant="additions text" aria-busy={directSending}>
                   {directMessages.map((message) => {
                     const mine = message.sender_id === props.currentUser?.id;
                     return <div key={message.local_id ?? message.id} className={`react-message ${mine ? "user" : "assistant"} ${message.local_status ?? ""}`}>
-                      {message.content && <p>{message.content}</p>}
-                      <MessageAttachments attachments={message.attachments} onPreview={setPreviewAttachment} />
-                      <small>{mine ? "我" : displayFriendName(selectedFriend)} · {message.local_status === "sending" ? t.sending : message.local_status === "failed" ? t.sendFailed : formatTime(message.created_at, language)}</small>
-                      {message.local_status === "failed" && message.local_error && <span className="direct-message-error" role="alert">{message.local_error}</span>}
-                      {message.local_status === "failed" && <div className="direct-message-actions">
-                        <button type="button" disabled={retryingLocalId === message.local_id} onClick={() => message.local_payload && sendDirectWithLocalState(message.local_payload.content, message.local_payload.attachments, message.local_id)}>{retryingLocalId === message.local_id ? t.sending : t.retry}</button>
-                        <button type="button" onClick={() => restoreFailedMessage(message)}>{t.restore}</button>
-                      </div>}
+                      <ChatMessageAvatar kind={mine ? "user" : "friend"} user={mine ? props.currentUser : selectedFriend} onOpenProfile={(event) => openMessageProfile(mine ? props.currentUser : selectedFriend, event, mine ? "right" : "left")} />
+                      <div className="react-message-stack">
+                        <time className="react-message-time" dateTime={message.created_at}>{formatTime(message.created_at, language)}</time>
+                        <div className="react-message-bubble">
+                          {message.content && <p>{message.content}</p>}
+                          <MessageAttachments attachments={message.attachments} onPreview={setPreviewAttachment} />
+                        </div>
+                        {(message.local_status === "sending" || message.local_status === "failed") && <div className="react-message-meta">
+                          <small>{message.local_status === "sending" ? t.sending : t.sendFailed}</small>
+                          {message.local_status === "failed" && message.local_error && <span className="direct-message-error" role="alert">{message.local_error}</span>}
+                          {message.local_status === "failed" && <div className="direct-message-actions">
+                            <button type="button" disabled={retryingLocalId === message.local_id} onClick={() => message.local_payload && sendDirectWithLocalState(message.local_payload.content, message.local_payload.attachments, message.local_id)}>{retryingLocalId === message.local_id ? t.sending : t.retry}</button>
+                            <button type="button" onClick={() => restoreFailedMessage(message)}>{t.restore}</button>
+                          </div>}
+                        </div>}
+                      </div>
                     </div>;
                   })}
                 </div>
                 {conversationError && <p className="react-error-line" role="alert">{conversationError}</p>}
                 {!!directAttachments.length && <PendingAttachmentTray attachments={directAttachments} label={t.pendingAttachment} onRemove={removeDirectAttachment} />}
                 <div className="react-composer direct-composer">
-                  <input ref={fileInputRef} className="chat-file-input" type="file" multiple aria-label="选择附件" onChange={(event) => attachFiles(event.target.files)} />
+                  <input ref={fileInputRef} className="chat-file-input" type="file" multiple aria-label="选择附件" onChange={(event) => attachDirectFiles(event.target.files)} />
                   <button className="secondary-button compact" type="button" aria-label="添加附件" disabled={directSending || directAttachments.length >= 4} onClick={() => fileInputRef.current?.click()}><Paperclip size={16} /></button>
-                  <textarea value={directDraft} aria-label="私聊消息内容" placeholder={t.messagePlaceholder} onChange={(event) => setDirectDraft(event.target.value)} onKeyDown={(event) => {
+                  <textarea rows={1} value={directDraft} aria-label="私聊消息内容" placeholder={t.messagePlaceholder} onChange={(event) => setDirectDraft(event.target.value)} onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
                       submitDirect();
@@ -462,25 +1291,162 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
           </article>
         ) : (
           <article className="direct-chat-surface react-chat-surface unified-ai-surface">
-            <div className="direct-chat-head"><span className="direct-user-identity"><span className="user-avatar"><Bot size={16} /></span><span><strong>{activeProfile?.name ?? t.unavailableAi}</strong>{activeProfile && <small>{`${providerLabel(activeProfile.provider, language)} · ${activeProfile.model}`}</small>}</span></span>{activeProfile && <span><Settings size={14} /> {t.aiIntro}</span>}</div>
+            <div className="direct-chat-head ai-contact-head">
+              <AIContactIdentity profile={aiContact} detail={activeProfile ? `${providerLabel(activeProfile.provider, language)} · ${activeProfile.model}` : t.unavailableAi} />
+              <button className="ai-contact-settings-button" type="button" aria-label={t.aiSettings} title={t.aiSettings} onClick={() => {
+                setAiDraft(aiContact);
+                setAiEditorOpen((open) => !open);
+              }}>
+                <Settings size={16} />
+              </button>
+            </div>
+            {aiEditorOpen ? <div className="ai-contact-settings-page">
+              <div className="ai-contact-settings-card">
+                {!!aiPersonas.length && <div className="ai-contact-persona-list" aria-label={t.aiPersonaList}>
+                  <strong>{t.aiPersonaList}</strong>
+                  <div className="chat-persona-strip">
+                    {aiPersonas.map((persona) => (
+                      <button key={persona.id} type="button" className={persona.id === aiContact.id ? "active" : ""} onClick={() => selectAIContact(persona)}>
+                        <span>{persona.name.slice(0, 1).toUpperCase()}</span>
+                        <strong>{persona.name}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>}
+                <div className="ai-contact-settings-preview">
+                  <span className="user-avatar"><Bot size={18} /></span>
+                  <div><strong>{aiDraft.name || aiContact.name}</strong><small>{activeProfile ? `${providerLabel(activeProfile.provider, language)} · ${activeProfile.model}` : t.unavailableAi}</small></div>
+                </div>
+                <label><span>{t.aiName}</span><input value={aiDraft.name} onChange={(event) => setAiDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label><span>{t.aiPersona}</span><textarea rows={6} value={aiDraft.persona} onChange={(event) => setAiDraft((current) => ({ ...current, persona: event.target.value }))} /></label>
+                <label><span>{t.defaultModel}</span><select value={aiDraft.defaultProfileId || activeProfile?.id || ""} onChange={(event) => setAiDraft((current) => ({ ...current, defaultProfileId: event.target.value }))}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model}</option>)}</select></label>
+                <label><span>{t.memoryStrategy}</span><select value={aiDraft.memoryStrategy ?? "recall-retain"} onChange={(event) => setAiDraft((current) => ({ ...current, memoryStrategy: event.target.value as AiPersona["memoryStrategy"] }))}>
+                  <option value="recall-retain">Recall + retain</option>
+                  <option value="recall">Recall only</option>
+                  <option value="retain">Retain only</option>
+                  <option value="off">Off</option>
+                </select></label>
+                {props.authToken && <div className="ai-contact-memory-panel" aria-label={t.memoryRecords}>
+                  <div className="ai-contact-section-title"><Brain size={15} /><strong>{t.memoryRecords}</strong></div>
+                  <div className="ai-memory-retain-row">
+                    <textarea rows={2} value={memoryDraft} placeholder={t.memoryPlaceholder} onChange={(event) => setMemoryDraft(event.target.value)} />
+                    <button className="secondary-button compact" type="button" disabled={!memoryDraft.trim() || memoryAction === "retain"} onClick={retainCurrentMemory}><Plus size={14} /><span>{t.saveMemory}</span></button>
+                  </div>
+                  <div className="ai-memory-list">
+                    {memoryLoading && <p className="react-empty-line" role="status" aria-live="polite">{t.loadingMemories}</p>}
+                    {!memoryLoading && aiMemories.map((memory) => (
+                      <div key={memory.id} className="ai-memory-row">
+                        <p>{memory.content}</p>
+                        <small>{memory.source || "manual"} · {formatTime(memory.createdAt, language)}</small>
+                        <button type="button" aria-label={`删除记忆：${memory.content.slice(0, 24)}`} disabled={memoryAction === `memory:${memory.id}`} onClick={() => deleteCurrentMemory(memory.id)}><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                    {!memoryLoading && !aiMemories.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noMemories}</p>}
+                  </div>
+                </div>}
+                <div className="ai-contact-mcp-panel" aria-label={t.mcpTools}>
+                  <div className="ai-contact-section-title"><PlugZap size={15} /><strong>{t.mcpTools}</strong></div>
+                  {availableMcpServers.length ? <div className="ai-mcp-chip-list">
+                    {availableMcpServers.map((server) => {
+                      const selected = selectedMcpServerIds.includes(server.id);
+                      return (
+                        <button key={server.id} type="button" className={`workflow-mcp-chip ${selected ? "active" : ""}`} aria-pressed={selected} title={`${server.name} · ${mcpAvailabilityLabel(server, language)}`} onClick={() => toggleMcpServer(server.id)}>
+                          <PlugZap size={14} />
+                          <span>{server.name}</span>
+                          <em>{server.tool_names[0] ?? "tool"} · {mcpAvailabilityLabel(server, language)}</em>
+                        </button>
+                      );
+                    })}
+                  </div> : <p className="react-empty-line" role="status" aria-live="polite">{mcpError || t.noMcpTools}</p>}
+                </div>
+                {props.authToken && <div className="ai-contact-runs-panel" aria-label={t.runHistory}>
+                  <div className="ai-contact-section-title"><MessageSquareText size={15} /><strong>{t.runHistory}</strong></div>
+                  <div className="ai-run-list">
+                    {chatRunLoading && <p className="react-empty-line" role="status" aria-live="polite">{t.loadingRuns}</p>}
+                    {!chatRunLoading && chatRuns.map((run) => (
+                      <button key={run.id} type="button" className={`ai-run-row ${run.status}`} disabled={chatRunAction === `run:${run.id}`} onClick={() => replayChatRun(run.id)}>
+                        <span><strong>{run.model || run.provider || "AI Run"}</strong><small>{formatChatRunMeta(run, language)}</small></span>
+                        <em>{chatRunStatusLabel(run.status, language)}</em>
+                      </button>
+                    ))}
+                    {!chatRunLoading && !chatRuns.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noRuns}</p>}
+                  </div>
+                </div>}
+                <div className="ai-contact-editor-actions">
+                  <button className="primary-action compact" type="button" onClick={saveAIContact}><Check size={14} /><span>{t.saveAiProfile}</span></button>
+                  {props.authToken && aiContact.id && <button className="secondary-button compact" type="button" onClick={deleteCurrentAIContact}><Trash2 size={14} /><span>{t.deleteAiProfile}</span></button>}
+                </div>
+              </div>
+            </div> : <>
             <div className="react-message-list" ref={messageListRef} role="log" aria-label="AI 会话消息" aria-live="polite" aria-relevant="additions text" aria-busy={sending}>
-              {messages.map((message) => <div key={message.id} className={`react-message ${message.role}`}><p>{message.content}</p><small>{message.role === "user" ? "我" : activeProfile?.name ?? "AI"}</small></div>)}
-              {sending && <div className="react-message assistant pending"><p>{t.typing}</p><small>{activeProfile?.name ?? "AI"}</small></div>}
+              {messages.map((message) => <div key={message.id} className={`react-message ${message.role}`}>
+                <ChatMessageAvatar kind={message.role === "user" ? "user" : "ai"} user={props.currentUser} aiContact={aiContact} onOpenProfile={message.role === "user" ? (event) => openMessageProfile(props.currentUser, event, "right") : undefined} />
+                <div className="react-message-stack"><time className="react-message-time" dateTime={message.createdAt}>{formatTime(message.createdAt, language)}</time><div className="react-message-bubble">{message.content && <p>{message.content}</p>}<MessageAttachments attachments={chatAttachmentsToDirect(message.attachments)} onPreview={setPreviewAttachment} /></div></div>
+              </div>)}
+              {sending && messages[messages.length - 1]?.role !== "assistant" && <div className="react-message assistant pending"><ChatMessageAvatar kind="ai" aiContact={aiContact} /><div className="react-message-stack"><time className="react-message-time" dateTime={new Date().toISOString()}>{formatTime(undefined, language)}</time><div className="react-message-bubble"><p>{t.typing}</p></div></div></div>}
+              <ChatRunTimeline items={chatRunTimeline} language={language} sourceDetailLoading={sourceDetailLoading} onOpenSourceReference={openSourceReference} />
+              {sourceDetail && <SourceDetailPanel detail={sourceDetail} language={language} onClose={() => setSourceDetail(null)} />}
               {!messages.length && (activeProfile ? <div className="react-empty-line" role="status" aria-live="polite">{t.startAi}</div> : <div className="chat-model-empty" role="status" aria-live="polite"><Bot size={18} /><div><strong>{t.unavailableAi}</strong><small>{t.modelRequired}</small></div><button className="secondary-button compact" type="button" onClick={openModelHub}>{t.configureModel}</button></div>)}
             </div>
             {error && <p className="react-error-line" role="alert">{error}</p>}
+            {!!aiAttachments.length && <PendingAttachmentTray attachments={aiAttachments} label={t.pendingAttachment} onRemove={removeAIAttachment} />}
             {activeProfile && <div className="react-composer ai-composer">
-              <textarea value={draft} aria-label="AI 会话消息内容" placeholder={activeProfile ? t.messagePlaceholder : t.unavailableAi} disabled={!activeProfile || sending} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+              <input ref={aiFileInputRef} className="chat-file-input" type="file" multiple aria-label="选择附件" onChange={(event) => attachAIFiles(event.target.files)} />
+              <button className="secondary-button compact" type="button" aria-label="添加附件" disabled={sending || aiAttachments.length >= 4} onClick={() => aiFileInputRef.current?.click()}><Paperclip size={16} /></button>
+              <textarea rows={1} value={draft} aria-label="AI 会话消息内容" placeholder={activeProfile ? t.messagePlaceholder : t.unavailableAi} disabled={!activeProfile || sending} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   submitAi();
                 }
               }} />
-              <button className="primary-action compact" type="button" disabled={!draft.trim() || !activeProfile || sending} onClick={submitAi}><SendHorizonal size={16} /><span>{sending ? t.sending : t.send}</span></button>
+              <button className="primary-action compact" type="button" disabled={(!draft.trim() && !aiAttachments.length) || !activeProfile || sending} onClick={submitAi}><SendHorizonal size={16} /><span>{sending ? t.sending : t.send}</span></button>
             </div>}
+            </>}
           </article>
         )}
       {previewAttachment && <ImagePreviewDialog attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />}
+      {profilePopover && <MessageProfilePopover popover={profilePopover} onClose={() => setProfilePopover(null)} />}
+      {activeDialog === "add-friend" && <AddFriendDialog
+        language={language}
+        labels={t}
+        authToken={props.authToken}
+        searchQuery={dialogSearchQuery}
+        searchResults={dialogSearchResults}
+        searchLoading={dialogSearchLoading}
+        friendIds={friendIds}
+        outgoingIds={outgoingIds}
+        peopleAction={peopleAction}
+        onSearchChange={setDialogSearchQuery}
+        onAddFriend={addFriend}
+        onClose={closeDialog}
+      />}
+      {activeDialog === "new-group" && <NewGroupDialog
+        language={language}
+        labels={t}
+        authToken={props.authToken}
+        groupName={newGroupName}
+        selectedMembers={newGroupMembers}
+        searchQuery={dialogSearchQuery}
+        searchResults={dialogSearchResults}
+        searchLoading={dialogSearchLoading}
+        friendIds={friendIds}
+        friends={summary.friends}
+        onGroupNameChange={setNewGroupName}
+        onSearchChange={setDialogSearchQuery}
+        onToggleMember={toggleGroupMember}
+        onCreate={handleCreateGroup}
+        onClose={closeDialog}
+      />}
+      {activeDialog === "new-ai" && <NewAiDialog
+        language={language}
+        labels={t}
+        aiName={newAiName}
+        aiPersona={newAiPersona}
+        onNameChange={setNewAiName}
+        onPersonaChange={setNewAiPersona}
+        onCreate={handleCreateAi}
+        onClose={closeDialog}
+      />}
       </div>
     </section>
   );
@@ -506,6 +1472,50 @@ function UserSearchRow(props: { user: UserSearchResult; isFriend: boolean; reque
 function UserIdentity(props: { user: FriendProfile | UserSearchResult }) {
   const name = displayFriendName(props.user);
   return <span className="direct-user-identity"><span className="user-avatar">{props.user.avatar_url ? <img src={resolveMediaUrl(props.user.avatar_url)} alt="" /> : name.slice(0, 1).toUpperCase()}</span><span><strong>{name}</strong><small>{props.user.email}</small></span></span>;
+}
+
+function AIContactIdentity(props: { profile: AIContactProfile; detail: string }) {
+  return <span className="direct-user-identity ai-contact-identity"><span className="user-avatar"><Bot size={15} /></span><span><strong>{props.profile.name}</strong><small>{props.detail}</small></span></span>;
+}
+
+function ChatMessageAvatar(props: { kind: "user" | "friend" | "ai"; user?: AuthUser | FriendProfile | null; aiContact?: AIContactProfile; onOpenProfile?: (event: React.MouseEvent<HTMLElement>) => void }) {
+  if (props.kind === "ai") {
+    return <span className="chat-message-avatar ai" aria-label={props.aiContact?.name ?? "AI"}><Bot size={16} /></span>;
+  }
+  const name = displayFriendName(props.user ?? undefined);
+  return (
+    <button className={`chat-message-avatar ${props.kind}`} type="button" aria-label={`查看 ${name} 的资料`} onClick={props.onOpenProfile}>
+      {props.user?.avatar_url ? <img src={resolveMediaUrl(props.user.avatar_url)} alt="" /> : name.slice(0, 1).toUpperCase()}
+    </button>
+  );
+}
+
+function MessageProfilePopover(props: { popover: ChatProfilePopover; onClose: () => void }) {
+  const user = props.popover.user;
+  const name = displayFriendName(user);
+  const avatarUrl = resolveMediaUrl(user.avatar_url);
+  const coverUrl = resolveMediaUrl(user.cover_url);
+  const bio = user.bio?.trim() || "还没有设置签名";
+  const location = user.location?.trim() || "未设置所在地";
+  const popoverWidth = 380;
+  const popoverGap = 12;
+  const left = props.popover.side === "left" ? Math.min(window.innerWidth - popoverWidth - popoverGap, props.popover.x + 10) : Math.max(popoverGap, props.popover.x - popoverWidth - popoverGap);
+  const top = Math.min(Math.max(12, props.popover.y - 104), window.innerHeight - 270);
+  return (
+    <article className={`message-profile-popover ${coverUrl ? "has-cover" : ""}`} style={coverUrl ? { left, top, backgroundImage: `url(${coverUrl})` } : { left, top }} role="dialog" aria-label={`${name} 的资料卡`}>
+      <button className="message-profile-close" type="button" aria-label="关闭资料卡" onClick={props.onClose}><X size={14} /></button>
+      <div className="message-profile-head">
+        <span className="message-profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1).toUpperCase()}</span>
+        <div>
+          <strong>{name}</strong>
+        </div>
+      </div>
+      <div className="message-profile-body">
+        <span>{location}</span>
+        <p>{bio}</p>
+      </div>
+    </article>
+  );
 }
 
 function PendingAttachmentTray(props: { attachments: ChatAttachment[]; label: string; onRemove: (attachmentId: string) => void }) {
@@ -550,6 +1560,63 @@ function MessageAttachments(props: { attachments: DirectAttachment[]; onPreview:
         );
       })}
     </div>
+  );
+}
+
+function ChatRunTimeline(props: { items: ChatRunTimelineItem[]; language: UiLanguage; sourceDetailLoading?: string; onOpenSourceReference?: (reference: ChatSourceReference) => void }) {
+  if (!props.items.length) return null;
+  return (
+    <div className="chat-run-timeline" aria-label={props.language === "en" ? "AI run events" : "AI 运行事件"} aria-live="polite">
+      {props.items.map((item) => (
+        <div key={item.id} className={`chat-run-event ${item.status}`}>
+          <span className="chat-run-event-icon">{chatRunEventIcon(item)}</span>
+          <div>
+            <strong>{item.title}</strong>
+            {item.detail && <small>{item.detail}</small>}
+            {!!item.references?.length && <div className="source-reference-actions">
+              {item.references.slice(0, 6).map((reference) => (
+                <button
+                  key={reference.ref}
+                  type="button"
+                  className="source-reference-button"
+                  disabled={props.sourceDetailLoading === reference.ref}
+                  onClick={() => props.onOpenSourceReference?.(reference)}
+                >
+                  <FileText size={12} />
+                  <span>{reference.ref.split("#").pop() || reference.ref}</span>
+                </button>
+              ))}
+            </div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function chatRunEventIcon(item: ChatRunTimelineItem) {
+  if (item.status === "failed") return <X size={13} />;
+  if (item.status === "success") return <Check size={13} />;
+  if (item.event.startsWith("thought:")) return <Brain size={13} />;
+  if (item.event.startsWith("source:")) return <FileText size={13} />;
+  if (item.event.startsWith("tool:")) return <PlugZap size={13} />;
+  return <Bot size={13} />;
+}
+
+function SourceDetailPanel(props: { detail: ChatDocumentChunkDetail; language: UiLanguage; onClose: () => void }) {
+  const title = props.language === "en" ? "Source detail" : "引用详情";
+  const chunkLabel = props.language === "en" ? `Chunk ${props.detail.chunk.chunkIndex + 1}` : `第 ${props.detail.chunk.chunkIndex + 1} 段`;
+  return (
+    <section className="source-detail-panel" aria-label={title}>
+      <div className="source-detail-header">
+        <div>
+          <strong>{props.detail.attachment.name}</strong>
+          <small>{[props.detail.ref, chunkLabel, formatBytes(props.detail.attachment.size)].filter(Boolean).join(" · ")}</small>
+        </div>
+        <button type="button" aria-label={props.language === "en" ? "Close source detail" : "关闭引用详情"} onClick={props.onClose}><X size={14} /></button>
+      </div>
+      <pre>{props.detail.chunk.content}</pre>
+    </section>
   );
 }
 
@@ -605,20 +1672,49 @@ function chatAttachmentToDirect(attachment: ChatAttachment): DirectAttachment {
     size: attachment.size,
     kind: attachment.kind,
     data_url: attachment.dataUrl,
+    uploaded: attachment.uploaded,
   };
 }
 
-function fileToAttachment(file: File): Promise<ChatAttachment> {
+function chatAttachmentsToDirect(attachments: ChatAttachment[] | undefined): DirectAttachment[] {
+  return (attachments ?? []).map(chatAttachmentToDirect);
+}
+
+function messagesForAIProvider(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    if (!message.attachments?.length) {
+      return message;
+    }
+    const summary = message.attachments.map((attachment, index) => `${index + 1}. ${attachment.name} · ${attachment.kind} · ${formatBytes(attachment.size)}`).join("\n");
+    const content = [message.content?.trim(), `用户随消息附带了本地文件/照片。支持图片理解的模型会由后端读取图片，其余模型只参考附件元数据：\n${summary}`].filter(Boolean).join("\n\n");
+    return { ...message, content };
+  });
+}
+
+function fileToAttachment(file: File, authToken = ""): Promise<ChatAttachment> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve({
-      id: `att-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      name: file.name,
-      type: file.type || "application/octet-stream",
-      size: file.size,
-      kind: file.type.startsWith("image/") ? "image" : "file",
-      dataUrl: String(reader.result || ""),
-    });
+    reader.onload = async () => {
+      const attachment: ChatAttachment = {
+        id: `att-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        kind: file.type.startsWith("image/") ? "image" : "file",
+        dataUrl: String(reader.result || ""),
+      };
+      if (!authToken) {
+        resolve(attachment);
+        return;
+      }
+      try {
+        const uploaded = await uploadChatAttachment(authToken, attachment);
+        resolve({ ...uploaded, dataUrl: attachment.dataUrl });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "unknown error";
+        reject(new Error(`附件上传失败：${message}`));
+      }
+    };
     reader.onerror = () => reject(new Error("附件读取失败"));
     reader.readAsDataURL(file);
   });
@@ -635,8 +1731,8 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function displayFriendName(user: FriendProfile | UserSearchResult) {
-  return user.display_name || user.username || user.email;
+function displayFriendName(user?: AuthUser | FriendProfile | UserSearchResult | null) {
+  return user?.display_name || user?.username || user?.email || "我";
 }
 
 function loadProfiles(): ModelProfile[] {
@@ -654,8 +1750,13 @@ function activeUsableProfile(profiles: ModelProfile[]) {
   return isUsableProfile(active) ? active : profiles.find(isUsableProfile);
 }
 
+function activeProfileForContact(profiles: ModelProfile[], aiContact: AIContactProfile, fallback?: ModelProfile) {
+  const defaultProfile = aiContact.defaultProfileId ? profiles.find((profile) => profile.id === aiContact.defaultProfileId) : undefined;
+  return isUsableProfile(defaultProfile) ? defaultProfile : fallback;
+}
+
 function isUsableProfile(profile: ModelProfile | undefined) {
-  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && profile.apiKey.trim());
+  return Boolean(profile?.baseUrl.trim() && profile.model.trim() && (profile.apiKey.trim() || profile.apiKeySet));
 }
 
 function loadMessages(): ChatMessage[] {
@@ -667,11 +1768,202 @@ function loadMessages(): ChatMessage[] {
   }
 }
 
+function loadAIContact(): AIContactProfile {
+  try {
+    const parsed = JSON.parse(readStorageValue(aiContactKey) ?? "null") as Partial<AIContactProfile> | null;
+    return normalizeAIContact(parsed);
+  } catch {
+    return defaultAIContact();
+  }
+}
+
+function normalizeAIContact(profile?: Partial<AIContactProfile> | null): AIContactProfile {
+  const fallback = defaultAIContact();
+  const name = profile?.name?.trim() || fallback.name;
+  const persona = profile?.persona?.trim() || fallback.persona;
+  return {
+    id: profile?.id?.trim() || undefined,
+    name: name.slice(0, 40),
+    persona: persona.slice(0, 500),
+    role: profile?.role?.trim().slice(0, 240) || fallback.role,
+    notes: profile?.notes?.trim().slice(0, 1000) || "",
+    defaultProfileId: profile?.defaultProfileId?.trim().slice(0, 64) || "",
+    memoryStrategy: profile?.memoryStrategy ?? fallback.memoryStrategy,
+  };
+}
+
+function defaultAIContact(): AIContactProfile {
+  return {
+    name: "知己",
+    persona: "温和、真诚、像长期陪伴的联系人一样聊天。回复自然一点，少说说明式的话，多关注对方当下的感受。",
+    role: "AI 联系人",
+    notes: "",
+    defaultProfileId: "",
+    memoryStrategy: "recall-retain",
+  };
+}
+
+function persistAIContactSnapshot(profile: AIContactProfile) {
+  try {
+    localStorage.setItem(aiContactKey, JSON.stringify(profile));
+  } catch {
+    // AI contact profile is nice-to-have; backend persona keeps the authoritative copy when signed in.
+  }
+}
+
+function aiContactFromPersona(persona: AiPersona): AIContactProfile {
+  return normalizeAIContact({
+    id: persona.id,
+    name: persona.name,
+    persona: persona.temperament || persona.notes || persona.role,
+    role: persona.role,
+    notes: persona.notes,
+    defaultProfileId: persona.defaultProfileId,
+    memoryStrategy: persona.memoryStrategy,
+  });
+}
+
+function aiContactToPersona(contact: AIContactProfile, defaultProfileId: string): AiPersona {
+  const normalized = normalizeAIContact(contact);
+  return {
+    id: normalized.id || "default-ai-contact",
+    name: normalized.name,
+    role: normalized.role || "AI 联系人",
+    temperament: normalized.persona,
+    notes: normalized.notes || "",
+    defaultProfileId: normalized.defaultProfileId || defaultProfileId,
+    memoryStrategy: normalized.memoryStrategy ?? "recall-retain",
+    enabled: true,
+  };
+}
+
+function upsertPersonaList(personas: AiPersona[], persona: AiPersona): AiPersona[] {
+  const without = personas.filter((item) => item.id !== persona.id);
+  return [persona, ...without];
+}
+
 function readStorageValue(key: string) {
   try {
     return localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+function loadSelectedMcpServerIds(): string[] {
+  try {
+    const parsed = JSON.parse(readStorageValue(aiMcpServersKey) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, 3) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSelectedMcpServerIds(serverIds: string[]) {
+  try {
+    localStorage.setItem(aiMcpServersKey, JSON.stringify(serverIds.slice(0, 3)));
+  } catch {
+    // MCP selection is local convenience; the backend still enforces server allowlists.
+  }
+}
+
+function sameStringList(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function eventString(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function eventStringList(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+}
+
+function citationCheckDetail(data: Record<string, unknown>, language: UiLanguage) {
+  const sourceCount = typeof data.source_count === "number" ? data.source_count : 0;
+  const citedCount = typeof data.cited_count === "number" ? data.cited_count : 0;
+  const missingCount = typeof data.missing_count === "number" ? data.missing_count : Math.max(sourceCount - citedCount, 0);
+  const unknownRefs = eventStringList(data, "unknown_refs");
+  const citationFormat = eventString(data, "citation_format");
+  const prefix = language === "en"
+    ? `Cited ${citedCount}/${sourceCount || citedCount}`
+    : `已引用 ${citedCount}/${sourceCount || citedCount}`;
+  const format = citationFormat
+    ? language === "en" ? `format ${citationFormat}` : `格式 ${citationFormat}`
+    : "";
+  const missing = missingCount > 0
+    ? language === "en" ? `missing ${missingCount}` : `缺少 ${missingCount}`
+    : "";
+  const unknown = unknownRefs.length
+    ? language === "en" ? `unknown ${unknownRefs.slice(0, 3).join(", ")}` : `未知引用 ${unknownRefs.slice(0, 3).join("、")}`
+    : "";
+  return [prefix, format, missing, unknown].filter(Boolean).join(language === "en" ? "; " : "；");
+}
+
+function sourceReferencesFromEvent(data: Record<string, unknown>): ChatSourceReference[] {
+  const rawReferences = Array.isArray(data.references) ? data.references : [];
+  return rawReferences
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const record = item as Record<string, unknown>;
+      const ref = eventString(record, "ref");
+      if (!ref) return null;
+      return {
+        ref,
+        attachmentId: eventString(record, "attachment_id"),
+        attachmentName: eventString(record, "attachment_name"),
+        chunkIndex: typeof record.chunk_index === "number" ? record.chunk_index : 0,
+        preview: eventString(record, "preview"),
+      };
+    })
+    .filter((item): item is ChatSourceReference => Boolean(item));
+}
+
+function chatToolTimelineId(data: Record<string, unknown>) {
+  return ["tool", eventString(data, "server_id"), eventString(data, "tool_name")].filter(Boolean).join(":") || `tool:${Date.now()}`;
+}
+
+function shortRunId(runId: string) {
+  return runId ? `run ${runId.slice(0, 8)}` : "";
+}
+
+function jsonPreview(value: unknown, maxLength = 120) {
+  if (value === undefined || value === null || value === "") return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function usagePreview(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return jsonPreview(value, 80);
+  }
+  const item = value as Record<string, unknown>;
+  const total = numericUsage(item.total_tokens) ?? numericUsage(item.totalTokens) ?? numericUsage(item.totalTokenCount);
+  const input = numericUsage(item.prompt_tokens) ?? numericUsage(item.input_tokens) ?? numericUsage(item.promptTokenCount);
+  const output = numericUsage(item.completion_tokens) ?? numericUsage(item.output_tokens) ?? numericUsage(item.candidatesTokenCount);
+  const parts = [
+    total !== undefined ? `total ${total}` : "",
+    input !== undefined ? `in ${input}` : "",
+    output !== undefined ? `out ${output}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : jsonPreview(value, 80);
+}
+
+function numericUsage(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function persistProfileSnapshot(profiles: ModelProfile[], activeProfileId: string) {
+  try {
+    localStorage.setItem(profilesKey, JSON.stringify(profiles));
+    if (activeProfileId) {
+      localStorage.setItem(activeProfileKey, activeProfileId);
+    }
+  } catch {
+    // Chat can keep using the in-memory backend profile snapshot.
   }
 }
 
@@ -688,18 +1980,326 @@ function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function configFromProfile(profile: ModelProfile): ChatConfig {
+function scrollElementToBottom(element: HTMLElement | null, behavior: ScrollBehavior = "auto") {
+  if (!element) return;
+  element.scrollTo({ top: element.scrollHeight, behavior });
+}
+
+function scheduleScrollToBottom(ref: RefObject<HTMLElement | null>, behavior: ScrollBehavior = "auto") {
+  scrollElementToBottom(ref.current, behavior);
+  const timers = [0, 50, 100, 200].map((delay) => window.setTimeout(() => scrollElementToBottom(ref.current, "auto"), delay));
+  window.requestAnimationFrame(() => scrollElementToBottom(ref.current, "auto"));
+  return () => timers.forEach((timer) => window.clearTimeout(timer));
+}
+
+function configFromProfile(profile: ModelProfile, aiContact?: AIContactProfile, backendOwned = false, mcpServerIds: string[] = []): ChatConfig {
+  const useBackendPersona = backendOwned && Boolean(aiContact?.id);
   return {
+    profileId: backendOwned ? profile.id : undefined,
+    personaId: useBackendPersona ? aiContact?.id : undefined,
     provider: profile.provider,
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
-    systemPrompt: profile.systemPrompt ?? "",
+    systemPrompt: useBackendPersona ? "" : aiContact ? aiSystemPrompt(backendOwned ? undefined : profile.systemPrompt, aiContact) : backendOwned ? "" : profile.systemPrompt ?? "",
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
+    supportsVision: profile.supportsVision,
+    fallbackModel: profile.fallbackModel ?? "",
+    memoryStrategy: aiContact?.memoryStrategy ?? "recall",
+    mcpServerIds: mcpServerIds.slice(0, 3),
   };
 }
 
-function formatTime(value: string, language: UiLanguage) {
-  return new Intl.DateTimeFormat(language === "en" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+function aiSystemPrompt(basePrompt: string | undefined, aiContact: AIContactProfile) {
+  const prompt = [
+    `你正在以联系人“${aiContact.name}”的身份和用户聊天。`,
+    `你的性格设定：${aiContact.persona}`,
+    "表现得像真实联系人陪伴，不要主动解释自己是模型，不要输出系统说明。",
+    basePrompt?.trim() ? `额外系统要求：${basePrompt.trim()}` : "",
+  ].filter(Boolean).join("\n");
+  return prompt;
+}
+
+function formatTime(value: string | undefined, language: UiLanguage) {
+  const date = value ? new Date(value) : new Date();
+  return new Intl.DateTimeFormat(language === "en" ? "en-US" : "zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(Number.isNaN(date.getTime()) ? new Date() : date);
+}
+
+function mcpAvailabilityLabel(server: McpServer, language: UiLanguage) {
+  if (!server.enabled) return language === "en" ? "Disabled" : "待启用";
+  if (server.live_enabled) return language === "en" ? "Live" : "实时可用";
+  if (server.configured) return language === "en" ? "Planned" : "计划模式";
+  return language === "en" ? "Waiting for env" : "等待配置";
+}
+
+function chatRunStatusLabel(status: string, language: UiLanguage) {
+  if (status === "success") return language === "en" ? "Done" : "完成";
+  if (status === "failed") return language === "en" ? "Failed" : "失败";
+  if (status === "running") return language === "en" ? "Running" : "运行中";
+  return status || (language === "en" ? "Run" : "运行");
+}
+
+function formatChatRunMeta(run: ChatRunRecord, language: UiLanguage) {
+  const time = formatTime(run.startedAt || run.createdAt, language);
+  const tools = run.mcpServerIds.length ? `${run.mcpServerIds.length} MCP` : "";
+  const events = run.eventCount ? `${run.eventCount} events` : "";
+  return [time, tools, events].filter(Boolean).join(" · ");
+}
+
+function AddFriendDialog(props: {
+  language: UiLanguage;
+  labels: typeof copy.zh;
+  authToken: string;
+  searchQuery: string;
+  searchResults: UserSearchResult[];
+  searchLoading: boolean;
+  friendIds: Set<string>;
+  outgoingIds: Set<string>;
+  peopleAction: string;
+  onSearchChange: (query: string) => void;
+  onAddFriend: (userId: string) => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") props.onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [props.onClose]);
+
+  return (
+    <div ref={dialogRef} className="chat-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-friend-title" tabIndex={-1} onClick={props.onClose}>
+      <div className="chat-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="chat-dialog-header">
+          <div>
+            <h2 id="add-friend-title">{props.labels.addFriendDialogTitle}</h2>
+            <p>{props.labels.addFriendDialogDesc}</p>
+          </div>
+          <button type="button" className="chat-dialog-close" aria-label={props.labels.cancel} onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="chat-dialog-body">
+          <label className="react-search-field">
+            <Search size={15} />
+            <input
+              value={props.searchQuery}
+              placeholder={props.labels.searchPlaceholder}
+              onChange={(event) => props.onSearchChange(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <div className="chat-dialog-search-results">
+            {props.searchResults.map((user) => (
+              <UserSearchRow
+                key={user.id}
+                user={user}
+                isFriend={props.friendIds.has(user.id)}
+                requested={props.outgoingIds.has(user.id)}
+                pending={props.peopleAction === `add:${user.id}`}
+                onAdd={() => props.onAddFriend(user.id)}
+                labels={props.labels}
+              />
+            ))}
+            {props.searchLoading && <p className="react-empty-line">{props.labels.searchingUsers}</p>}
+            {!props.searchLoading && props.searchQuery.trim() && !props.searchResults.length && (
+              <p className="react-empty-line">{props.labels.noSearchResults}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewGroupDialog(props: {
+  language: UiLanguage;
+  labels: typeof copy.zh;
+  authToken: string;
+  groupName: string;
+  selectedMembers: string[];
+  searchQuery: string;
+  searchResults: UserSearchResult[];
+  searchLoading: boolean;
+  friendIds: Set<string>;
+  friends: Array<{ user: FriendProfile }>;
+  onGroupNameChange: (name: string) => void;
+  onSearchChange: (query: string) => void;
+  onToggleMember: (userId: string) => void;
+  onCreate: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") props.onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [props.onClose]);
+
+  return (
+    <div ref={dialogRef} className="chat-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-group-title" tabIndex={-1} onClick={props.onClose}>
+      <div className="chat-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="chat-dialog-header">
+          <div>
+            <h2 id="new-group-title">{props.labels.newGroupDialogTitle}</h2>
+            <p>{props.labels.newGroupDialogDesc}</p>
+          </div>
+          <button type="button" className="chat-dialog-close" aria-label={props.labels.cancel} onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="chat-dialog-body">
+          <label className="chat-dialog-field">
+            <span>{props.labels.groupName}</span>
+            <input
+              type="text"
+              value={props.groupName}
+              placeholder={props.labels.groupNamePlaceholder}
+              onChange={(event) => props.onGroupNameChange(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <div className="chat-dialog-section">
+            <strong>{props.labels.selectMembers}</strong>
+            <label className="react-search-field">
+              <Search size={15} />
+              <input
+                value={props.searchQuery}
+                placeholder={props.labels.searchPlaceholder}
+                onChange={(event) => props.onSearchChange(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="chat-dialog-member-list">
+            {(props.searchQuery.trim() ? props.searchResults : props.friends.map(f => f.user)).map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                className={`chat-dialog-member-item ${props.selectedMembers.includes(user.id) ? "selected" : ""}`}
+                onClick={() => props.onToggleMember(user.id)}
+              >
+                <UserIdentity user={user} />
+                {props.selectedMembers.includes(user.id) && <Check size={16} />}
+              </button>
+            ))}
+            {props.searchLoading && <p className="react-empty-line">{props.labels.searchingUsers}</p>}
+          </div>
+        </div>
+        <div className="chat-dialog-footer">
+          <button type="button" className="secondary-button" onClick={props.onClose}>
+            {props.labels.cancel}
+          </button>
+          <button
+            type="button"
+            className="primary-action"
+            disabled={!props.groupName.trim()}
+            onClick={props.onCreate}
+          >
+            {props.labels.create}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewAiDialog(props: {
+  language: UiLanguage;
+  labels: typeof copy.zh;
+  aiName: string;
+  aiPersona: string;
+  onNameChange: (name: string) => void;
+  onPersonaChange: (persona: string) => void;
+  onCreate: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") props.onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [props.onClose]);
+
+  return (
+    <div ref={dialogRef} className="chat-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-ai-title" tabIndex={-1} onClick={props.onClose}>
+      <div className="chat-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="chat-dialog-header">
+          <div>
+            <h2 id="new-ai-title">{props.labels.newAiDialogTitle}</h2>
+            <p>{props.labels.newAiDialogDesc}</p>
+          </div>
+          <button type="button" className="chat-dialog-close" aria-label={props.labels.cancel} onClick={props.onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="chat-dialog-body">
+          <label className="chat-dialog-field">
+            <span>{props.labels.aiName}</span>
+            <input
+              type="text"
+              value={props.aiName}
+              placeholder={props.labels.aiName}
+              onChange={(event) => props.onNameChange(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <label className="chat-dialog-field">
+            <span>{props.labels.aiPersona}</span>
+            <textarea
+              rows={6}
+              value={props.aiPersona}
+              placeholder={props.labels.aiPersona}
+              onChange={(event) => props.onPersonaChange(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="chat-dialog-footer">
+          <button type="button" className="secondary-button" onClick={props.onClose}>
+            {props.labels.cancel}
+          </button>
+          <button
+            type="button"
+            className="primary-action"
+            disabled={!props.aiName.trim()}
+            onClick={props.onCreate}
+          >
+            {props.labels.create}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
