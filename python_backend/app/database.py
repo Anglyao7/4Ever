@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from app.config import Settings
+from app.secret_store import encrypt_secret
 
 
 class Database:
@@ -49,6 +50,7 @@ class Database:
                 for name, spec in columns.items():
                     if name not in existing:
                         conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {spec}")
+            _migrate_authenticated_model_profile_keys(conn, self.settings)
             for statement in _INDEXES:
                 conn.execute(statement)
 
@@ -106,6 +108,39 @@ def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 def touch_user(conn: sqlite3.Connection, user_id: str) -> None:
     conn.execute("UPDATE users SET updated_at = ? WHERE id = ?", (now_iso(), user_id))
+
+
+def _migrate_authenticated_model_profile_keys(conn: sqlite3.Connection, settings: Settings) -> None:
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, api_key, api_key_encrypted
+            FROM model_profiles
+            WHERE user_id != ''
+              AND api_key IS NOT NULL
+              AND TRIM(api_key) != ''
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    if not rows:
+        return
+    now = now_iso()
+    migrated = 0
+    for row in rows:
+        encrypted = (row["api_key_encrypted"] or "").strip() or encrypt_secret(settings, row["api_key"])
+        conn.execute(
+            "UPDATE model_profiles SET api_key = '', api_key_encrypted = ?, updated_at = ? WHERE id = ?",
+            (encrypted, now, row["id"]),
+        )
+        migrated += 1
+    conn.execute(
+        """
+        INSERT INTO admin_audit_logs (actor_id, action, target_type, target_id, detail, created_at)
+        VALUES ('system', 'model_profile.keys.migrated', 'model_profile', '*', ?, ?)
+        """,
+        (json_dumps({"migrated_count": migrated}), now),
+    )
 
 
 def _sqlite_path(database_url: str) -> Path:

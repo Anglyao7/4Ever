@@ -3,34 +3,35 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 import httpx
-from pydantic import BaseModel
+
+from app.config import Settings
+from app.database import Database
+from app.providers import ProviderConnectionRequest, provider_request_error_detail, resolve_provider_connection, truncate_chat_event_text
 
 
-class GenerationRequest(BaseModel):
-    provider: str | None = None
-    base_url: str | None = None
-    api_key: str | None = None
+class GenerationRequest(ProviderConnectionRequest):
     model: str | None = None
     prompt: str
     size: str | None = None
 
 
-def router() -> APIRouter:
+def router(settings: Settings | None = None, database: Database | None = None) -> APIRouter:
     api = APIRouter(prefix="/api/images")
 
     @api.post("/generate")
-    async def generate(payload: GenerationRequest) -> dict[str, Any]:
-        provider = (payload.provider or "openai").strip().lower()
+    async def generate(request: Request, payload: GenerationRequest) -> dict[str, Any]:
+        connection = resolve_image_provider(settings, database, request, payload)
+        provider = (connection.provider or "openai").strip().lower()
         if provider not in {"openai", "custom"}:
-            raise HTTPException(status_code=501, detail=f"Image provider '{payload.provider}' is not supported yet.")
+            raise HTTPException(status_code=501, detail=f"Image provider '{connection.provider}' is not supported yet.")
         if len(payload.prompt) > 4000:
             raise HTTPException(status_code=422, detail="Prompt must be 4000 characters or fewer.")
-        api_key = (payload.api_key or "").strip()
+        api_key = (connection.api_key or "").strip()
         if not api_key:
             raise HTTPException(status_code=400, detail="Image generation requires an API key.")
-        base_url = (payload.base_url or "https://api.openai.com/v1").strip().rstrip("/")
+        base_url = (connection.base_url or "https://api.openai.com/v1").strip().rstrip("/")
         model = payload.model or "gpt-image-1"
         size = payload.size or "1024x1024"
         try:
@@ -41,7 +42,7 @@ def router() -> APIRouter:
                     json={"model": model, "prompt": payload.prompt, "size": size},
                 )
         except httpx.HTTPError as error:
-            raise HTTPException(status_code=502, detail="Image provider request failed: " + str(error)) from error
+            raise HTTPException(status_code=502, detail=provider_request_error_detail("Image provider request failed", error)) from error
         if response.status_code >= 400:
             raise HTTPException(status_code=502, detail=provider_error_detail(response.text, response.status_code))
         try:
@@ -60,15 +61,22 @@ def router() -> APIRouter:
     return api
 
 
+def resolve_image_provider(settings: Settings | None, database: Database | None, request: Request, payload: GenerationRequest) -> ProviderConnectionRequest:
+    if not (payload.profile_id or "").strip():
+        return payload
+    runtime_settings = settings or (database.settings if database is not None else Settings())
+    return resolve_provider_connection(runtime_settings, database, request, payload)
+
+
 def provider_error_detail(text: str, status_code: int) -> str:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        return text or f"Image provider returned HTTP {status_code}."
+        return truncate_chat_event_text(text or f"Image provider returned HTTP {status_code}.", 800)
     error = payload.get("error")
     if isinstance(error, dict) and error.get("message"):
-        return str(error["message"])
+        return truncate_chat_event_text(str(error["message"]), 800)
     for key in ("detail", "message"):
         if payload.get(key):
-            return str(payload[key])
-    return text or f"Image provider returned HTTP {status_code}."
+            return truncate_chat_event_text(str(payload[key]), 800)
+    return truncate_chat_event_text(text or f"Image provider returned HTTP {status_code}.", 800)

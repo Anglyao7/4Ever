@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, ImagePlus, LoaderCircle, PlugZap, Wand2 } from "lucide-react";
-import { generateImage } from "./services/api";
+import { fetchModelProfiles, generateImage } from "./services/api";
 import type { ImageGenerationConfig, GeneratedImage } from "./types/images";
 import type { ModelProfile } from "./types/chat";
 
@@ -9,9 +9,9 @@ const imageProfileKey = "4ever.image.profile";
 const profilesKey = "4ever.model.profiles";
 const imageStorageError = "本地保存失败，请检查浏览器存储空间后再继续配置。";
 
-export default function ImageGenerationPanel() {
+export default function ImageGenerationPanel(props: { authToken?: string }) {
   const [config, setConfig] = useState<ImageGenerationConfig>(() => loadConfig());
-  const [profiles] = useState<ModelProfile[]>(loadProfiles);
+  const [profiles, setProfiles] = useState<ModelProfile[]>(loadProfiles);
   const [selectedProfileId, setSelectedProfileId] = useState(loadImageProfileId);
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [message, setMessage] = useState("");
@@ -19,11 +19,29 @@ export default function ImageGenerationPanel() {
   const [loading, setLoading] = useState(false);
   const previewRef = useRef<HTMLElement | null>(null);
   const selectedProfile = useMemo(() => selectedProfileId ? profiles.find((profile) => profile.id === selectedProfileId) ?? null : null, [profiles, selectedProfileId]);
-  const requestConfig = useMemo(() => imageConfigFromProfile(config, selectedProfile), [config, selectedProfile]);
+  const backendOwnedProfile = Boolean(props.authToken && selectedProfile?.apiKeySet);
+  const requestConfig = useMemo(() => imageConfigFromProfile(config, selectedProfile, backendOwnedProfile), [config, selectedProfile, backendOwnedProfile]);
   const profileSynced = Boolean(selectedProfile);
   const selectedProfileSupportsImage = !selectedProfile || selectedProfile.provider === "openai";
-  const canGenerate = Boolean(requestConfig.provider && requestConfig.baseUrl && requestConfig.apiKey && requestConfig.model && requestConfig.prompt);
+  const canGenerate = Boolean(requestConfig.provider && requestConfig.baseUrl && (requestConfig.apiKey || requestConfig.profileId) && requestConfig.model && requestConfig.prompt);
   const generateBlockedReason = imageGenerateBlockedReason({ canGenerate, loading, selectedProfileSupportsImage });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchModelProfiles(props.authToken).then((remote) => {
+      if (cancelled || !remote.profiles.length) return;
+      setProfiles(remote.profiles);
+      try {
+        localStorage.setItem(profilesKey, JSON.stringify(remote.profiles));
+      } catch {
+        setMessage(imageStorageError);
+        setMessageTone("error");
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [props.authToken]);
 
   useEffect(() => {
     if (!selectedProfileId) return;
@@ -87,7 +105,7 @@ export default function ImageGenerationPanel() {
     setMessage("正在生成...");
     setMessageTone("pending");
     try {
-      const response = await generateImage(requestConfig);
+      const response = await generateImage(requestConfig, props.authToken ?? "");
       setImages(response.images ?? []);
       setMessage(response.message || "生成完成。");
       setMessageTone("success");
@@ -113,7 +131,7 @@ export default function ImageGenerationPanel() {
           <div className="image-profile-sync">
             <div>
               <strong>{selectedProfile ? "使用中枢配置" : "未连接中枢"}</strong>
-              <small>{selectedProfile ? `${selectedProfile.name} · ${providerLabel(selectedProfile.provider)} · 接口地址 / Key 已同步` : "可使用虚实自己的 API Key 与接口地址"}</small>
+              <small>{selectedProfile ? `${selectedProfile.name} · ${providerLabel(selectedProfile.provider)} · ${backendOwnedProfile ? "Key 由后端保管" : "接口地址 / Key 已同步"}` : "可使用虚实自己的 API Key 与接口地址"}</small>
             </div>
             {profiles.length ? (
               <select value={selectedProfile?.id ?? ""} aria-label="选择图像接口配置" onChange={(event) => selectProfile(event.target.value)}>
@@ -175,15 +193,16 @@ function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function imageConfigFromProfile(config: ImageGenerationConfig, profile: ModelProfile | null): ImageGenerationConfig {
+function imageConfigFromProfile(config: ImageGenerationConfig, profile: ModelProfile | null, backendOwned = false): ImageGenerationConfig {
   if (!profile) {
-    return config;
+    return { ...config, profileId: undefined };
   }
   return {
     ...config,
+    profileId: backendOwned ? profile.id : undefined,
     provider: profile.provider === "openai" ? "openai" : "custom",
     baseUrl: profile.baseUrl,
-    apiKey: profile.apiKey,
+    apiKey: backendOwned ? "" : profile.apiKey,
   };
 }
 

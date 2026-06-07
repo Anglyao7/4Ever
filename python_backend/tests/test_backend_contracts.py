@@ -68,7 +68,7 @@ def test_admin_readiness_requires_admin_and_reports_checks():
     data = response.json()
     assert data["status"] in {"ok", "warning", "error"}
     check_ids = {check["id"] for check in data["checks"]}
-    assert {"database", "model_profile_encryption_key", "chat_attachment_url_secret", "private_media_root", "document_fts5", "bigmodel_mcp"} <= check_ids
+    assert {"database", "model_profile_encryption_key", "chat_attachment_url_secret", "private_media_root", "document_fts5", "bigmodel_mcp", "legacy_global_model_profiles"} <= check_ids
 
 
 def test_readiness_report_warns_without_stable_local_secrets(tmp_path):
@@ -93,6 +93,8 @@ def test_readiness_report_warns_without_stable_local_secrets(tmp_path):
     assert by_id["model_profile_encryption_key"]["configured"] is False
     assert by_id["chat_attachment_url_secret"]["status"] == "warning"
     assert by_id["chat_attachment_url_secret"]["configured"] is False
+    assert by_id["legacy_global_model_profiles"]["status"] == "warning"
+    assert by_id["legacy_global_model_profiles"]["enabled"] is True
 
 
 def test_readiness_report_does_not_leak_secret_values(tmp_path, monkeypatch):
@@ -108,6 +110,7 @@ def test_readiness_report_does_not_leak_secret_values(tmp_path, monkeypatch):
         model_profile_encryption_key=model_secret,
         chat_attachment_url_secret=url_secret,
         bigmodel_mcp_live=True,
+        allow_legacy_global_model_profiles=False,
     )
     settings.media_root.mkdir(parents=True)
     settings.private_media_root.mkdir(parents=True)
@@ -121,6 +124,8 @@ def test_readiness_report_does_not_leak_secret_values(tmp_path, monkeypatch):
     assert by_id["model_profile_encryption_key"]["status"] == "ok"
     assert by_id["chat_attachment_url_secret"]["status"] == "ok"
     assert by_id["bigmodel_mcp"]["status"] == "ok"
+    assert by_id["legacy_global_model_profiles"]["status"] == "ok"
+    assert by_id["legacy_global_model_profiles"]["enabled"] is False
     assert model_secret not in encoded
     assert url_secret not in encoded
     assert bigmodel_secret not in encoded

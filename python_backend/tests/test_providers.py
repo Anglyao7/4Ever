@@ -12,10 +12,11 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app import admin, auth
+from app import admin, auth, images
 from app.agents.mcp import call_mcp_tool, list_mcp_tools, load_mcp_tool_schema_cache, store_mcp_tool_schema_cache
 from app.config import Settings
 from app.database import Database, now_iso
+from app.secret_store import decrypt_secret
 from app.providers import (
     ChatCompletionRequest,
     _stream_provider,
@@ -1713,6 +1714,274 @@ def test_model_profiles_are_user_scoped_and_api_keys_encrypted(tmp_path):
     assert second_resolved.api_key == "sk-second"
 
 
+def test_image_generation_uses_authenticated_encrypted_profile_key(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    app.include_router(images.router(settings, database))
+    client = TestClient(app)
+    owner = sign_up(client, "image-owner")
+    other = sign_up(client, "image-other")
+    owner_headers = {"Authorization": f"Bearer {owner['token']}"}
+    other_headers = {"Authorization": f"Bearer {other['token']}"}
+
+    with LocalStreamingProvider({"/v1/images/generations": {"body": json.dumps({"data": [{"b64_json": "image-bytes", "revised_prompt": "revised"}]})}}) as server:
+        profile = client.put(
+            "/api/catalog/model-profiles",
+            headers=owner_headers,
+            json={
+                "active_profile_id": "image-profile",
+                "profiles": [
+                    {
+                        "id": "image-profile",
+                        "name": "Image",
+                        "provider": "openai",
+                        "base_url": server.base_url + "/v1",
+                        "api_key": "sk-image-owner",
+                        "model": "gpt-4o-mini",
+                    }
+                ],
+            },
+        )
+        assert profile.status_code == 200, profile.text
+        assert profile.json()["profiles"][0]["api_key"] == ""
+        assert profile.json()["profiles"][0]["api_key_set"] is True
+
+        generated = client.post(
+            "/api/images/generate",
+            headers=owner_headers,
+            json={"profile_id": "image-profile", "prompt": "生成一张测试图", "model": "gpt-image-1", "size": "1024x1024"},
+        )
+        blocked = client.post(
+            "/api/images/generate",
+            headers=other_headers,
+            json={"profile_id": "image-profile", "prompt": "不能使用别人的 key", "model": "gpt-image-1"},
+        )
+
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["images"] == [{"url": None, "b64_json": "image-bytes", "revised_prompt": "revised"}]
+    assert blocked.status_code == 404
+    assert len(server.records) == 1
+    request = server.records[0]
+    assert request["path"] == "/v1/images/generations"
+    assert request["headers"]["authorization"] == "Bearer sk-image-owner"
+    assert request["json"] == {"model": "gpt-image-1", "prompt": "生成一张测试图", "size": "1024x1024"}
+
+
+def test_image_generation_blocks_anonymous_profile_id_when_legacy_scope_disabled_and_allows_direct_key(tmp_path):
+    settings = Settings(
+        base_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        media_root=tmp_path / "media",
+        model_profile_encryption_key="test-secret",
+        allow_legacy_global_model_profiles=False,
+    )
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(images.router(settings, database))
+    client = TestClient(app)
+
+    anonymous_profile = client.post(
+        "/api/images/generate",
+        json={"profile_id": "global-profile", "prompt": "profile should require auth", "model": "gpt-image-1"},
+    )
+    with LocalStreamingProvider({"/v1/images/generations": {"body": json.dumps({"data": [{"url": "https://cdn.example.com/image.png"}]})}}) as server:
+        direct = client.post(
+            "/api/images/generate",
+            json={
+                "provider": "openai",
+                "base_url": server.base_url + "/v1",
+                "api_key": "sk-direct",
+                "prompt": "direct key remains compatible",
+                "model": "gpt-image-1",
+            },
+        )
+
+    assert anonymous_profile.status_code == 401
+    assert direct.status_code == 200, direct.text
+    assert direct.json()["images"] == [{"url": "https://cdn.example.com/image.png", "b64_json": None, "revised_prompt": None}]
+    assert server.records[0]["headers"]["authorization"] == "Bearer sk-direct"
+
+
+def test_image_generation_provider_error_is_redacted(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(images.router(settings, database))
+    client = TestClient(app)
+    error_body = 'image failed api_key="SECRET_IMAGE_KEY" Authorization: Bearer SECRET_IMAGE_BEARER data:image/png;base64,SECRET_IMAGE_BODY ' + ("image error " * 120)
+
+    with LocalStreamingProvider({"/v1/images/generations": {"status": 500, "body": error_body}}) as server:
+        response = client.post(
+            "/api/images/generate",
+            json={
+                "provider": "openai",
+                "base_url": server.base_url + "/v1",
+                "api_key": "sk-direct",
+                "prompt": "trigger error",
+                "model": "gpt-image-1",
+            },
+        )
+
+    assert response.status_code == 502
+    assert "SECRET_IMAGE_KEY" not in response.text
+    assert "SECRET_IMAGE_BEARER" not in response.text
+    assert "SECRET_IMAGE_BODY" not in response.text
+    assert "[redacted]" in response.text
+    assert "[redacted data URL]" in response.text
+
+
+def test_legacy_global_model_profile_storage_can_be_disabled_for_public_runtime(tmp_path):
+    settings = Settings(
+        base_dir=tmp_path,
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        media_root=tmp_path / "media",
+        model_profile_encryption_key="test-secret",
+        allow_legacy_global_model_profiles=False,
+    )
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+
+    anonymous_list = client.get("/api/catalog/model-profiles")
+    anonymous_sync = client.put(
+        "/api/catalog/model-profiles",
+        json={
+            "active_profile_id": "global-profile",
+            "profiles": [
+                {
+                    "id": "global-profile",
+                    "name": "Global",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-global",
+                    "model": "gpt-4o-mini",
+                }
+            ],
+        },
+    )
+    user = sign_up(client, "public-runtime")
+    authenticated_sync = client.put(
+        "/api/catalog/model-profiles",
+        headers={"Authorization": f"Bearer {user['token']}"},
+        json={
+            "active_profile_id": "profile-main",
+            "profiles": [
+                {
+                    "id": "profile-main",
+                    "name": "Main",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-user",
+                    "model": "gpt-4o-mini",
+                }
+            ],
+        },
+    )
+
+    assert anonymous_list.status_code == 401
+    assert anonymous_sync.status_code == 401
+    assert authenticated_sync.status_code == 200, authenticated_sync.text
+    assert authenticated_sync.json()["profiles"][0]["api_key"] == ""
+    assert authenticated_sync.json()["profiles"][0]["api_key_set"] is True
+    with database.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS count FROM model_profiles WHERE user_id = ''").fetchone()["count"] == 0
+        assert conn.execute("SELECT COUNT(*) AS count FROM model_profiles WHERE user_id = ?", (user["user"]["id"],)).fetchone()["count"] == 1
+
+
+def test_migrate_encrypts_authenticated_plaintext_model_keys_and_preserves_legacy_global_profiles(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="migration-secret")
+    database = Database(settings)
+    database.migrate()
+    now = now_iso()
+    with database.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO model_profiles (
+              id, user_id, public_id, name, provider, base_url, api_key, api_key_encrypted, model, system_prompt,
+              temperature, max_tokens, supports_vision, fallback_model, enabled, is_active, persona_json, pet_json,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "user-1:legacy-auth",
+                "user-1",
+                "legacy-auth",
+                "Legacy Auth",
+                "openai",
+                "https://api.example.com/v1",
+                "sk-legacy-auth",
+                "",
+                "gpt-4.1-mini",
+                "",
+                0.7,
+                1024,
+                0,
+                "",
+                1,
+                1,
+                "{}",
+                "{}",
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO model_profiles (
+              id, user_id, public_id, name, provider, base_url, api_key, api_key_encrypted, model, system_prompt,
+              temperature, max_tokens, supports_vision, fallback_model, enabled, is_active, persona_json, pet_json,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-global",
+                "",
+                "legacy-global",
+                "Legacy Global",
+                "openai",
+                "https://api.example.com/v1",
+                "sk-legacy-global",
+                "",
+                "gpt-4.1-mini",
+                "",
+                0.7,
+                1024,
+                0,
+                "",
+                1,
+                0,
+                "{}",
+                "{}",
+                now,
+                now,
+            ),
+        )
+
+    database.migrate()
+
+    with database.connect() as conn:
+        auth_row = conn.execute("SELECT api_key, api_key_encrypted FROM model_profiles WHERE id = ?", ("user-1:legacy-auth",)).fetchone()
+        global_row = conn.execute("SELECT api_key, api_key_encrypted FROM model_profiles WHERE id = ?", ("legacy-global",)).fetchone()
+        audit_row = conn.execute("SELECT * FROM admin_audit_logs WHERE action = 'model_profile.keys.migrated'").fetchone()
+    assert auth_row["api_key"] == ""
+    assert str(auth_row["api_key_encrypted"]).startswith("fernet:v1:")
+    assert decrypt_secret(settings, auth_row["api_key_encrypted"]) == "sk-legacy-auth"
+    assert global_row["api_key"] == "sk-legacy-global"
+    assert global_row["api_key_encrypted"] == ""
+    assert audit_row["actor_id"] == "system"
+    assert json.loads(audit_row["detail"]) == {"migrated_count": 1}
+    assert "sk-legacy-auth" not in audit_row["detail"]
+
+
 def test_persona_memory_recall_injects_chat_prompt(tmp_path):
     settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
     database = Database(settings)
@@ -1775,6 +2044,91 @@ def test_persona_memory_recall_injects_chat_prompt(tmp_path):
     assert "角色定位：长期陪伴联系人" in (resolved.system_prompt or "")
     assert "长期记忆" in (resolved.system_prompt or "")
     assert "用户喜欢简洁的回答。" in (resolved.system_prompt or "")
+
+
+def test_persona_and_memory_mutations_are_scoped_and_audited_without_content(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    owner = sign_up(client, "audit-owner")
+    other = sign_up(client, "audit-other")
+    owner_headers = {"Authorization": f"Bearer {owner['token']}"}
+    other_headers = {"Authorization": f"Bearer {other['token']}"}
+    secret_notes = "SECRET_PERSONA_NOTES should never be in audit"
+    secret_memory = 'SECRET_MEMORY_CONTENT api_key="SECRET_MEMORY_KEY"'
+
+    created = client.post(
+        "/api/chat/personas",
+        headers=owner_headers,
+        json={
+            "id": "audited-contact",
+            "name": "审计联系人",
+            "role": "初始角色",
+            "temperament": "简洁",
+            "notes": secret_notes,
+            "default_profile_id": "profile-main",
+            "memory_strategy": "recall-retain",
+        },
+    )
+    updated = client.post(
+        "/api/chat/personas",
+        headers=owner_headers,
+        json={
+            "id": "audited-contact",
+            "name": "审计联系人",
+            "role": "更新角色",
+            "temperament": "直接",
+            "notes": secret_notes + " updated",
+            "default_profile_id": "profile-main",
+            "memory_strategy": "retain",
+        },
+    )
+    retained = client.post(
+        "/api/chat/memory/retain",
+        headers=owner_headers,
+        json={"persona_id": "audited-contact", "content": secret_memory, "source": "manual", "metadata": {"secret": "SECRET_METADATA_VALUE"}},
+    )
+
+    assert created.status_code == 200, created.text
+    assert updated.status_code == 200, updated.text
+    assert retained.status_code == 200, retained.text
+    memory_id = retained.json()["memory"]["id"]
+    assert client.get("/api/chat/personas", headers=other_headers).json()["personas"] == []
+    assert client.get("/api/chat/memory/recall?persona_id=audited-contact", headers=other_headers).json()["memories"] == []
+    assert client.delete(f"/api/chat/memory/{memory_id}", headers=other_headers).status_code == 404
+    assert client.delete("/api/chat/personas/audited-contact", headers=other_headers).status_code == 404
+
+    deleted_memory = client.delete(f"/api/chat/memory/{memory_id}", headers=owner_headers)
+    deleted_persona = client.delete("/api/chat/personas/audited-contact", headers=owner_headers)
+
+    assert deleted_memory.status_code == 200, deleted_memory.text
+    assert deleted_persona.status_code == 200, deleted_persona.text
+    with database.connect() as conn:
+        rows = conn.execute(
+            "SELECT actor_id, action, target_type, target_id, detail FROM admin_audit_logs WHERE actor_id = ? ORDER BY id",
+            (owner["user"]["id"],),
+        ).fetchall()
+
+    assert [(row["action"], row["target_type"], row["target_id"]) for row in rows] == [
+        ("ai_persona.create", "ai_persona", "audited-contact"),
+        ("ai_persona.update", "ai_persona", "audited-contact"),
+        ("ai_memory.retain", "ai_memory", memory_id),
+        ("ai_memory.delete", "ai_memory", memory_id),
+        ("ai_persona.delete", "ai_persona", "audited-contact"),
+    ]
+    details = [json.loads(row["detail"]) for row in rows]
+    raw_details = json.dumps(details, ensure_ascii=False)
+    assert "SECRET_PERSONA_NOTES" not in raw_details
+    assert "SECRET_MEMORY_CONTENT" not in raw_details
+    assert "SECRET_MEMORY_KEY" not in raw_details
+    assert "SECRET_METADATA_VALUE" not in raw_details
+    assert details[0]["notes_chars"] == len(secret_notes)
+    assert details[2]["content_chars"] == len(secret_memory)
+    assert details[2]["metadata_key_count"] == 1
 
 
 def test_stream_chat_persists_run_and_mcp_tool_events(tmp_path, monkeypatch):
@@ -1844,6 +2198,69 @@ def test_stream_chat_persists_run_and_mcp_tool_events(tmp_path, monkeypatch):
     assert "event: thought:summary" in events.text
     assert "event: tool:result" in events.text
     assert all(payload.get("run_id") == run["id"] for payload in sse_data_payloads(events.text))
+
+
+def test_chat_run_history_and_replay_are_user_scoped(tmp_path, monkeypatch):
+    settings = Settings(base_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}", media_root=tmp_path / "media", model_profile_encryption_key="test-secret")
+    database = Database(settings)
+    database.migrate()
+    app = FastAPI()
+    app.include_router(auth.router(database, settings))
+    app.include_router(router(settings, database))
+    client = TestClient(app)
+    owner = sign_up(client, "run-owner")
+    other = sign_up(client, "run-other")
+    owner_headers = {"Authorization": f"Bearer {owner['token']}"}
+    other_headers = {"Authorization": f"Bearer {other['token']}"}
+
+    profile = client.put(
+        "/api/catalog/model-profiles",
+        headers=owner_headers,
+        json={
+            "active_profile_id": "profile-main",
+            "profiles": [
+                {
+                    "id": "profile-main",
+                    "name": "Main",
+                    "provider": "openai",
+                    "base_url": "https://api.example.com",
+                    "api_key": "sk-owner-run",
+                    "model": "gpt-4o-mini",
+                }
+            ],
+        },
+    )
+    assert profile.status_code == 200, profile.text
+
+    async def fake_stream_openai(settings, payload):
+        yield {"event": "message:chunk", "data": {"content": "owner-only answer"}}
+
+    monkeypatch.setattr("app.providers._stream_openai", fake_stream_openai)
+    stream = client.post(
+        "/api/chat/stream",
+        headers=owner_headers,
+        json={"profile_id": "profile-main", "messages": [{"role": "user", "content": "私有运行记录"}]},
+    )
+
+    assert stream.status_code == 200, stream.text
+    run_id = sse_data_payloads(stream.text)[0]["run_id"]
+    owner_runs = client.get("/api/chat/runs", headers=owner_headers)
+    other_runs = client.get("/api/chat/runs", headers=other_headers)
+    anonymous_runs = client.get("/api/chat/runs")
+    owner_events = client.get(f"/api/chat/runs/{run_id}/events", headers=owner_headers)
+    other_events = client.get(f"/api/chat/runs/{run_id}/events", headers=other_headers)
+    anonymous_events = client.get(f"/api/chat/runs/{run_id}/events")
+
+    assert owner_runs.status_code == 200, owner_runs.text
+    assert [run["id"] for run in owner_runs.json()["runs"]] == [run_id]
+    assert other_runs.status_code == 200, other_runs.text
+    assert other_runs.json()["runs"] == []
+    assert anonymous_runs.status_code == 200, anonymous_runs.text
+    assert anonymous_runs.json()["runs"] == []
+    assert owner_events.status_code == 200, owner_events.text
+    assert "owner-only answer" in owner_events.text
+    assert other_events.status_code == 404
+    assert anonymous_events.status_code == 404
 
 
 def test_stream_chat_error_event_is_redacted_in_live_sse_and_replay(tmp_path, monkeypatch):

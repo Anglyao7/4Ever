@@ -110,12 +110,14 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
     def model_profiles(request: Request) -> dict[str, Any]:
         db = require_database(database)
         user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Model profile storage")
         return list_model_profiles(settings, db, user_id, reveal_api_key=not bool(user_id))
 
     @api.put("/api/catalog/model-profiles")
     def sync_model_profiles(request: Request, payload: ModelProfileSyncRequest) -> dict[str, Any]:
         db = require_database(database)
         user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Model profile storage")
         active_id = (payload.active_profile_id or "").strip()
         with db.connect() as conn:
             existing = existing_model_profile_secrets(settings, conn, user_id)
@@ -177,36 +179,47 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
     @api.get("/api/chat/personas")
     def personas(request: Request) -> dict[str, Any]:
         db = require_database(database)
-        return {"personas": list_personas(db, optional_user_id(request, db))}
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "AI persona storage")
+        return {"personas": list_personas(db, user_id)}
 
     @api.post("/api/chat/personas")
     def save_persona(request: Request, payload: PersonaPayload) -> dict[str, Any]:
         db = require_database(database)
         user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "AI persona storage")
         persona = upsert_persona(db, user_id, payload)
         return {"persona": persona}
 
     @api.delete("/api/chat/personas/{persona_id}")
     def delete_persona(request: Request, persona_id: str) -> dict[str, str]:
         db = require_database(database)
-        delete_persona_record(db, optional_user_id(request, db), persona_id)
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "AI persona storage")
+        delete_persona_record(db, user_id, persona_id)
         return {"status": "ok"}
 
     @api.post("/api/chat/memory/retain")
     def retain_memory(request: Request, payload: MemoryRetainRequest) -> dict[str, Any]:
         db = require_database(database)
-        memory = retain_memory_record(db, optional_user_id(request, db), payload)
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Memory storage")
+        memory = retain_memory_record(db, user_id, payload)
         return {"memory": memory}
 
     @api.get("/api/chat/memory/recall")
     def recall_memory(request: Request, persona_id: str = "", q: str = "", limit: int = 6) -> dict[str, Any]:
         db = require_database(database)
-        return {"memories": recall_memory_records(db, optional_user_id(request, db), persona_id, q, limit)}
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Memory storage")
+        return {"memories": recall_memory_records(db, user_id, persona_id, q, limit)}
 
     @api.delete("/api/chat/memory/{memory_id}")
     def delete_memory(request: Request, memory_id: str) -> dict[str, str]:
         db = require_database(database)
-        delete_memory_record(db, optional_user_id(request, db), memory_id)
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Memory storage")
+        delete_memory_record(db, user_id, memory_id)
         return {"status": "ok"}
 
     @api.post("/api/chat/attachments")
@@ -296,12 +309,15 @@ def router(settings: Settings, database: Database | None = None) -> APIRouter:
         if limit < 1 or limit > 100:
             raise HTTPException(status_code=422, detail="limit must be between 1 and 100.")
         db = require_database(database)
-        return {"runs": list_chat_runs(db, optional_user_id(request, db), limit)}
+        user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Chat run storage")
+        return {"runs": list_chat_runs(db, user_id, limit)}
 
     @api.get("/api/chat/runs/{run_id}/events")
     def chat_run_events(request: Request, run_id: str) -> StreamingResponse:
         db = require_database(database)
         user_id = optional_user_id(request, db)
+        require_authenticated_or_legacy_global_scope(settings, user_id, "Chat run storage")
         run = load_chat_run(db, user_id, run_id)
         if not run:
             raise HTTPException(status_code=404, detail="Chat run not found.")
@@ -394,6 +410,12 @@ def optional_user_id(request: Request, database: Database) -> str:
     if not header:
         return ""
     return str(require_user(request, database)["id"])
+
+
+def require_authenticated_or_legacy_global_scope(settings: Settings, user_id: str, resource: str) -> None:
+    if user_id or settings.allow_legacy_global_model_profiles:
+        return
+    raise HTTPException(status_code=401, detail=f"{resource} requires authentication.")
 
 
 def store_chat_attachment(settings: Settings, database: Database, user_id: str, payload: ChatAttachmentUploadRequest) -> dict[str, Any]:
@@ -1119,7 +1141,9 @@ def resolve_provider_connection(settings: Settings, database: Database | None, r
     if not profile_id:
         return payload
     db = require_database(database)
-    profile = get_model_profile(settings, db, profile_id, optional_user_id(request, db))
+    user_id = optional_user_id(request, db)
+    require_authenticated_or_legacy_global_scope(settings, user_id, "Model profile storage")
+    profile = get_model_profile(settings, db, profile_id, user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Model profile not found.")
     if not profile["enabled"]:
@@ -1138,6 +1162,8 @@ def resolve_chat_request(database: Database | None, payload: ChatCompletionReque
     runtime_settings = settings or (db.settings if db is not None else Settings())
     payload = hydrate_chat_attachments(runtime_settings, db, user_id, payload)
     persona_id = (payload.persona_id or payload.contact_id or "").strip()
+    if not user_id and (profile_id or persona_id) and not runtime_settings.allow_legacy_global_model_profiles:
+        raise HTTPException(status_code=401, detail="Backend chat profile storage requires authentication.")
     persona = get_persona(db, user_id, persona_id) if db and persona_id else None
     if persona and not profile_id:
         profile_id = persona.get("default_profile_id") or ""
@@ -1273,7 +1299,16 @@ def upsert_persona(database: Database, user_id: str, payload: PersonaPayload) ->
             ),
         )
         row = conn.execute("SELECT * FROM ai_personas WHERE id = ?", (storage_id,)).fetchone()
-    return persona_from_row(row)
+    persona = persona_from_row(row)
+    audit_user_action(
+        database,
+        user_id,
+        "ai_persona.update" if existing else "ai_persona.create",
+        "ai_persona",
+        public_id,
+        persona_audit_detail(persona),
+    )
+    return persona
 
 
 def get_persona(database: Database | None, user_id: str, persona_id: str) -> dict[str, Any] | None:
@@ -1288,10 +1323,15 @@ def get_persona(database: Database | None, user_id: str, persona_id: str) -> dic
 
 
 def delete_persona_record(database: Database, user_id: str, persona_id: str) -> None:
+    deleted: dict[str, Any] | None = None
     with database.connect() as conn:
+        row = conn.execute("SELECT * FROM ai_personas WHERE id = ? AND user_id = ?", (scoped_record_id(user_id, persona_id), user_id)).fetchone()
         result = conn.execute("DELETE FROM ai_personas WHERE id = ? AND user_id = ?", (scoped_record_id(user_id, persona_id), user_id))
+        if row is not None:
+            deleted = persona_from_row(row)
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Persona not found.")
+    audit_user_action(database, user_id, "ai_persona.delete", "ai_persona", persona_id.strip()[:64], persona_audit_detail(deleted or {}))
 
 
 def persona_from_row(row: Any) -> dict[str, Any]:
@@ -1333,7 +1373,9 @@ def retain_memory_record(database: Database, user_id: str, payload: MemoryRetain
             (memory_id, user_id, persona_id, content, (payload.source or "manual").strip()[:80], json_dumps(payload.metadata), now, now),
         )
         row = conn.execute("SELECT * FROM ai_memories WHERE id = ?", (memory_id,)).fetchone()
-    return memory_from_row(row)
+    memory = memory_from_row(row)
+    audit_user_action(database, user_id, "ai_memory.retain", "ai_memory", memory["id"], memory_audit_detail(memory))
+    return memory
 
 
 def recall_memory_records(database: Database, user_id: str, persona_id: str = "", query: str = "", limit: int = 6) -> list[dict[str, Any]]:
@@ -1374,10 +1416,47 @@ def memory_score(content: str, terms: list[str]) -> int:
 
 
 def delete_memory_record(database: Database, user_id: str, memory_id: str) -> None:
+    deleted: dict[str, Any] | None = None
     with database.connect() as conn:
+        row = conn.execute("SELECT * FROM ai_memories WHERE id = ? AND user_id = ?", (memory_id, user_id)).fetchone()
         result = conn.execute("DELETE FROM ai_memories WHERE id = ? AND user_id = ?", (memory_id, user_id))
+        if row is not None:
+            deleted = memory_from_row(row)
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Memory not found.")
+    audit_user_action(database, user_id, "ai_memory.delete", "ai_memory", memory_id, memory_audit_detail(deleted or {}))
+
+
+def audit_user_action(database: Database, user_id: str, action: str, target_type: str, target_id: str, detail: dict[str, Any]) -> None:
+    if not user_id:
+        return
+    with database.connect() as conn:
+        conn.execute(
+            "INSERT INTO admin_audit_logs (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, action, target_type, target_id[:160], json_dumps(detail), now_iso()),
+        )
+
+
+def persona_audit_detail(persona: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "default_profile_id": str(persona.get("default_profile_id") or "")[:64],
+        "memory_strategy": str(persona.get("memory_strategy") or "recall")[:40],
+        "enabled": bool(persona.get("enabled", True)),
+        "name_chars": len(str(persona.get("name") or "")),
+        "role_chars": len(str(persona.get("role") or "")),
+        "temperament_chars": len(str(persona.get("temperament") or "")),
+        "notes_chars": len(str(persona.get("notes") or "")),
+    }
+
+
+def memory_audit_detail(memory: dict[str, Any]) -> dict[str, Any]:
+    metadata = memory.get("metadata")
+    return {
+        "persona_id": str(memory.get("persona_id") or "")[:64],
+        "source": str(memory.get("source") or "")[:80],
+        "content_chars": len(str(memory.get("content") or "")),
+        "metadata_key_count": len(metadata) if isinstance(metadata, dict) else 0,
+    }
 
 
 def memory_from_row(row: Any) -> dict[str, Any]:

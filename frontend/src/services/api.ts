@@ -1092,11 +1092,20 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
       uploaded: attachment.uploaded,
     })),
   }));
-
-  return {
+  const runtimeIds = {
     profile_id: config.profileId,
     persona_id: config.personaId,
     contact_id: config.personaId,
+    memory_strategy: config.memoryStrategy,
+    mcp_server_ids: config.mcpServerIds ?? [],
+    messages: outboundMessages,
+  };
+
+  if (config.profileId) {
+    return runtimeIds;
+  }
+  return {
+    ...runtimeIds,
     provider: config.provider,
     base_url: config.baseUrl,
     api_key: config.apiKey,
@@ -1106,26 +1115,17 @@ function chatPayload(config: ChatConfig, messages: ChatMessage[]) {
     max_tokens: config.maxTokens,
     supports_vision: config.supportsVision,
     fallback_model: config.fallbackModel,
-    memory_strategy: config.memoryStrategy,
-    mcp_server_ids: config.mcpServerIds ?? [],
-    messages: outboundMessages,
   };
 }
 
-export async function generateImage(config: ImageGenerationConfig): Promise<ImageGenerationResponse> {
+export async function generateImage(config: ImageGenerationConfig, authToken = ""): Promise<ImageGenerationResponse> {
   const response = await fetch(apiUrl("/api/images/generate"), {
     method: "POST",
     headers: {
+      ...authHeaders(authToken),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      prompt: config.prompt,
-      provider: config.provider,
-      base_url: config.baseUrl,
-      api_key: config.apiKey,
-      model: config.model,
-      size: config.size,
-    }),
+    body: JSON.stringify(imageGenerationPayload(config)),
   });
 
   if (!response.ok) {
@@ -1134,6 +1134,24 @@ export async function generateImage(config: ImageGenerationConfig): Promise<Imag
   }
 
   return response.json();
+}
+
+function imageGenerationPayload(config: ImageGenerationConfig) {
+  const base = {
+    profile_id: config.profileId,
+    prompt: config.prompt,
+    model: config.model,
+    size: config.size,
+  };
+  if (config.profileId) {
+    return base;
+  }
+  return {
+    ...base,
+    provider: config.provider,
+    base_url: config.baseUrl,
+    api_key: config.apiKey,
+  };
 }
 
 function providerConnectionPayload(config: ChatConfig) {

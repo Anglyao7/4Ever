@@ -333,7 +333,7 @@ function App() {
         ) : activeModuleId === "memory-map" ? (
           <MemoryMapPanel />
         ) : activeModuleId === "image-generation" ? (
-          <ImageGenerationPanel />
+          <ImageGenerationPanel authToken={authToken} />
         ) : activeModuleId === "workflow" ? (
           <WorkflowPanel />
         ) : activeModuleId === "token-usage" ? (

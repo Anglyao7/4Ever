@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -61,6 +62,7 @@ class Settings:
     agent_synthesis_live: bool = False
     agent_graph_runtime: str = "langgraph"
     model_profile_encryption_key: str = ""
+    allow_legacy_global_model_profiles: bool = True
 
 
 def load_settings() -> Settings:
@@ -71,11 +73,16 @@ def load_settings() -> Settings:
     database_url = _normalize_database_url(base_dir, os.getenv("DATABASE_URL", "sqlite:///./4ever.db"))
     media_root = Path(os.getenv("MEDIA_ROOT", str(base_dir / "media"))).resolve()
     private_media_root = Path(os.getenv("PRIVATE_MEDIA_ROOT", str(base_dir / "private-media"))).resolve()
+    app_host = os.getenv("APP_HOST", "127.0.0.1")
     origins = tuple(item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:7777,http://127.0.0.1:7777").split(",") if item.strip())
+    allow_legacy_global_model_profiles = _bool_env(
+        "ALLOW_LEGACY_GLOBAL_MODEL_PROFILES",
+        _local_legacy_global_profile_default(app_host, origins),
+    )
     return Settings(
         base_dir=base_dir,
         app_name=os.getenv("APP_NAME", "4Ever Aggregation Platform"),
-        app_host=os.getenv("APP_HOST", "127.0.0.1"),
+        app_host=app_host,
         app_port=_int_env("APP_PORT", 7778),
         ai_timeout_seconds=_float_env("AI_TIMEOUT_SECONDS", 120.0),
         cors_origins=origins or ("http://localhost:7777", "http://127.0.0.1:7777"),
@@ -99,7 +106,25 @@ def load_settings() -> Settings:
         agent_synthesis_live=_bool_env("AGENT_SYNTHESIS_LIVE"),
         agent_graph_runtime=os.getenv("AGENT_GRAPH_RUNTIME", "langgraph").strip().lower() or "langgraph",
         model_profile_encryption_key=os.getenv("MODEL_PROFILE_ENCRYPTION_KEY", "").strip(),
+        allow_legacy_global_model_profiles=allow_legacy_global_model_profiles,
     )
+
+
+def _local_legacy_global_profile_default(app_host: str, origins: tuple[str, ...]) -> bool:
+    return _is_loopback_host(app_host) and all(_origin_is_loopback(origin) for origin in origins)
+
+
+def _origin_is_loopback(origin: str) -> bool:
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return False
+    return _is_loopback_host(parsed.hostname or "")
+
+
+def _is_loopback_host(host: str) -> bool:
+    clean = host.strip().strip("[]").lower()
+    return clean in {"localhost", "127.0.0.1", "::1"}
 
 
 def _detect_base_dir(root: Path) -> Path:

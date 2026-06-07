@@ -44,7 +44,7 @@ settings.private_media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/api/media", StaticFiles(directory=settings.media_root), name="media")
 
 app.include_router(providers.router(settings, database))
-app.include_router(images.router())
+app.include_router(images.router(settings, database))
 app.include_router(maps.router(settings))
 app.include_router(auth.router(database, settings))
 app.include_router(direct_chat.router(database))

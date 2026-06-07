@@ -248,6 +248,7 @@ def readiness_report(db: Database, settings: Settings) -> dict[str, Any]:
         pypdf_readiness_check(),
         bigmodel_mcp_readiness_check(settings),
         cors_readiness_check(settings),
+        legacy_global_model_profiles_check(settings),
     ]
     return {"status": overall_readiness_status(checks), "checks": checks}
 
@@ -338,6 +339,22 @@ def cors_readiness_check(settings: Settings) -> dict[str, Any]:
     if origin_count == 0:
         return readiness_check("cors_origins", "warning", "CORS origins are empty; browser clients may be unable to call the API.", origin_count=0)
     return readiness_check("cors_origins", "ok", "CORS origins are configured.", origin_count=origin_count)
+
+
+def legacy_global_model_profiles_check(settings: Settings) -> dict[str, Any]:
+    if settings.allow_legacy_global_model_profiles:
+        return readiness_check(
+            "legacy_global_model_profiles",
+            "warning",
+            "Legacy anonymous global model/persona storage is enabled for local compatibility; disable it before public production deployments.",
+            enabled=True,
+        )
+    return readiness_check(
+        "legacy_global_model_profiles",
+        "ok",
+        "Legacy anonymous global model/persona storage is disabled.",
+        enabled=False,
+    )
 
 
 def readiness_check(check_id: str, status: str, message: str, **metadata: Any) -> dict[str, Any]:
