@@ -9,7 +9,8 @@ import { runServiceCommand } from "./service.js";
 
 const CONFIG_DIR = join(homedir(), ".4ever", "token-usage");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-const DEFAULT_API_URL = "http://127.0.0.1:7778";
+const DEFAULT_API_URL = "https://www.4everapi.top";
+const LOCAL_API_URL = "http://127.0.0.1:7778";
 const CODEX_ROOT = join(homedir(), ".codex");
 const CODEX_DIRS = [join(CODEX_ROOT, "sessions"), join(CODEX_ROOT, "archived_sessions")];
 const CLAUDE_DIR = join(homedir(), ".claude");
@@ -51,10 +52,13 @@ async function init(args) {
   if (hasOption(args, "--api-key")) {
     throw new Error("Do not append the API key to the command. Run forever-token init and paste the key when prompted.");
   }
+  const apiUrlArg = readOption(args, "--api-url") || (args[0] === "local" ? LOCAL_API_URL : "");
   const current = loadConfig(false) || {};
-  const prompted = await promptInitConfig(current, readOption(args, "--api-url"));
+  const prompted = await promptInitConfig(current, apiUrlArg);
   saveConfig({ ...current, ...prompted, deviceId: current.deviceId || randomUUID() });
   console.log(`4Ever Token CLI initialized for ${prompted.apiUrl}`);
+  console.log("Running first sync...");
+  await sync();
 }
 
 async function sync() {
@@ -186,7 +190,7 @@ function version() {
 }
 
 function help() {
-  console.log(`4Ever Token CLI\n\n用法：\n  forever-token                 读取本机 AI 工具日志并展示当前 Token 总消耗，不上传数据。\n  forever-token usage           等同于 forever-token。\n  forever-token monthly         按月展示本地 Token 用量。\n  forever-token dayly           按日展示近三个月本地 Token 用量。\n  forever-token daily           dayly 的别名。\n  forever-token hourly          按 GMT+8 展示今日每小时 Token 用量，便于核对前端小时热力图。\n  forever-token status          展示初始化状态、可发现的数据目录和本地快照。\n  forever-token init            交互式绑定 4Ever Token统计 CLI Key。\n  forever-token sync            手动将本地统计同步到 4Ever。\n  forever-token service [action]\n                                管理后台服务（setup|start|stop|restart|status|uninstall）。\n                                setup 后自动开机启动，默认每 5 分钟同步数据。\n                                支持自定义间隔：service setup by N（N 为分钟数）。\n  forever-token daemon --interval 300000\n                                持续定时同步，interval 单位为毫秒（需手动保持运行）。\n  forever-token version         展示当前 CLI 版本号。\n  forever-token help            展示本帮助。\n\n示例：\n  forever-token service setup       # 每 5 分钟自动同步\n  forever-token service setup by 10 # 每 10 分钟自动同步\n  forever-token service setup by 60 # 每 60 分钟自动同步\n\n说明：\n  默认统计 Codex、Claude Code、Gemini CLI、Qwen Code、OpenCode、OpenClaw 等本机日志。\n  除 sync/daemon/service 外，其余统计命令只读本地文件，不会上传数据。\n  本地按日、按月、按小时输出与前端一致使用 GMT+8 统计口径。\n  推荐使用 service setup 实现无感知自动同步。`);
+  console.log(`4Ever Token CLI\n\n用法：\n  forever-token                 读取本机 AI 工具日志并展示当前 Token 总消耗，不上传数据。\n  forever-token usage           等同于 forever-token。\n  forever-token monthly         按月展示本地 Token 用量。\n  forever-token dayly           按日展示近三个月本地 Token 用量。\n  forever-token daily           dayly 的别名。\n  forever-token hourly          按 GMT+8 展示今日每小时 Token 用量，便于核对前端小时热力图。\n  forever-token status          展示初始化状态、可发现的数据目录和本地快照。\n  forever-token init            绑定线上 4Ever Token统计 CLI Key，并自动同步一次。\n  forever-token init local      绑定本地开发服务 http://127.0.0.1:7778，并自动同步一次。\n  forever-token sync            手动将本地统计同步到 4Ever。\n  forever-token service [action]\n                                管理后台服务（setup|start|stop|restart|status|uninstall）。\n                                setup 后自动开机启动，默认每 5 分钟同步数据。\n                                支持自定义间隔：service setup by N（N 为分钟数）。\n  forever-token daemon --interval 300000\n                                持续定时同步，interval 单位为毫秒（需手动保持运行）。\n  forever-token version         展示当前 CLI 版本号。\n  forever-token help            展示本帮助。\n\n示例：\n  forever-token init local          # 绑定本地 4Ever 开发服务\n  forever-token service setup       # 每 5 分钟自动同步\n  forever-token service setup by 10 # 每 10 分钟自动同步\n  forever-token service setup by 60 # 每 60 分钟自动同步\n\n说明：\n  默认统计 Codex、Claude Code、Gemini CLI、Qwen Code、OpenCode、OpenClaw 等本机日志。\n  除 init/sync/daemon/service 外，其余统计命令只读本地文件，不会上传数据。\n  本地按日、按月、按小时输出与前端一致使用 GMT+8 统计口径。\n  推荐使用 service setup 实现无感知自动同步。`);
 }
 
 function withSpinner(label, work) {
@@ -1175,7 +1179,7 @@ function normalizeApiUrl(value) {
   try {
     return new URL(trimmed).toString().replace(/\/+$/, "");
   } catch {
-    throw new Error("Invalid API URL. Example: http://127.0.0.1:7778");
+    throw new Error("Invalid API URL. Example: https://www.4everapi.top");
   }
 }
 

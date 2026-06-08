@@ -114,6 +114,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const apiBaseUrl = getApiBaseUrl();
   const installCommand = "npm install -g @anglyaoy/token-usage";
   const initCommand = "forever-token init";
+  const localInitCommand = "forever-token init local";
   const manualSyncCommand = "forever-token sync";
   const autoSyncCommand = "forever-token service setup";
   const uninstallCommand = "npm uninstall -g @anglyaoy/token-usage";
@@ -454,6 +455,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       </section> : <GuideView
         installCommand={installCommand}
         initCommand={initCommand}
+        localInitCommand={localInitCommand}
         manualSyncCommand={manualSyncCommand}
         autoSyncCommand={autoSyncCommand}
         uninstallCommand={uninstallCommand}
@@ -681,6 +683,7 @@ function StatsGrid(props: { overview: TokenUsageDashboard["overview"]; label: st
 function GuideView(props: {
   installCommand: string;
   initCommand: string;
+  localInitCommand: string;
   manualSyncCommand: string;
   autoSyncCommand: string;
   uninstallCommand: string;
@@ -785,11 +788,13 @@ function GuideView(props: {
 
           <div className="token-guide-section">
             <h3>📦 第一步：安装并初始化</h3>
-            <p>首先安装 CLI 工具，然后运行初始化命令绑定你的 CLI Key</p>
+            <p>首先安装 CLI 工具，然后运行初始化命令绑定你的 CLI Key。默认连接线上 4Ever，初始化成功后会自动同步一次。</p>
             <div className="token-command-list">
               <CommandLine value={props.installCommand} label="install" copied={props.copied} onCopy={props.onCopy} />
               <CommandLine value={props.initCommand} label="init" copied={props.copied} onCopy={props.onCopy} />
+              <CommandLine value={props.localInitCommand} label="init-local" copied={props.copied} onCopy={props.onCopy} />
             </div>
+            <p className="token-guide-note">本地开发时使用 <code>forever-token init local</code>，会连接 <code>http://127.0.0.1:7778</code>。</p>
           </div>
 
           <div className="token-guide-section">

@@ -32,6 +32,23 @@ def create_user(prefix: str):
     return response.json()
 
 
+def auth_headers(auth: dict):
+    return {"Authorization": f"Bearer {auth['token']}"}
+
+
+def make_friends(requester: dict, addressee: dict) -> None:
+    request = client.post(
+        f"/api/chat/friends/request/{addressee['user']['id']}",
+        headers=auth_headers(requester),
+    )
+    assert request.status_code == 200, request.text
+    accept = client.post(
+        f"/api/chat/friends/requests/{request.json()['id']}/accept",
+        headers=auth_headers(addressee),
+    )
+    assert accept.status_code == 200, accept.text
+
+
 def test_auth_modules_and_admin_contract():
     auth = create_user("admin")
     token = auth["token"]
@@ -49,6 +66,53 @@ def test_auth_modules_and_admin_contract():
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["role"] == "admin"
+
+
+def test_chat_group_create_list_and_messages_require_membership():
+    owner = create_user("group-owner")
+    friend = create_user("group-friend")
+    stranger = create_user("group-stranger")
+    make_friends(owner, friend)
+
+    forbidden_member = client.post(
+        "/api/chat/groups",
+        headers=auth_headers(owner),
+        json={"name": "Project Room", "member_ids": [stranger["user"]["id"]]},
+    )
+    assert forbidden_member.status_code == 403
+
+    created = client.post(
+        "/api/chat/groups",
+        headers=auth_headers(owner),
+        json={"name": "Project Room", "member_ids": [friend["user"]["id"]]},
+    )
+    assert created.status_code == 200, created.text
+    group = created.json()
+    assert group["name"] == "Project Room"
+    assert {member["user"]["id"] for member in group["members"]} == {owner["user"]["id"], friend["user"]["id"]}
+
+    owner_groups = client.get("/api/chat/groups", headers=auth_headers(owner))
+    assert owner_groups.status_code == 200
+    assert any(item["id"] == group["id"] for item in owner_groups.json())
+
+    friend_groups = client.get("/api/chat/groups", headers=auth_headers(friend))
+    assert friend_groups.status_code == 200
+    assert any(item["id"] == group["id"] for item in friend_groups.json())
+
+    stranger_messages = client.get(f"/api/chat/groups/{group['id']}/messages", headers=auth_headers(stranger))
+    assert stranger_messages.status_code == 403
+
+    sent = client.post(
+        f"/api/chat/groups/{group['id']}/messages",
+        headers=auth_headers(friend),
+        json={"content": "大家好"},
+    )
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["sender"]["id"] == friend["user"]["id"]
+
+    messages = client.get(f"/api/chat/groups/{group['id']}/messages", headers=auth_headers(owner))
+    assert messages.status_code == 200, messages.text
+    assert messages.json()[0]["content"] == "大家好"
 
 
 def test_admin_readiness_requires_admin_and_reports_checks():

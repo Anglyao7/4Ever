@@ -2,13 +2,16 @@ import { type Dispatch, type RefObject, type SetStateAction, useEffect, useMemo,
 import { Bot, Brain, Check, Download, FileText, LogIn, MessageSquareText, Paperclip, PlugZap, Plus, Search, SendHorizonal, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
 import {
   acceptFriendRequest,
+  createChatGroup,
   deleteAiMemory,
   deleteAiPersona,
   fetchAgentCatalog,
   fetchChatDocumentChunkDetail,
   fetchChatRunEvents,
   fetchChatRuns,
+  fetchChatGroups,
   fetchDirectMessages,
+  fetchGroupMessages,
   fetchAiMemories,
   fetchAiPersonas,
   fetchFriendSummary,
@@ -18,6 +21,7 @@ import {
   requestFriend,
   searchUsers,
   saveAiPersona,
+  sendGroupMessage,
   sendDirectMessage,
   streamChat,
   syncModelProfiles,
@@ -25,7 +29,7 @@ import {
 } from "./services/api";
 import { resolveMediaUrl } from "./services/api";
 import type { AuthUser, UserSearchResult } from "./types/auth";
-import type { AiMemory, AiPersona, ChatAttachment, ChatConfig, ChatDocumentChunkDetail, ChatMessage, ChatRunRecord, ChatSourceReference, ChatStreamEvent, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, ModelProfile } from "./types/chat";
+import type { AiMemory, AiPersona, ChatAttachment, ChatConfig, ChatDocumentChunkDetail, ChatGroupRecord, ChatMessage, ChatRunRecord, ChatSourceReference, ChatStreamEvent, DirectAttachment, DirectMessageRecord, FriendProfile, FriendSummary, GroupMessageRecord, ModelProfile } from "./types/chat";
 import type { McpServer } from "./types/workflow";
 
 const profilesKey = "4ever.model.profiles";
@@ -35,7 +39,7 @@ const aiContactKey = "4ever.react.chat.aiContact";
 const aiMcpServersKey = "4ever.react.chat.mcpServers";
 const aiMessagesStorageError = "AI 会话保存失败，请检查浏览器存储空间后再继续发送。";
 
-type ChatMode = "people" | "ai";
+type ChatMode = "people" | "ai" | "group";
 type UiLanguage = "zh" | "en";
 type DialogType = "add-friend" | "new-group" | "new-ai" | null;
 type AIContactProfile = {
@@ -82,14 +86,18 @@ const copy = {
     loginRequired: "登录后可以搜索真实用户、添加好友并私聊。",
     searchPlaceholder: "搜索用户名 / 邮箱 / 昵称",
     friends: "好友列表",
+    groups: "群组",
     requests: "好友请求",
     outgoing: "已发送",
     noFriends: "还没有好友，先搜索用户添加。",
+    noGroups: "还没有群组，点击 + 新建。",
     searchingUsers: "正在搜索用户...",
     noSearchResults: "没有找到匹配用户。",
     noConversation: "选择一个好友开始聊天。",
+    noGroupConversation: "选择一个群组开始聊天。",
     loadingPeople: "正在同步好友与请求...",
     messagePlaceholder: "输入消息...",
+    groupMessagePlaceholder: "输入群组消息...",
     send: "发送",
     sending: "发送中",
     actionPending: "处理中",
@@ -150,6 +158,7 @@ const copy = {
     groupName: "群组名称",
     groupNamePlaceholder: "输入群组名称",
     selectMembers: "选择成员",
+    groupMembers: "群组成员",
     cancel: "取消",
     create: "创建",
     confirm: "确定",
@@ -162,14 +171,18 @@ const copy = {
     loginRequired: "Sign in to search real users, add friends, and send direct messages.",
     searchPlaceholder: "Search username / email / name",
     friends: "Friends",
+    groups: "Groups",
     requests: "Requests",
     outgoing: "Sent",
     noFriends: "No friends yet. Search for a user to add one.",
+    noGroups: "No groups yet. Use + to create one.",
     searchingUsers: "Searching users...",
     noSearchResults: "No matching users found.",
     noConversation: "Pick a friend to start chatting.",
+    noGroupConversation: "Pick a group to start chatting.",
     loadingPeople: "Syncing friends and requests...",
     messagePlaceholder: "Type a message...",
+    groupMessagePlaceholder: "Type a group message...",
     send: "Send",
     sending: "Sending",
     actionPending: "Working",
@@ -230,6 +243,7 @@ const copy = {
     groupName: "Group Name",
     groupNamePlaceholder: "Enter group name",
     selectMembers: "Select Members",
+    groupMembers: "Members",
     cancel: "Cancel",
     create: "Create",
     confirm: "Confirm",
@@ -242,6 +256,11 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const [mode, setMode] = useState<ChatMode>("ai");
   const [summary, setSummary] = useState<FriendSummary>(() => ({ friends: [], incoming_requests: [], outgoing_requests: [] }));
   const [selectedFriendId, setSelectedFriendId] = useState("");
+  const [groups, setGroups] = useState<ChatGroupRecord[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [groupMessages, setGroupMessages] = useState<GroupMessageRecord[]>([]);
+  const [groupDraft, setGroupDraft] = useState("");
+  const [groupSending, setGroupSending] = useState(false);
   const [directMessages, setDirectMessages] = useState<DirectMessageView[]>([]);
   const [directDraft, setDirectDraft] = useState("");
   const [directAttachments, setDirectAttachments] = useState<ChatAttachment[]>([]);
@@ -300,6 +319,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   const activeProfile = useMemo(() => activeProfileForContact(profiles, aiContact, globalActiveProfile), [profiles, aiContact.defaultProfileId, globalActiveProfile]);
   const availableMcpServers = useMemo(() => mcpServers.filter((server) => server.enabled), [mcpServers]);
   const selectedFriend = summary.friends.find((friend) => friend.user.id === selectedFriendId)?.user ?? null;
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
   const outgoingIds = useMemo(() => new Set(summary.outgoing_requests.map((request) => request.addressee.id)), [summary.outgoing_requests]);
   const friendIds = useMemo(() => new Set(summary.friends.map((friend) => friend.user.id)), [summary.friends]);
 
@@ -318,10 +338,20 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     scheduleScrollToBottom(directListRef, "auto");
   }
 
+  function openGroupConversation(groupId: string) {
+    setSelectedGroupId(groupId);
+    setMode("group");
+    scheduleScrollToBottom(directListRef, "auto");
+  }
+
   useEffect(() => {
     if (!props.authToken) {
       setSummary({ friends: [], incoming_requests: [], outgoing_requests: [] });
       setSelectedFriendId("");
+      setGroups([]);
+      setSelectedGroupId("");
+      setGroupMessages([]);
+      setGroupDraft("");
       resetDirectComposer();
       setDirectMessages([]);
       setConversationError("");
@@ -330,6 +360,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
       return;
     }
     refreshFriends();
+    refreshGroups();
   }, [props.authToken]);
 
   useEffect(() => {
@@ -489,6 +520,11 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
   }, [props.currentUser?.id, selectedFriendId]);
 
   useEffect(() => {
+    setGroupDraft("");
+    setConversationError("");
+  }, [props.currentUser?.id, selectedGroupId]);
+
+  useEffect(() => {
     if (!selectedFriendId || !props.authToken) {
       setDirectMessages([]);
       return;
@@ -498,6 +534,19 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
       setConversationError("");
     }).catch((cause) => setConversationError(cause instanceof Error ? cause.message : "消息加载失败"));
   }, [props.authToken, props.currentUser?.id, selectedFriendId]);
+
+  useEffect(() => {
+    if (!selectedGroupId || !props.authToken) {
+      setGroupMessages([]);
+      return;
+    }
+    fetchGroupMessages(props.authToken, selectedGroupId)
+      .then((records) => {
+        setGroupMessages(records);
+        setConversationError("");
+      })
+      .catch((cause) => setConversationError(cause instanceof Error ? cause.message : "群组消息加载失败"));
+  }, [props.authToken, selectedGroupId]);
 
   useEffect(() => {
     if (!props.authToken || !query.trim()) {
@@ -528,7 +577,7 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
 
   useEffect(() => {
     return scheduleScrollToBottom(directListRef, "auto");
-  }, [directMessages, selectedFriendId]);
+  }, [directMessages, groupMessages, selectedFriendId, selectedGroupId]);
 
   useEffect(() => {
     if (!profilePopover) return;
@@ -621,6 +670,18 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     }
   }
 
+  async function refreshGroups(nextSelectedId = selectedGroupId) {
+    if (!props.authToken) return;
+    try {
+      const nextGroups = await fetchChatGroups(props.authToken);
+      setGroups(nextGroups);
+      const validSelected = nextGroups.some((group) => group.id === nextSelectedId);
+      setSelectedGroupId(validSelected ? nextSelectedId : nextGroups[0]?.id ?? "");
+    } catch (cause) {
+      setPeopleError(cause instanceof Error ? cause.message : "群组数据加载失败");
+    }
+  }
+
   async function addFriend(userId: string) {
     if (!props.authToken) return;
     const actionId = `add:${userId}`;
@@ -695,6 +756,24 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     } finally {
       if (!previousLocalId) setDirectSending(false);
       setRetryingLocalId((current) => current === localId ? "" : current);
+    }
+  }
+
+  async function submitGroup() {
+    const content = groupDraft.trim();
+    if (!props.authToken || !props.currentUser || !selectedGroupId || groupSending || !content) return;
+    setGroupDraft("");
+    setGroupSending(true);
+    setConversationError("");
+    try {
+      const message = await sendGroupMessage(props.authToken, selectedGroupId, content);
+      setGroupMessages((current) => [...current, message]);
+      await refreshGroups(selectedGroupId);
+    } catch (cause) {
+      setGroupDraft(content);
+      setConversationError(cause instanceof Error ? cause.message : "群组消息发送失败");
+    } finally {
+      setGroupSending(false);
     }
   }
 
@@ -1148,11 +1227,20 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
     setNewAiPersona("");
   }
 
-  function handleCreateGroup() {
-    if (!newGroupName.trim()) return;
-    // TODO: 实现创建群组的API调用
-    console.log("创建群组:", { name: newGroupName, members: newGroupMembers });
-    closeDialog();
+  async function handleCreateGroup() {
+    if (!props.authToken || !newGroupName.trim()) return;
+    setPeopleAction("group:create");
+    setPeopleError("");
+    try {
+      const group = await createChatGroup(props.authToken, { name: newGroupName.trim(), memberIds: newGroupMembers });
+      setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
+      closeDialog();
+      openGroupConversation(group.id);
+    } catch (cause) {
+      setPeopleError(cause instanceof Error ? cause.message : "群组创建失败");
+    } finally {
+      setPeopleAction((current) => current === "group:create" ? "" : current);
+    }
   }
 
   async function handleCreateAi() {
@@ -1242,6 +1330,15 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
                 {props.currentUser && summary.friends.map((friendship) => <button key={friendship.user.id} type="button" className={`direct-friend-item ${mode === "people" && friendship.user.id === selectedFriendId ? "active" : ""}`} aria-current={mode === "people" && friendship.user.id === selectedFriendId ? "true" : undefined} onClick={() => openDirectConversation(friendship.user.id)}><UserIdentity user={friendship.user} /></button>)}
                 {props.currentUser && !summary.friends.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noFriends}</p>}
               </div>
+              {props.currentUser && <div className="direct-request-list compact">
+                <strong>{t.groups}</strong>
+                {groups.map((group) => (
+                  <button key={group.id} type="button" className={`direct-friend-item group-thread-item ${mode === "group" && group.id === selectedGroupId ? "active" : ""}`} aria-current={mode === "group" && group.id === selectedGroupId ? "true" : undefined} onClick={() => openGroupConversation(group.id)}>
+                    <GroupIdentity group={group} labels={t} />
+                  </button>
+                ))}
+                {!groups.length && <p className="react-empty-line" role="status" aria-live="polite">{t.noGroups}</p>}
+              </div>}
               {props.currentUser && !!summary.outgoing_requests.length && <div className="direct-request-list compact"><strong>{t.outgoing}</strong>{summary.outgoing_requests.map((request) => <div key={request.id} className="direct-request-item outgoing"><UserIdentity user={request.addressee} /><span>{t.requested}</span></div>)}</div>}
           </>
         </aside>
@@ -1288,6 +1385,39 @@ export default function ChatPanel(props: { authToken: string; currentUser: AuthU
                 </div>
               </>
             ) : <div className="direct-chat-empty" role="status" aria-live="polite"><MessageSquareText size={28} /><strong>{props.currentUser ? t.noConversation : t.loginRequired}</strong>{conversationError && <p className="react-error-line" role="alert">{conversationError}</p>}</div>}
+          </article>
+        ) : mode === "group" ? (
+          <article className="direct-chat-surface">
+            {selectedGroup ? (
+              <>
+                <div className="direct-chat-head ai-contact-head">
+                  <GroupIdentity group={selectedGroup} labels={t} />
+                  <small>{selectedGroup.members.map((member) => displayFriendName(member.user)).join("、")}</small>
+                </div>
+                <div className="react-message-list" ref={directListRef} role="log" aria-label="群聊消息" aria-live="polite" aria-relevant="additions text" aria-busy={groupSending}>
+                  {groupMessages.map((message) => {
+                    const mine = message.sender_id === props.currentUser?.id;
+                    return <div key={message.id} className={`react-message ${mine ? "user" : "assistant"}`}>
+                      <ChatMessageAvatar kind={mine ? "user" : "friend"} user={mine ? props.currentUser : message.sender} onOpenProfile={(event) => openMessageProfile(mine ? props.currentUser : message.sender, event, mine ? "right" : "left")} />
+                      <div className="react-message-stack">
+                        <time className="react-message-time" dateTime={message.created_at}>{formatTime(message.created_at, language)}</time>
+                        <div className="react-message-bubble"><p>{message.content}</p></div>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+                {conversationError && <p className="react-error-line" role="alert">{conversationError}</p>}
+                <div className="react-composer direct-composer">
+                  <textarea rows={1} value={groupDraft} aria-label="群组消息内容" placeholder={t.groupMessagePlaceholder} onChange={(event) => setGroupDraft(event.target.value)} onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      submitGroup();
+                    }
+                  }} />
+                  <button className="primary-action compact" type="button" disabled={groupSending || !groupDraft.trim()} onClick={submitGroup}><SendHorizonal size={16} /><span>{groupSending ? t.sending : t.send}</span></button>
+                </div>
+              </>
+            ) : <div className="direct-chat-empty" role="status" aria-live="polite"><Users size={28} /><strong>{props.currentUser ? t.noGroupConversation : t.loginRequired}</strong>{conversationError && <p className="react-error-line" role="alert">{conversationError}</p>}</div>}
           </article>
         ) : (
           <article className="direct-chat-surface react-chat-surface unified-ai-surface">
@@ -1476,6 +1606,10 @@ function UserIdentity(props: { user: FriendProfile | UserSearchResult }) {
 
 function AIContactIdentity(props: { profile: AIContactProfile; detail: string }) {
   return <span className="direct-user-identity ai-contact-identity"><span className="user-avatar"><Bot size={15} /></span><span><strong>{props.profile.name}</strong><small>{props.detail}</small></span></span>;
+}
+
+function GroupIdentity(props: { group: ChatGroupRecord; labels: typeof copy.zh }) {
+  return <span className="direct-user-identity group-contact-identity"><span className="user-avatar"><Users size={15} /></span><span><strong>{props.group.name}</strong><small>{props.labels.groupMembers} · {props.group.members.length}</small></span></span>;
 }
 
 function ChatMessageAvatar(props: { kind: "user" | "friend" | "ai"; user?: AuthUser | FriendProfile | null; aiContact?: AIContactProfile; onOpenProfile?: (event: React.MouseEvent<HTMLElement>) => void }) {
@@ -2145,6 +2279,9 @@ function NewGroupDialog(props: {
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const visibleMembers = props.searchQuery.trim()
+    ? props.searchResults.filter((user) => props.friendIds.has(user.id))
+    : props.friends.map(f => f.user);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -2195,7 +2332,7 @@ function NewGroupDialog(props: {
             </label>
           </div>
           <div className="chat-dialog-member-list">
-            {(props.searchQuery.trim() ? props.searchResults : props.friends.map(f => f.user)).map((user) => (
+            {visibleMembers.map((user) => (
               <button
                 key={user.id}
                 type="button"
@@ -2207,6 +2344,7 @@ function NewGroupDialog(props: {
               </button>
             ))}
             {props.searchLoading && <p className="react-empty-line">{props.labels.searchingUsers}</p>}
+            {!props.searchLoading && props.searchQuery.trim() && !visibleMembers.length && <p className="react-empty-line">{props.labels.noSearchResults}</p>}
           </div>
         </div>
         <div className="chat-dialog-footer">

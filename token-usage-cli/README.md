@@ -19,8 +19,16 @@ forever-token init
 The CLI will show the API URL it will use, then prompt for the CLI key:
 
 ```text
-4Ever API URL: http://127.0.0.1:7778
+4Ever API URL: https://www.4everapi.top
 Token统计 CLI Key:
+```
+
+After saving the config, `init` immediately runs one sync.
+
+For a local development backend, use:
+
+```bash
+forever-token init local
 ```
 
 For a non-default backend, pass only the API URL and still paste the key into the prompt:
