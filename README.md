@@ -43,6 +43,8 @@ The application now runs on a Python/FastAPI backend. The previous backend surfa
 │   ├── package.json            # Frontend scripts and dependencies
 │   ├── vite.config.ts          # Vite dev server and proxy config
 │   └── README.md               # Frontend-specific notes
+├── deploy/                     # Docker Compose and Caddy config
+├── deploy.sh                   # Maintainer server deployment helper
 ├── .gitignore                  # Local runtime/build artifacts excluded from Git
 └── README.md                   # Project overview
 ```
@@ -105,6 +107,68 @@ python3.11 -m pytest
 curl http://127.0.0.1:7778/health
 curl http://127.0.0.1:7778/api/database/health
 ```
+
+## Local Docker Deployment
+
+For a local Docker deployment, you only need Docker with Compose support. The stack builds the FastAPI backend and a Caddy-powered frontend/reverse-proxy container.
+
+Create the Docker environment file:
+
+```bash
+cd deploy
+cp .env.example .env
+```
+
+Edit `deploy/.env` for local HTTP:
+
+```env
+SITE_ADDRESS=:80
+HTTP_PORT=7777
+HTTPS_PORT=7443
+VITE_API_BASE_URL=
+
+CORS_ORIGINS=http://localhost:7777,http://127.0.0.1:7777
+ALLOW_LEGACY_GLOBAL_MODEL_PROFILES=0
+
+MODEL_PROFILE_ENCRYPTION_KEY=local-dev-stable-key
+CHAT_ATTACHMENT_URL_SECRET=local-dev-attachment-secret
+```
+
+Then build and start:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+Open:
+
+```text
+http://127.0.0.1:7777
+```
+
+Check health:
+
+```bash
+curl http://127.0.0.1:7777/health
+curl http://127.0.0.1:7777/api/database/health
+```
+
+Stop containers while keeping data:
+
+```bash
+cd deploy
+docker compose down
+```
+
+Delete containers and local Docker volume data:
+
+```bash
+cd deploy
+docker compose down -v
+```
+
+`deploy/.env` is ignored by Git. Keep `MODEL_PROFILE_ENCRYPTION_KEY` stable if you want saved model profile keys to remain decryptable across restarts.
 
 ## Agent / MCP Workflow
 

@@ -1,6 +1,6 @@
 {
   "name": "@anglyaoy/token-usage",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "type": "module",
   "description": "Collect local AI coding token usage and sync it to 4Ever.",
   "license": "MIT",
