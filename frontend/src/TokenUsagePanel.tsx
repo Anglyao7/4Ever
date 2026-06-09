@@ -16,6 +16,8 @@ type TooltipData = {
   content: React.ReactNode;
 } | null;
 
+type RefreshOverlayState = "hidden" | "loading" | "done" | "error";
+
 type ContributionDay = {
   day: string;
   date: Date;
@@ -57,6 +59,8 @@ type TrendData = {
 
 const tokenUsageDisplayTimeZone = "Asia/Shanghai";
 const tokenUsageVisitedStorageKey = "token-usage-guide-opened";
+const tokenUsageHeatmapHighThreshold = 100_000_000;
+const tokenUsageHeatmapPeakThreshold = 200_000_000;
 
 type KeyDialogMode = "create" | "rename";
 
@@ -110,7 +114,10 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<TooltipData>(null);
+  const [refreshOverlay, setRefreshOverlay] = useState<RefreshOverlayState>("hidden");
   const trendControlsRef = useRef<HTMLDivElement | null>(null);
+  const refreshOverlayTimerRef = useRef<number | null>(null);
+  const refreshOverlayStartedAtRef = useRef(0);
   const apiBaseUrl = getApiBaseUrl();
   const installCommand = "npm install -g @anglyaoy/token-usage";
   const initCommand = "forever-token init";
@@ -135,6 +142,8 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     void refresh();
   }, [props.authToken, trendMode, customStart, customEnd]);
 
+  useEffect(() => () => clearRefreshOverlayTimer(), []);
+
   useEffect(() => {
     if (!props.authToken || !props.currentUser) return;
     try {
@@ -158,9 +167,37 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [trendMode, customPanelOpen]);
 
-  async function refresh() {
+  function clearRefreshOverlayTimer() {
+    if (refreshOverlayTimerRef.current === null) return;
+    window.clearTimeout(refreshOverlayTimerRef.current);
+    refreshOverlayTimerRef.current = null;
+  }
+
+  function startRefreshOverlay() {
+    clearRefreshOverlayTimer();
+    setTooltip(null);
+    refreshOverlayStartedAtRef.current = window.performance.now();
+    setRefreshOverlay("loading");
+  }
+
+  function finishRefreshOverlay(state: Exclude<RefreshOverlayState, "hidden" | "loading">) {
+    const elapsed = window.performance.now() - refreshOverlayStartedAtRef.current;
+    const settleDelay = Math.max(0, 650 - elapsed);
+    refreshOverlayTimerRef.current = window.setTimeout(() => {
+      setRefreshOverlay(state);
+      refreshOverlayTimerRef.current = window.setTimeout(() => {
+        setRefreshOverlay("hidden");
+        refreshOverlayTimerRef.current = null;
+      }, 820);
+    }, settleDelay);
+  }
+
+  async function refresh(options: { showOverlay?: boolean } = {}) {
+    const showOverlay = options.showOverlay === true;
+    if (showOverlay) startRefreshOverlay();
     setLoading(true);
     setError("");
+    let refreshed = false;
     try {
       const queryRange = rangeFromTrendMode(trendMode, customStart, customEnd);
       if (queryRange === null) {
@@ -177,10 +214,12 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       setAllTimeDashboard(nextAllTimeDashboard);
       setLeaderboard(nextLeaderboard);
       setKeys(nextKeys);
+      refreshed = true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Token 统计加载失败");
     } finally {
       setLoading(false);
+      if (showOverlay) finishRefreshOverlay(refreshed ? "done" : "error");
     }
   }
 
@@ -347,7 +386,7 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
       <div className="module-view-header">
         <div><p className="eyebrow">Token 用量</p><h1>Token统计</h1><span className="module-view-subtitle">绑定 {props.currentUser.display_name || props.currentUser.username} 的本机 AI 工具用量</span></div>
         <div className="token-header-actions">
-          <button className="secondary-button compact" type="button" disabled={loading} onClick={refresh}><RefreshCw size={15} /><span>刷新</span></button>
+          <button className={`secondary-button compact token-refresh-button ${refreshOverlay === "loading" ? "refreshing" : ""}`} type="button" disabled={loading} onClick={() => void refresh({ showOverlay: true })}><RefreshCw size={15} /><span>{refreshOverlay === "loading" ? "刷新中" : "刷新"}</span></button>
         </div>
       </div>
 
@@ -504,6 +543,19 @@ export default function TokenUsagePanel(props: { authToken: string; currentUser:
           }}
         >
           {tooltip.content}
+        </div>,
+        document.body
+      )}
+
+      {refreshOverlay !== "hidden" && createPortal(
+        <div className={`token-refresh-overlay ${refreshOverlay}`} role="status" aria-live="polite" aria-label={refreshOverlay === "loading" ? "正在刷新 Token 统计" : refreshOverlay === "error" ? "Token 统计刷新失败" : "Token 统计刷新完成"}>
+          <div className="token-refresh-card">
+            <span className="token-refresh-orbit" aria-hidden="true">
+              {refreshOverlay === "loading" ? <RefreshCw size={24} /> : refreshOverlay === "error" ? <XCircle size={24} /> : <Check size={24} />}
+            </span>
+            <strong>{refreshOverlay === "loading" ? "正在刷新 Token 统计" : refreshOverlay === "error" ? "刷新失败" : "刷新完成"}</strong>
+            <small>{refreshOverlay === "loading" ? "正在同步仪表盘、排行榜和热力图数据" : refreshOverlay === "error" ? "数据没有更新，请稍后再试" : "最新数据已经写入面板"}</small>
+          </div>
         </div>,
         document.body
       )}
@@ -998,14 +1050,18 @@ function buildContributionHeatmap(cells: TokenUsageDashboard["heatmap"]): Contri
 function contributionLevel(value: number, peak: number) {
   if (value <= 0) return 0;
   const ratio = value / Math.max(1, peak);
-  if (ratio >= 0.875) return 8;
-  if (ratio >= 0.75) return 7;
-  if (ratio >= 0.625) return 6;
-  if (ratio >= 0.5) return 5;
-  if (ratio >= 0.375) return 4;
-  if (ratio >= 0.25) return 3;
-  if (ratio >= 0.125) return 2;
-  return 1;
+  let level = 1;
+  if (ratio >= 0.875) level = 8;
+  else if (ratio >= 0.75) level = 7;
+  else if (ratio >= 0.625) level = 6;
+  else if (ratio >= 0.5) level = 5;
+  else if (ratio >= 0.375) level = 4;
+  else if (ratio >= 0.25) level = 3;
+  else if (ratio >= 0.125) level = 2;
+
+  if (value >= tokenUsageHeatmapPeakThreshold) return Math.max(level, 8);
+  if (value >= tokenUsageHeatmapHighThreshold) return Math.max(level, 7);
+  return level;
 }
 
 function monthLabel(date: Date) {
